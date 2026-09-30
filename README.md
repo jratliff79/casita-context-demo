@@ -140,6 +140,13 @@ The real CLI run exercises root identity, sharing, multi-root portable transport
 restore, file verification and integrity audits. Both are needed to validate
 changes to the demonstration.
 
+[CI](.github/workflows/ci.yml) runs the unit tests on Python 3.9 and 3.12, then
+builds the tested Casita revision with Rust 1.94.1 and locked dependencies on a
+fresh GitHub-hosted Linux runner. Its handoff check verifies restored file sets
+and exclusion of a generated Python cache. This is a correctness check using a
+debug CLI build, not a performance benchmark. The workflow uses read-only
+permissions and does not upload raw receipts, stores or context archives.
+
 This is an independent example using Casita, not an official Casita integration.
 MIT licensed; contributions should keep the example small, reproducible and
 free of private evidence.

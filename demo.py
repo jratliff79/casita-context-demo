@@ -154,10 +154,12 @@ def run_demo(binary, output):
         receipt["archive_import"] = json.loads(receiver.run("archive", "import", archive,
                                                             "--root-prefix", "received", "--json"))
         roots = receiver.roots()
-        for i, version in enumerate(("v1", "v2")):
-            key = roots[f"received/{i}"]
-            if key != expected[version]["directory_key"]:
-                raise ValueError("receiver root does not match expected directory key")
+        expected_keys = {expected[version]["directory_key"] for version in ("v1", "v2")}
+        if len(roots) != 2 or set(roots.values()) != expected_keys:
+            raise ValueError("receiver roots do not match expected directory keys")
+        # Import indices follow archive ordering, not the requested version order.
+        for version in ("v1", "v2"):
+            key = expected[version]["directory_key"]
             restored = output / "received" / version
             restored.parent.mkdir(parents=True, exist_ok=True)
             receiver.run("checkout", key, restored, "--no-root")

@@ -1,16 +1,20 @@
-# Initial local validation
+# Local validation
 
 On 2026-09-30, nine unit checks passed and the real Casita end-to-end demo
 completed all 20 commands successfully on macOS arm64. The portable archive
-was 5,912 bytes, with two distinct context roots and one shared unchanged
+was 5,880 bytes, with two distinct context roots and one shared unchanged
 source directory identity. Both restored contexts matched their expected
 keys and file hashes. Altered evidence was rejected, and both isolated stores
 passed `fsck --dry-run`.
 
+The import assigned v2 to `received/0` and v1 to `received/1`. The wrapper
+matched both roots by their expected directory identities, without assuming
+archive order preserved the requested version order.
+
 The [sanitized receipt summary](validation.json) records the tested Casita
 source revision, executable hash, context pins, archive hash and shared object
 key. Raw commands and results remain under ignored
-`output/publication-validation/receipt.json`; they can contain local paths.
+`output/ai-disclosure-validation-2/receipt.json`; they can contain local paths.
 
 Before publication, packaging was changed from copying a whole source directory
 to selecting only three intended fixture files. Regression checks confirm that

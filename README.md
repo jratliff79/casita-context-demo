@@ -61,7 +61,7 @@ flowchart LR
     F --> C[Check pins and read exact evidence]
 ```
 
-1. Build two contexts from public, hand-authored fixtures. Only the first audio
+1. Build two contexts from public, synthetic fixtures. Only the first audio
    packet duration and its declared result change between versions.
 2. Import them as `demo/v1` and `demo/v2`. Their directory keys differ, while
    their unchanged `source/` directory has the same Casita key. The script checks
@@ -88,7 +88,7 @@ timing even though later packets and output timing are usable. In v2, that one
 duration is numeric and the same verifier accepts it. A finite negative start
 timestamp is allowed in both cases.
 
-These observations are hand-authored, and the verifier is a small teaching
+These observations are synthetic, and the verifier is a small teaching
 fixture. They are not real FFmpeg output, a reproduction of a private incident,
 or signed execution evidence. The changed v2 field is an explicit synthetic
 control, not a proposed workaround for real media. Unit tests check that both
@@ -124,7 +124,7 @@ cargo install --path crates/casita --bin casita
 
 That source requires Rust 1.94.1 or newer. The demo receipt records the executable
 hash and reported version; a version string alone does not identify a source
-commit. See [validation](docs/validation.md) for the initial local run.
+commit. See [validation](docs/validation.md) for the recorded local run.
 
 ## Development
 
@@ -143,3 +143,13 @@ changes to the demonstration.
 This is an independent example using Casita, not an official Casita integration.
 MIT licensed; contributions should keep the example small, reproducible and
 free of private evidence.
+
+This example's code, tests and documentation were developed with substantial
+assistance from OpenAI Codex. The fixtures are synthetic; executed checks and
+their limits are recorded in [validation](docs/validation.md). AI assistance
+does not replace maintainer review or responsibility for the published work.
+
+AI-assisted contributions are welcome. Describe substantial AI assistance in
+the PR and report the checks you actually ran. The repository owner decides
+what merges. Changes to `main` must go through a PR, including the owner's
+changes; agents should prepare PRs and leave the merge to the owner.

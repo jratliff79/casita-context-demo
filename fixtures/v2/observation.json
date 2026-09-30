@@ -1,0 +1,23 @@
+{
+  "scope": "hand-authored synthetic response fixture; no media or tool execution attested",
+  "conversion_exit_code": 0,
+  "source_audio_codec": "aac",
+  "source_stream_duration": null,
+  "source_packets": [
+    {
+      "pts": -0.021,
+      "duration": 0.021
+    },
+    {
+      "pts": 0,
+      "duration": 0.021
+    },
+    {
+      "pts": 0.021,
+      "duration": 0.021
+    }
+  ],
+  "output_audio_codec": "aac",
+  "output_audio_duration": 0.063,
+  "verification_result": "accepted"
+}

@@ -1,0 +1,27 @@
+{
+  "date": "2026-09-30",
+  "scope": "local synthetic packaging/restore; no AI or media execution",
+  "casita_source_commit": "b8366af1d3859b47db9cb45f910522b7c24ee35d",
+  "casita_binary_sha256": "823a11b73b460303fa24522eb55e9f3b33873af44f05366029c8b29f8f02a45d",
+  "casita_version": "casita 0.1.0",
+  "unit_tests_passed": 9,
+  "casita_commands_succeeded": 20,
+  "archive_bytes": 5912,
+  "pins": {
+    "archive_sha256": "2cce94eae15505e31e02b601da003c3229ba46aaf5326236704c27b908e07b09",
+    "v1": {
+      "context_id": "fb0db496453ab0ff23292b0ae196c75efc714bd010babfc910d9ab1d9d2fbb31",
+      "directory_key": "casita.directory.v1:bAh7bwjEO4_4ey5tCfEvxz2tkXbCfirM_V4bZ8_31Es"
+    },
+    "v2": {
+      "context_id": "1b0b0a83b930d530386d0c9cea2d0ca099998266f4fb2d22e4507aeb569e35ac",
+      "directory_key": "casita.directory.v1:vLARZFsXTmFg2Zm_RY2mIN_JKfz7BMa0CMbQ_Ryt8y8"
+    }
+  },
+  "shared_source_directory_key": "casita.directory.v1:mhAbfLepYDCcCDaUBp1FIGpSE7fdp_l_UUUmBMW2YPY",
+  "tampered_context_rejected": true,
+  "archive_validity": "verified",
+  "both_integrity_audits_passed": true,
+  "packaging_allowlist_verified": true,
+  "linked_fixture_inputs_rejected": true
+}

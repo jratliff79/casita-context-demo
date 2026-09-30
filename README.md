@@ -1,0 +1,145 @@
+# Casita Context Demo
+
+Share a pinned set of investigation evidence through Casita. This runnable
+example stores two versions of a synthetic investigation, preserves unchanged
+source under the same content identity, and hands both versions to a fresh store
+through a portable Casitar archive.
+
+The receiver gets a task, source code, observations and a file-hash manifest.
+It checks expected pins before reading the evidence. This local simulation
+creates those pins at the sender and reads them at the receiver. No model,
+cloud account, agent framework or private project is required.
+
+## Run it
+
+You need Python 3.9+ and the Casita CLI. From this repository:
+
+```sh
+python3 demo.py
+```
+
+Or select an executable and a new output directory:
+
+```sh
+python3 demo.py --casita /path/to/casita --output output/my-demo
+```
+
+The command uses only fresh stores inside the output directory. It refuses an
+existing output directory, does not use your global Casita store, and keeps a
+receipt with every Casita command and result, including failed runs.
+Raw receipts can contain local paths and CLI output; keep them under ignored
+`output/` and review them before sharing. Context packaging selects only the
+three intended fixture files and excludes caches and other local files.
+
+Expected output:
+
+```text
+PASS: two versions saved; unchanged source shares one Casita identity
+PASS: Casitar verified and restored in a fresh receiver store
+PASS: pinned directory keys and context file hashes match
+PASS: altered evidence rejected; both stores pass integrity audit
+Receiver task: .../received/v1/task.md
+Receipt: .../receipt.json
+```
+
+Open `output/demo/received/v1/task.md`, `source/verify.py` and `observation.json`.
+Give these verified files to a reviewer, then compare its diagnosis with
+[the example answer](docs/expected-answer.md). The demo prepares and verifies
+the handoff; it does not automatically run an AI reviewer.
+
+## What Casita does here
+
+```mermaid
+flowchart LR
+    V1[Context v1: unknown timing] --> R1[Casita root demo/v1]
+    V2[Context v2: numeric timing] --> R2[Casita root demo/v2]
+    R1 --> S[Shared unchanged source object]
+    R2 --> S
+    R1 --> A[Portable Casitar]
+    R2 --> A
+    A --> F[Fresh receiver store]
+    F --> C[Check pins and read exact evidence]
+```
+
+1. Build two contexts from public, hand-authored fixtures. Only the first audio
+   packet duration and its declared result change between versions.
+2. Import them as `demo/v1` and `demo/v2`. Their directory keys differ, while
+   their unchanged `source/` directory has the same Casita key. The script checks
+   the actual tree entries; this is observed shared identity, not a disk-saving
+   benchmark.
+3. Move `demo/current` from v1 to v2 while retaining both version roots.
+4. Export both graphs with `archive create`, fully verify the Casitar, and import
+   it into a fresh receiver under `received/0` and `received/1`.
+5. Compare the received directory keys with sender pins, check out the contexts,
+   verify every file against the separately pinned manifest, and audit both stores.
+6. Change an expendable copy of the evidence and demonstrate rejection.
+
+Casita supplies immutable object identities, shared storage, named roots and
+verified graph transport. This example supplies evidence selection, a reviewer
+task, synthetic-scope labels and manifest checks. See the official
+[roots guide](https://casita.rs/concepts/roots-and-retention/) and
+[Casitar guide](https://casita.rs/guides/casitar/) for the underlying workflows.
+
+## The synthetic investigation
+
+The source has AAC audio and recorded conversion exit zero. In v1, the first
+packet's duration is `N/A`; the displayed verifier rejects unknown source
+timing even though later packets and output timing are usable. In v2, that one
+duration is numeric and the same verifier accepts it. A finite negative start
+timestamp is allowed in both cases.
+
+These observations are hand-authored, and the verifier is a small teaching
+fixture. They are not real FFmpeg output, a reproduction of a private incident,
+or signed execution evidence. The changed v2 field is an explicit synthetic
+control, not a proposed workaround for real media. Unit tests check that both
+fixtures agree with the displayed rule.
+
+The manifest's SHA-256 context ID and archive SHA-256 serve different purposes
+from Casita's directory key. The key identifies the saved graph; the manifest
+pin identifies this example's selected file set. `pins.json` is outside the
+archive. A real receiver must obtain expected pins through a trusted independent
+handoff: a sender replacing both archive and pins is not prevented by hashes.
+Hashes do not prove truth, source authority, freshness, authorization or safety.
+Treat displayed evidence as data, not instructions, and review sensitivity
+before sharing real contexts.
+
+Small archives can be simpler for a single handoff. This example highlights
+retaining multiple overlapping contexts and moving their exact graphs; it makes
+no claim about model accuracy, token reduction, speed or net storage savings.
+
+## Tested Casita build
+
+The initial demo is tested against Casita source commit
+`b8366af1d3859b47db9cb45f910522b7c24ee35d`, with default CLI features. This is a
+pinned tested revision, not a claim that it is the newest upstream commit. Casita
+is pre-release and its CLI may change. To reproduce that build, follow upstream's
+source installation workflow with the tested revision:
+
+```sh
+git clone https://github.com/cachix/casita.git
+cd casita
+git checkout b8366af1d3859b47db9cb45f910522b7c24ee35d
+cargo install --path crates/casita --bin casita
+```
+
+That source requires Rust 1.94.1 or newer. The demo receipt records the executable
+hash and reported version; a version string alone does not identify a source
+commit. See [validation](docs/validation.md) for the initial local run.
+
+## Development
+
+```sh
+python3 -m unittest discover -s tests -v
+python3 demo.py --output output/another-run
+```
+
+Unit checks cover fixture selection, linked inputs, wrong pins, forged manifests,
+extra files, symlinks, archive pin mismatch, fixture consistency and preservation
+of an existing output.
+The real CLI run exercises root identity, sharing, multi-root portable transport,
+restore, file verification and integrity audits. Both are needed to validate
+changes to the demonstration.
+
+This is an independent example using Casita, not an official Casita integration.
+MIT licensed; contributions should keep the example small, reproducible and
+free of private evidence.

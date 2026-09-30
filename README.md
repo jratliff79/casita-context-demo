@@ -144,9 +144,9 @@ changes to the demonstration.
 builds the tested Casita revision with Rust 1.94.1 and locked dependencies on a
 fresh GitHub-hosted Linux runner using this repository's
 [dependency snapshot](ci/README.md), since upstream ignores `Cargo.lock`.
-Its handoff check verifies restored file sets
-and exclusion of a generated Python cache. This is a correctness check using a
-debug CLI build, not a performance benchmark. The workflow uses read-only
+Its handoff check uses a disposable fixture copy under `output/` and verifies
+restored file sets and exclusion of a generated Python cache. This is a
+correctness check using a debug CLI build, not a performance benchmark. The workflow uses read-only
 permissions and does not upload raw receipts, stores or context archives.
 
 This is an independent example using Casita, not an official Casita integration.

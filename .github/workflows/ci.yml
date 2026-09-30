@@ -18,6 +18,8 @@ jobs:
     name: Unit tests (Python ${{ matrix.python }})
     runs-on: ubuntu-24.04
     timeout-minutes: 5
+    env:
+      PYTHONPYCACHEPREFIX: ${{ github.workspace }}/output/python-cache
     strategy:
       fail-fast: false
       matrix:
@@ -62,11 +64,24 @@ jobs:
           cargo +1.94.1 build --locked --package casita --bin casita
           --manifest-path output/casita-source/Cargo.toml
           --target-dir output/casita-build
-      - name: Generate a local cache that packaging must exclude
-        run: python -m py_compile fixtures/source/verify.py
+      - name: Stage disposable fixtures and generate a cache
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import shutil
+
+          work = Path("output/ci-worktree")
+          for name in ("demo.py", "fixtures/source/verify.py",
+                       "fixtures/v1/observation.json", "fixtures/v1/task.md",
+                       "fixtures/v2/observation.json", "fixtures/v2/task.md"):
+              target = work / name
+              target.parent.mkdir(parents=True, exist_ok=True)
+              shutil.copyfile(name, target)
+          PY
+          python -m py_compile output/ci-worktree/fixtures/source/verify.py
       - name: Run fresh-store handoff
         run: >-
-          python demo.py --casita output/casita-build/debug/casita
+          python output/ci-worktree/demo.py --casita output/casita-build/debug/casita
           --output output/ci-handoff
       - name: Check receipt and exact restored file sets
         run: |
@@ -85,7 +100,7 @@ jobs:
           assert {m["root"] for m in mappings} == {
               pins[version]["directory_key"] for version in ("v1", "v2")
           }
-          assert list(Path("fixtures/source/__pycache__").glob("*.pyc"))
+          assert list(Path("output/ci-worktree/fixtures/source/__pycache__").glob("*.pyc"))
           for version in ("v1", "v2"):
               restored = folder / "received" / version
               files = {p.relative_to(restored).as_posix()

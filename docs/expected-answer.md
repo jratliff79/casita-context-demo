@@ -17,7 +17,7 @@ be established. Capture direct trusted-tool responses and distinguish authentic
 unknown timing from any adapter manipulation. Do not silently discard a packet
 or substitute container duration merely to pass the guard.
 
-This diagnosis concerns a hand-authored fixture and a teaching verifier. It does
+This diagnosis concerns a synthetic fixture and a teaching verifier. It does
 not claim media corruption, a real tool defect, a production reproduction or
 attested execution. A real reviewer should cite the verified source lines and
 observation fields it actually read.

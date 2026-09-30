@@ -55,6 +55,8 @@ jobs:
           persist-credentials: false
       - name: Install pinned Rust toolchain
         run: rustup toolchain install 1.94.1 --profile minimal
+      - name: Install CI dependency snapshot
+        run: cp ci/Cargo.lock output/casita-source/Cargo.lock
       - name: Build Casita with locked dependencies
         run: >-
           cargo +1.94.1 build --locked --package casita --bin casita

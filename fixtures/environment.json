@@ -1,0 +1,16 @@
+{
+  "schema": "casita-context-demo.environment.v1",
+  "repository": "docker.io/library/python",
+  "resolved_from_tag": "3.12-alpine",
+  "resolved_on": "2026-10-01",
+  "platforms": {
+    "linux/arm64": {
+      "manifest_digest": "sha256:34d4d54d6f68a1980ad02433a5078d998ab394d55c97d953efa50b442135baf2",
+      "config_digest": "sha256:54f0c1506c135da9a6b9cc0b0524b97e225b712ead8d601326d24f7e6619fede"
+    },
+    "linux/amd64": {
+      "manifest_digest": "sha256:9b8dad7f66b5c7751df6cb7a64a07812e86bed85d0116efe82b3a11209f1440d",
+      "config_digest": "sha256:8614a50e05881ad79bcf2d4f82028b65a463c03d2d666d255a4332e3d2a0c0ba"
+    }
+  }
+}

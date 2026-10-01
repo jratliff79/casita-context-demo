@@ -56,6 +56,12 @@ To split the sender, worker and return verifier into independent processes, use
 run on separate hosts. A recorded macOS → Apple Container Linux VM → macOS trial
 is included; it is not a physical remote-machine or execution-attestation claim.
 
+To carry a reviewed public Python image alongside both contexts, use the
+[pinned environment guide](docs/pinned-environment.md). It exports the OCI image
+layout and context graphs together, restores them into a fresh store, and can run
+the trusted checker in that restored image through Apple Container. The image
+manifest, config, layer digests and platform are verified before runtime loading.
+
 ## What Casita does here
 
 ```mermaid
@@ -174,6 +180,8 @@ Its handoff check uses a disposable fixture copy under `output/` and verifies
 restored file sets, exclusion of a generated Python cache, and result-return controls. This is a
 correctness check using a debug CLI build, not a performance benchmark. The workflow uses read-only
 permissions and does not upload raw receipts, stores or context archives.
+An additional OCI job builds with `--features oci` and checks image/context
+transport plus the trusted host checker. It does not run Apple Container.
 
 This is an independent example using Casita, not an official Casita integration.
 MIT licensed; contributions should keep the example small, reproducible and

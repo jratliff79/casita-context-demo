@@ -1,0 +1,66 @@
+{
+  "date": "2026-10-01",
+  "scope": "local macOS arm64 / Apple Container Linux arm64 trial with synthetic contexts and a reviewed public Python image",
+  "casita_source_commit": "aed18e32704c8f2bf821cc038720a77610a600ba",
+  "casita_features": [
+    "default",
+    "oci"
+  ],
+  "casita_binary_sha256": "d38adeff3a7ace92f713b895b2d804c4abef818c7a1cd93dd96a3b89cd9a9982",
+  "build_rust_version": "1.98.1",
+  "dependency_snapshot_sha256": "a4e093105e8470ead616da33df44c9f4c776635084fc570337ec8031ebdc8335",
+  "apple_container_version": "1.3.1",
+  "unit_tests_passed": 30,
+  "casita_commands_succeeded": 30,
+  "runtime_commands_succeeded": 4,
+  "archive_bytes": 18536432,
+  "pins": {
+    "archive_sha256": "09dbdf8168cedf5a152e7211075559a6c8dfcaac7ab4fa521ecca8614ab8cdc7",
+    "contexts": {
+      "v1": {
+        "context_id": "97ce5974b624799866dbff689439ab6e23749e7db623a76be48e3d97587b4140",
+        "directory_key": "casita.directory.v1:3THl6jgFwFxYyE_PzI3G53XhTmLGRxeNbR5wiBvIVp8"
+      },
+      "v2": {
+        "context_id": "de0fb65f8acb747c2e89328ed5d932efdc98002ec95298435c7aeec2c1a3bf52",
+        "directory_key": "casita.directory.v1:sQbrmLcKBarol_inSzOGzPK7vi8QIrX9fEv-MWapk5Q"
+      }
+    },
+    "image": {
+      "config_digest": "sha256:54f0c1506c135da9a6b9cc0b0524b97e225b712ead8d601326d24f7e6619fede",
+      "directory_key": "casita.directory.v1:0qYmUHnDcRv9wopV3Tzf2Gd19rAwsGVSqQtmbzBv2Rc",
+      "manifest_digest": "sha256:34d4d54d6f68a1980ad02433a5078d998ab394d55c97d953efa50b442135baf2",
+      "platform": "linux/arm64",
+      "reference": "docker.io/library/python@sha256:34d4d54d6f68a1980ad02433a5078d998ab394d55c97d953efa50b442135baf2"
+    },
+    "schema": "casita-context-demo.environment-pins.v1"
+  },
+  "result_archive_bytes": 2076,
+  "result_pins": {
+    "archive_sha256": "9985901299cc90891590afd7076b6d15c8f11f100063949c68781227d63c1e9d",
+    "schema": "casita-context-demo.result-pins.v1",
+    "v1": {
+      "directory_key": "casita.directory.v1:IFCwaNuwlffEeWw-cY0SrPeWZHM1Y3phmEWb0RT5Kdk",
+      "result_id": "bcfc7337c4e4ca387c12aee2457fb8d8d25889880443ec804b3fa187979fab94"
+    },
+    "v2": {
+      "directory_key": "casita.directory.v1:fGXzfjOhQHNLBFVfwJg_nfCtKayJHElOcKoCXqN1fGw",
+      "result_id": "848ac1a00adaca0eb58a7bb43f2fb68fb39d037378067afd21e84a8ffc3f2093"
+    }
+  },
+  "verdicts": {
+    "v1": "rejected: source or output audio timing unavailable",
+    "v2": "accepted"
+  },
+  "image_layout_verified": true,
+  "loaded_image_manifest_platform_and_config_checked": true,
+  "wrong_image_pin_rejected_before_runtime": true,
+  "worker_executed_in_container": true,
+  "networking_disabled": true,
+  "image_filesystem_and_inputs_read_only": true,
+  "original_contexts_verified": true,
+  "all_three_stores_audited": true,
+  "received_checker_executed": false,
+  "execution_attested": false,
+  "physical_remote_machine_tested": false
+}

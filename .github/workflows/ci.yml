@@ -153,3 +153,53 @@ jobs:
           assert returned["original_contexts_verified"]
           print("PASS: separate-process portable handoff and original-context result verification")
           PY
+
+  environment:
+    name: OCI environment transport
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      CARGO_BUILD_JOBS: '2'
+      CARGO_TERM_COLOR: never
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+      - name: Check out tested Casita source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          repository: cachix/casita
+          ref: aed18e32704c8f2bf821cc038720a77610a600ba
+          path: output/casita-source
+          persist-credentials: false
+      - name: Install pinned Rust toolchain and dependency snapshot
+        run: |
+          rustup toolchain install 1.94.1 --profile minimal
+          cp ci/Cargo.lock output/casita-source/Cargo.lock
+      - name: Build Casita with OCI support and locked dependencies
+        run: >-
+          cargo +1.94.1 build --locked --package casita --bin casita --features oci
+          --manifest-path output/casita-source/Cargo.toml
+          --target-dir output/casita-build
+      - name: Restore pinned public image and synthetic contexts into a fresh store
+        run: >-
+          python environment.py --casita output/casita-build/debug/casita
+          --output output/environment-handoff --platform linux/amd64 --runtime none
+      - name: Check transport scope and pre-runtime rejection
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          receipt = json.loads(Path("output/environment-handoff/receipt.json").read_text())
+          assert receipt["ok"] and receipt["image_layout_verified"]
+          assert receipt["original_contexts_verified"]
+          assert receipt["wrong_image_pin_rejected_before_runtime"]
+          assert receipt["worker_executed_in_container"] is False
+          assert receipt["received_checker_executed"] is False
+          assert receipt["execution_attested"] is False and receipt["runtime_commands"] == []
+          assert all(c["exit_code"] == 0 for c in receipt["commands"])
+          print("PASS: OCI image/context transport and trusted host check; no container runtime executed")
+          PY

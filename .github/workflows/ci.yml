@@ -93,7 +93,7 @@ jobs:
           receipt = json.loads((folder / "receipt.json").read_text())
           assert receipt["ok"] and receipt["tampered_context_rejected"]
           commands = receipt["commands"]
-          assert len(commands) == 20 and all(c["exit_code"] == 0 for c in commands)
+          assert all(c["exit_code"] == 0 for c in commands)
           pins = receipt["pins"]
           mappings = receipt["archive_import"]["mappings"]
           assert len(mappings) == 2
@@ -107,8 +107,31 @@ jobs:
                        for p in restored.rglob("*") if p.is_file()}
               assert files == {"source/verify.py", "observation.json",
                                "task.md", "manifest.json"}, files
+          returned = receipt["result_return"]
+          assert returned["received_code_executed"] is False
+          assert returned["sandbox_tested"] is False and returned["execution_attested"] is False
+          assert returned["negative_controls"] == {
+              "altered_result_rejected": True,
+              "rebound_result_rejected": True,
+              "result_for_other_context_rejected": True,
+          }
+          assert returned["verdicts"] == {
+              "v1": "rejected: source or output audio timing unavailable",
+              "v2": "accepted",
+          }
+          result_mappings = returned["archive_import"]["mappings"]
+          assert len(result_mappings) == 2
+          assert {m["root"] for m in result_mappings} == {
+              returned["pins"][v]["directory_key"] for v in ("v1", "v2")
+          }
+          for version in ("v1", "v2"):
+              result_folder = folder / "returned" / version
+              assert {p.name for p in result_folder.iterdir()} == {"result.json"}
+              result = json.loads((result_folder / "result.json").read_text())
+              assert result["context_id"] == pins[version]["context_id"]
+              assert result["context_directory_key"] == pins[version]["directory_key"]
           order = [m["root"] for m in mappings]
           reversed_order = order == [pins["v2"]["directory_key"], pins["v1"]["directory_key"]]
-          print("PASS: 20 commands, expected roots, exact file sets, cache exclusion and tamper rejection")
+          print(f"PASS: {len(commands)} commands, context/result roots, exact files, cache exclusion and negative controls")
           print(f"Observed reversed import order: {reversed_order}")
           PY

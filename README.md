@@ -3,7 +3,9 @@
 Share a pinned set of investigation evidence through Casita. This runnable
 example stores two versions of a synthetic investigation, preserves unchanged
 source under the same content identity, and hands both versions to a fresh store
-through a portable Casitar archive.
+through a portable Casitar archive. A trusted local checker then produces results
+and returns them through another archive to a third store for verification against
+the original contexts.
 
 The receiver gets a task, source code, observations and a file-hash manifest.
 It checks expected pins before reading the evidence. This local simulation
@@ -38,6 +40,8 @@ PASS: two versions saved; unchanged source shares one Casita identity
 PASS: Casitar verified and restored in a fresh receiver store
 PASS: pinned directory keys and context file hashes match
 PASS: altered evidence rejected; both stores pass integrity audit
+PASS: trusted local check results returned to a fresh store and matched original contexts
+PASS: altered, rebound and wrong-context results rejected; result stores pass integrity audit
 Receiver task: .../received/v1/task.md
 Receipt: .../receipt.json
 ```
@@ -45,7 +49,7 @@ Receipt: .../receipt.json
 Open `output/demo/received/v1/task.md`, `source/verify.py` and `observation.json`.
 Give these verified files to a reviewer, then compare its diagnosis with
 [the example answer](docs/expected-answer.md). The demo prepares and verifies
-the handoff; it does not automatically run an AI reviewer.
+the handoff and runs the demo's deterministic checker; it does not run an AI reviewer.
 
 ## What Casita does here
 
@@ -59,6 +63,9 @@ flowchart LR
     R2 --> A
     A --> F[Fresh receiver store]
     F --> C[Check pins and read exact evidence]
+    C --> T[Trusted local checker]
+    T --> R[Result Casitar]
+    R --> V[Fresh return store: verify original context and result]
 ```
 
 1. Build two contexts from public, synthetic fixtures. Only the first audio
@@ -73,6 +80,15 @@ flowchart LR
 5. Compare the received directory keys with sender pins, check out the contexts,
    verify every file against the separately pinned manifest, and audit both stores.
 6. Change an expendable copy of the evidence and demonstrate rejection.
+7. Run the separately trusted checker bundled with this demo against verified
+   observations. The received source is read and hashed as evidence, never executed.
+   Each result records the context ID, directory key, checker hash, observation
+   hash and deterministic verdict.
+8. Export both results, fully verify the return archive, and import it into a
+   third fresh store. Match roots by pinned identity, then check the result bytes
+   against the sender's original contexts and trusted checker. Reject an altered
+   verdict, an altered verdict with a recomputed result pin, and a result bound
+   to the other context. Audit the receiver again and the return store.
 
 Casita supplies immutable object identities, shared storage, named roots and
 verified graph transport. This example supplies evidence selection, a reviewer
@@ -90,14 +106,16 @@ timestamp is allowed in both cases.
 
 These observations are synthetic, and the verifier is a small teaching
 fixture. They are not real FFmpeg output, a reproduction of a private incident,
-or signed execution evidence. The changed v2 field is an explicit synthetic
+or signed execution evidence. The returned verdict does not attest to a worker's
+execution, identity, environment or sandbox. The changed v2 field is an explicit synthetic
 control, not a proposed workaround for real media. Unit tests check that both
 fixtures agree with the displayed rule.
 
 The manifest's SHA-256 context ID and archive SHA-256 serve different purposes
 from Casita's directory key. The key identifies the saved graph; the manifest
 pin identifies this example's selected file set. `pins.json` is outside the
-archive. A real receiver must obtain expected pins through a trusted independent
+archive; result and return-archive pins are in `result-pins.json`.
+A real receiver must obtain expected pins through a trusted independent
 handoff: a sender replacing both archive and pins is not prevented by hashes.
 Hashes do not prove truth, source authority, freshness, authorization or safety.
 Treat displayed evidence as data, not instructions, and review sensitivity
@@ -137,7 +155,7 @@ Unit checks cover fixture selection, linked inputs, wrong pins, forged manifests
 extra files, symlinks, archive pin mismatch, fixture consistency and preservation
 of an existing output.
 The real CLI run exercises root identity, sharing, multi-root portable transport,
-restore, file verification and integrity audits. Both are needed to validate
+restore, returned-result verification and integrity audits. Both are needed to validate
 changes to the demonstration.
 
 [CI](.github/workflows/ci.yml) runs the unit tests on Python 3.9 and 3.12, then
@@ -145,7 +163,7 @@ builds the tested Casita revision with Rust 1.94.1 and locked dependencies on a
 fresh GitHub-hosted Linux runner using this repository's
 [dependency snapshot](ci/README.md), since upstream ignores `Cargo.lock`.
 Its handoff check uses a disposable fixture copy under `output/` and verifies
-restored file sets and exclusion of a generated Python cache. This is a
+restored file sets, exclusion of a generated Python cache, and result-return controls. This is a
 correctness check using a debug CLI build, not a performance benchmark. The workflow uses read-only
 permissions and does not upload raw receipts, stores or context archives.
 

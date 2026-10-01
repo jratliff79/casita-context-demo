@@ -10,6 +10,7 @@ import subprocess
 import sys
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
+TRUSTED_CHECKER = FIXTURES / "source/verify.py"
 MAX_BYTES = 1_000_000
 
 
@@ -112,6 +113,112 @@ def checked_archive(archive, expected_sha):
         raise ValueError("archive SHA-256 mismatch")
 
 
+def load_trusted_checker():
+    # Execute only this repository's fixed local checker. Compile the same bytes
+    # we hash, without package resolution or a cached Python bytecode lookup.
+    data = TRUSTED_CHECKER.read_bytes()
+    namespace = {"__name__": "casita_demo_trusted_checker"}
+    exec(compile(data, str(TRUSTED_CHECKER), "exec"), namespace)
+    return namespace["verify"], digest(data)
+
+
+def expected_result(context, context_id, directory_key):
+    """Use the repository's trusted checker; received source is data only."""
+    verify_context(context, context_id)
+    trusted_verify, checker_sha = load_trusted_checker()
+    if digest((context / "source/verify.py").read_bytes()) != checker_sha:
+        raise ValueError("received checker differs from trusted local checker")
+    observation = json.loads((context / "observation.json").read_bytes())
+    return {
+        "schema": "casita-context-demo.result.v1",
+        "scope": "synthetic deterministic check; host execution unattested",
+        "context_id": context_id,
+        "context_directory_key": directory_key,
+        "checker_sha256": checker_sha,
+        "observation_sha256": digest((context / "observation.json").read_bytes()),
+        "verdict": trusted_verify(observation["source_packets"], observation["output_audio_duration"]),
+    }
+
+
+def verify_result(folder, result_id, context, context_id, directory_key):
+    if not re.fullmatch(r"[0-9a-f]{64}", result_id):
+        raise ValueError("expected result ID must be a SHA-256 digest")
+    actual = file_map(folder)
+    if actual != {"result.json": result_id}:
+        raise ValueError("result file set or pin mismatch")
+    expected = canonical(expected_result(context, context_id, directory_key))
+    if (folder / "result.json").read_bytes() != expected:
+        raise ValueError("result does not match original context and trusted checker")
+
+
+def return_results(binary, output, receiver, pins, commands):
+    returned = Casita(binary, output / "returned-store", commands)
+    returned.run("init")
+    result_pins = {}
+    verdicts = {}
+    for version in ("v1", "v2"):
+        pin = pins[version]
+        result = expected_result(output / "received" / version, pin["context_id"], pin["directory_key"])
+        folder = output / "results" / version
+        folder.mkdir(parents=True)
+        data = canonical(result)
+        (folder / "result.json").write_bytes(data)
+        receiver.run("import", folder, "--root", f"result/{version}")
+        result_pins[version] = {"result_id": digest(data),
+                                "directory_key": receiver.roots()[f"result/{version}"]}
+        verdicts[version] = result["verdict"]
+    archive = output / "results.casitar"
+    creation = json.loads(receiver.run("archive", "create", "--root", "result/v1",
+                                      "--root", "result/v2", "--output", archive, "--json"))
+    result_pins["archive_sha256"] = digest(archive.read_bytes())
+    (output / "result-pins.json").write_bytes(canonical(result_pins))
+    expected = json.loads((output / "result-pins.json").read_bytes())
+    checked_archive(archive, expected["archive_sha256"])
+    verification = json.loads(receiver.run("archive", "verify", archive, "--json"))
+    imported = json.loads(returned.run("archive", "import", archive, "--root-prefix", "returned", "--json"))
+    roots = returned.roots()
+    if len(roots) != 2 or set(roots.values()) != {expected[v]["directory_key"] for v in ("v1", "v2")}:
+        raise ValueError("returned roots do not match expected result keys")
+    for version in ("v1", "v2"):
+        folder = output / "returned" / version
+        folder.parent.mkdir(exist_ok=True)
+        returned.run("checkout", expected[version]["directory_key"], folder, "--no-root")
+        # Validate against original sender evidence, not a receiver's claim.
+        verify_result(folder, expected[version]["result_id"], output / "contexts" / version,
+                      pins[version]["context_id"], pins[version]["directory_key"])
+    altered = output / "tampered-result"
+    altered.mkdir()
+    data = json.loads((output / "returned/v1/result.json").read_bytes())
+    data["verdict"] = "accepted"
+    altered_bytes = canonical(data)
+    (altered / "result.json").write_bytes(altered_bytes)
+    controls = {}
+    for label, result_id, context_version in (
+        ("altered_result_rejected", expected["v1"]["result_id"], "v1"),
+        ("rebound_result_rejected", digest(altered_bytes), "v1"),
+    ):
+        try:
+            verify_result(altered, result_id, output / "contexts" / context_version,
+                          pins[context_version]["context_id"], pins[context_version]["directory_key"])
+        except ValueError:
+            controls[label] = True
+        else:
+            raise ValueError("altered result was accepted")
+    try:
+        verify_result(output / "returned/v1", expected["v1"]["result_id"], output / "contexts/v2",
+                      pins["v2"]["context_id"], pins["v2"]["directory_key"])
+    except ValueError:
+        controls["result_for_other_context_rejected"] = True
+    else:
+        raise ValueError("result for a different context was accepted")
+    receiver.run("fsck", "--dry-run")
+    returned.run("fsck", "--dry-run")
+    return {"pins": expected, "verdicts": verdicts, "archive_bytes": archive.stat().st_size,
+            "archive_create": creation, "archive_verification": verification, "archive_import": imported,
+            "negative_controls": controls, "execution": "trusted local Python function",
+            "received_code_executed": False, "sandbox_tested": False, "execution_attested": False}
+
+
 def run_demo(binary, output):
     output = output.resolve()
     output.mkdir(parents=True, exist_ok=False)
@@ -179,8 +286,9 @@ def run_demo(binary, output):
             receipt["tampered_context_rejected"] = True
         else:
             raise ValueError("altered evidence was accepted")
+        receipt["result_return"] = return_results(binary, output, receiver, expected, commands)
         receipt.update({"ok": True, "pins": expected, "archive_bytes": archive.stat().st_size,
-                        "scope": "local synthetic packaging/restore; no AI or media execution",
+                        "scope": "local synthetic context/result transport and trusted deterministic check; no AI or media execution",
                         "next": "Read received/v1/task.md, source/verify.py and observation.json as evidence."})
     except Exception as error:
         receipt.update({"ok": False, "error": str(error)})
@@ -191,6 +299,8 @@ def run_demo(binary, output):
     print("PASS: Casitar verified and restored in a fresh receiver store")
     print("PASS: pinned directory keys and context file hashes match")
     print("PASS: altered evidence rejected; both stores pass integrity audit")
+    print("PASS: trusted local check results returned to a fresh store and matched original contexts")
+    print("PASS: altered, rebound and wrong-context results rejected; result stores pass integrity audit")
     print(f"Receiver task: {output / 'received/v1/task.md'}")
     print(f"Receipt: {output / 'receipt.json'}")
     return receipt

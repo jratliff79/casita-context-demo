@@ -1,11 +1,14 @@
 import json
+import os
 from pathlib import Path
 import tempfile
+import subprocess
+import sys
 import unittest
 from unittest.mock import patch
 
 import demo
-from fixtures.source.verify import verify
+verify, _ = demo.load_trusted_checker()
 
 
 class HandoffChecks(unittest.TestCase):
@@ -90,6 +93,90 @@ class HandoffChecks(unittest.TestCase):
             observation = json.loads((demo.FIXTURES / version / "observation.json").read_bytes())
             self.assertEqual(verify(observation["source_packets"], observation["output_audio_duration"]),
                              observation["verification_result"])
+
+    def test_results_match_both_original_contexts(self):
+        for version in ("v1", "v2"):
+            context = Path(self.temp.name) / version
+            pin = demo.create_context(context, version)
+            result = demo.expected_result(context, pin, "synthetic-directory-key")
+            observation = json.loads((context / "observation.json").read_bytes())
+            self.assertEqual(result["verdict"], observation["verification_result"])
+            folder = Path(self.temp.name) / (version + "-result")
+            folder.mkdir()
+            data = demo.canonical(result)
+            (folder / "result.json").write_bytes(data)
+            demo.verify_result(folder, demo.digest(data), context, pin, "synthetic-directory-key")
+
+    def test_foreign_fixtures_package_cannot_replace_the_hashed_checker(self):
+        package = Path(self.temp.name) / "fixtures"
+        (package / "source").mkdir(parents=True)
+        (package / "__init__.py").write_text("")
+        (package / "source/__init__.py").write_text("")
+        (package / "source/verify.py").write_text("raise AssertionError('foreign checker executed')\n")
+        script = """import json, os, tempfile
+from pathlib import Path
+import fixtures
+assert Path(fixtures.__file__) == Path(os.environ['PYTHONPATH']) / 'fixtures/__init__.py'
+import demo
+with tempfile.TemporaryDirectory() as directory:
+    context = Path(directory) / 'context'
+    pin = demo.create_context(context, 'v1')
+    print(json.dumps(demo.expected_result(context, pin, 'synthetic-key')))
+"""
+        result = subprocess.run([sys.executable, "-B", "-c", script],
+            cwd=demo.FIXTURES.parent, env={**os.environ, "PYTHONPATH": self.temp.name},
+            capture_output=True, text=True, timeout=10)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        returned = json.loads(result.stdout)
+        self.assertEqual(returned["checker_sha256"], demo.digest(demo.TRUSTED_CHECKER.read_bytes()))
+        self.assertEqual(returned["verdict"], "rejected: source or output audio timing unavailable")
+
+    def test_altered_rebound_and_wrong_context_results_rejected(self):
+        folder = Path(self.temp.name) / "result"
+        folder.mkdir()
+        data = demo.canonical(demo.expected_result(self.folder, self.pin, "original-key"))
+        result_path = folder / "result.json"
+        result_path.write_bytes(data)
+        with self.assertRaisesRegex(ValueError, "original context"):
+            demo.verify_result(folder, demo.digest(data), self.folder, self.pin, "other-key")
+        for field, value in (("verdict", "accepted"), ("checker_sha256", "0" * 64)):
+            with self.subTest(field=field):
+                altered = json.loads(data)
+                altered[field] = value
+                raw = demo.canonical(altered)
+                result_path.write_bytes(raw)
+                with self.assertRaisesRegex(ValueError, "pin mismatch"):
+                    demo.verify_result(folder, demo.digest(data), self.folder, self.pin, "original-key")
+                with self.assertRaisesRegex(ValueError, "trusted checker"):
+                    demo.verify_result(folder, demo.digest(raw), self.folder, self.pin, "original-key")
+
+    def test_replaced_received_checker_rejected_even_with_new_manifest_pin(self):
+        checker = self.folder / "source/verify.py"
+        checker.write_text("raise AssertionError('received source executed')\n")
+        manifest_path = self.folder / "manifest.json"
+        manifest = json.loads(manifest_path.read_bytes())
+        manifest["files"]["source/verify.py"] = demo.digest(checker.read_bytes())
+        data = demo.canonical(manifest)
+        manifest_path.write_bytes(data)
+        with self.assertRaisesRegex(ValueError, "trusted local checker"):
+            demo.expected_result(self.folder, demo.digest(data), "original-key")
+
+    def test_unlisted_and_linked_result_files_rejected(self):
+        folder = Path(self.temp.name) / "result"
+        folder.mkdir()
+        data = demo.canonical(demo.expected_result(self.folder, self.pin, "original-key"))
+        result_path = folder / "result.json"
+        result_path.write_bytes(data)
+        extra = folder / "extra.txt"
+        extra.write_text("unlisted")
+        with self.assertRaisesRegex(ValueError, "file set"):
+            demo.verify_result(folder, demo.digest(data), self.folder, self.pin, "original-key")
+        extra.unlink()
+        outside = Path(self.temp.name) / "outside-result.json"
+        result_path.rename(outside)
+        result_path.symlink_to(outside)
+        with self.assertRaisesRegex(ValueError, "link"):
+            demo.verify_result(folder, demo.digest(data), self.folder, self.pin, "original-key")
 
 
 if __name__ == "__main__":

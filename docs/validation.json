@@ -1,11 +1,11 @@
 {
-  "date": "2026-09-30",
-  "scope": "local synthetic packaging/restore; no AI or media execution",
+  "date": "2026-10-01",
+  "scope": "local synthetic context/result transport and trusted deterministic check; no AI or media execution",
   "casita_source_commit": "b8366af1d3859b47db9cb45f910522b7c24ee35d",
   "casita_binary_sha256": "823a11b73b460303fa24522eb55e9f3b33873af44f05366029c8b29f8f02a45d",
   "casita_version": "casita 0.1.0",
-  "unit_tests_passed": 9,
-  "casita_commands_succeeded": 20,
+  "unit_tests_passed": 14,
+  "casita_commands_succeeded": 33,
   "archive_bytes": 5880,
   "pins": {
     "archive_sha256": "83ed4005d270e522b7b4f4d6fb40361009eff90b347e0b435cfd0434567d3829",
@@ -21,9 +21,37 @@
   "shared_source_directory_key": "casita.directory.v1:mhAbfLepYDCcCDaUBp1FIGpSE7fdp_l_UUUmBMW2YPY",
   "tampered_context_rejected": true,
   "archive_validity": "verified",
-  "both_integrity_audits_passed": true,
   "packaging_allowlist_verified": true,
   "linked_fixture_inputs_rejected": true,
   "receiver_roots_matched_by_identity": true,
-  "reversed_import_order_verified": true
+  "reversed_import_order_verified": true,
+  "all_three_stores_audited": true,
+  "result_return": {
+    "pins": {
+      "archive_sha256": "9985901299cc90891590afd7076b6d15c8f11f100063949c68781227d63c1e9d",
+      "v1": {
+        "directory_key": "casita.directory.v1:IFCwaNuwlffEeWw-cY0SrPeWZHM1Y3phmEWb0RT5Kdk",
+        "result_id": "bcfc7337c4e4ca387c12aee2457fb8d8d25889880443ec804b3fa187979fab94"
+      },
+      "v2": {
+        "directory_key": "casita.directory.v1:fGXzfjOhQHNLBFVfwJg_nfCtKayJHElOcKoCXqN1fGw",
+        "result_id": "848ac1a00adaca0eb58a7bb43f2fb68fb39d037378067afd21e84a8ffc3f2093"
+      }
+    },
+    "archive_bytes": 2076,
+    "verdicts": {
+      "v1": "rejected: source or output audio timing unavailable",
+      "v2": "accepted"
+    },
+    "negative_controls": {
+      "altered_result_rejected": true,
+      "rebound_result_rejected": true,
+      "result_for_other_context_rejected": true
+    },
+    "execution": "trusted local Python function",
+    "received_code_executed": false,
+    "sandbox_tested": false,
+    "execution_attested": false
+  },
+  "foreign_checker_package_rejected": true
 }

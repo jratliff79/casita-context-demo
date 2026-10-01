@@ -1,0 +1,114 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit:
+    name: Unit tests (Python ${{ matrix.python }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      PYTHONPYCACHEPREFIX: ${{ github.workspace }}/output/python-cache
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.9', '3.12']
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Run unit tests
+        run: python -m unittest discover -s tests -v
+
+  handoff:
+    name: Casita handoff
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      CARGO_BUILD_JOBS: '2'
+      CARGO_TERM_COLOR: never
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+      - name: Check out tested Casita source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          repository: cachix/casita
+          ref: b8366af1d3859b47db9cb45f910522b7c24ee35d
+          path: output/casita-source
+          persist-credentials: false
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install 1.94.1 --profile minimal
+      - name: Install CI dependency snapshot
+        run: cp ci/Cargo.lock output/casita-source/Cargo.lock
+      - name: Build Casita with locked dependencies
+        run: >-
+          cargo +1.94.1 build --locked --package casita --bin casita
+          --manifest-path output/casita-source/Cargo.toml
+          --target-dir output/casita-build
+      - name: Stage disposable fixtures and generate a cache
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import shutil
+
+          work = Path("output/ci-worktree")
+          for name in ("demo.py", "fixtures/source/verify.py",
+                       "fixtures/v1/observation.json", "fixtures/v1/task.md",
+                       "fixtures/v2/observation.json", "fixtures/v2/task.md"):
+              target = work / name
+              target.parent.mkdir(parents=True, exist_ok=True)
+              shutil.copyfile(name, target)
+          PY
+          python -m py_compile output/ci-worktree/fixtures/source/verify.py
+      - name: Run fresh-store handoff
+        run: >-
+          python output/ci-worktree/demo.py --casita output/casita-build/debug/casita
+          --output output/ci-handoff
+      - name: Check receipt and exact restored file sets
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          folder = Path("output/ci-handoff")
+          receipt = json.loads((folder / "receipt.json").read_text())
+          assert receipt["ok"] and receipt["tampered_context_rejected"]
+          commands = receipt["commands"]
+          assert len(commands) == 20 and all(c["exit_code"] == 0 for c in commands)
+          pins = receipt["pins"]
+          mappings = receipt["archive_import"]["mappings"]
+          assert len(mappings) == 2
+          assert {m["root"] for m in mappings} == {
+              pins[version]["directory_key"] for version in ("v1", "v2")
+          }
+          assert list(Path("output/ci-worktree/fixtures/source/__pycache__").glob("*.pyc"))
+          for version in ("v1", "v2"):
+              restored = folder / "received" / version
+              files = {p.relative_to(restored).as_posix()
+                       for p in restored.rglob("*") if p.is_file()}
+              assert files == {"source/verify.py", "observation.json",
+                               "task.md", "manifest.json"}, files
+          order = [m["root"] for m in mappings]
+          reversed_order = order == [pins["v2"]["directory_key"], pins["v1"]["directory_key"]]
+          print("PASS: 20 commands, expected roots, exact file sets, cache exclusion and tamper rejection")
+          print(f"Observed reversed import order: {reversed_order}")
+          PY

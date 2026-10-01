@@ -1,5 +1,9 @@
 # Local validation
 
+This records the earlier `b8366af1` macOS build. The current source pin in
+[CI](../.github/workflows/ci.yml) is validated separately on hosted Linux.
+Changing that pin does not change the historical local receipt below.
+
 On 2026-10-01, fourteen unit checks passed and the real Casita end-to-end demo
 completed all 33 commands successfully on macOS arm64. The context archive
 was 5,880 bytes, with two distinct context roots and one shared unchanged

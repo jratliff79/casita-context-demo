@@ -71,7 +71,7 @@ jobs:
           import shutil
 
           work = Path("output/ci-worktree")
-          for name in ("demo.py", "fixtures/source/verify.py",
+          for name in ("demo.py", "handoff.py", "fixtures/source/verify.py",
                        "fixtures/v1/observation.json", "fixtures/v1/task.md",
                        "fixtures/v2/observation.json", "fixtures/v2/task.md"):
               target = work / name
@@ -134,4 +134,22 @@ jobs:
           reversed_order = order == [pins["v2"]["directory_key"], pins["v1"]["directory_key"]]
           print(f"PASS: {len(commands)} commands, context/result roots, exact files, cache exclusion and negative controls")
           print(f"Observed reversed import order: {reversed_order}")
+          PY
+      - name: Run separate sender, worker and return-verifier processes
+        run: |
+          python output/ci-worktree/handoff.py prepare --casita output/casita-build/debug/casita --output output/portable-sender
+          python output/ci-worktree/handoff.py work --casita output/casita-build/debug/casita --archive output/portable-sender/handoff.casitar --pins output/portable-sender/pins.json --output output/portable-worker
+          python output/ci-worktree/handoff.py verify --casita output/casita-build/debug/casita --archive output/portable-worker/handoff.casitar --pins output/portable-worker/pins.json --original output/portable-sender --output output/portable-return
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          for role in ("sender", "worker", "return"):
+              receipt = json.loads(Path(f"output/portable-{role}/receipt.json").read_text())
+              assert receipt["ok"] and all(c["exit_code"] == 0 for c in receipt["commands"])
+          worker = json.loads(Path("output/portable-worker/receipt.json").read_text())
+          assert worker["verdicts"] == {"v1": "rejected: source or output audio timing unavailable", "v2": "accepted"}
+          assert worker["received_code_executed"] is False and worker["execution_attested"] is False
+          returned = json.loads(Path("output/portable-return/receipt.json").read_text())
+          assert returned["original_contexts_verified"]
+          print("PASS: separate-process portable handoff and original-context result verification")
           PY

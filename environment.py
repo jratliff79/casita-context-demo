@@ -173,9 +173,13 @@ def load_apple_image(folder, pin, output, commands):
             info.mode, info.size = 0o644, len(data)
             tar.addfile(info, io.BytesIO(data))
     runtime_run(["container", "image", "load", "--input", archive], commands)
-    inspected = json.loads(runtime_run(["container", "image", "inspect", name], commands))
-    config = read_json(folder / "blobs/sha256" / pin["config_digest"].removeprefix("sha256:"))
-    verify_runtime_image(inspected, name, pin, config)
+    try:
+        inspected = json.loads(runtime_run(["container", "image", "inspect", name], commands))
+        config = read_json(folder / "blobs/sha256" / pin["config_digest"].removeprefix("sha256:"))
+        verify_runtime_image(inspected, name, pin, config)
+    except BaseException:
+        runtime_run(["container", "image", "delete", name], commands)
+        raise
     return name
 
 
@@ -249,12 +253,12 @@ def run(args):
         results_folder = output / "results"
         results_folder.mkdir()
         if args.runtime == "apple":
-            name = load_apple_image(layout, pin, output, receipt["runtime_commands"])
             trusted = output / "trusted"
             (trusted / "fixtures/source").mkdir(parents=True)
             shutil.copyfile(HERE / "demo.py", trusted / "demo.py")
             shutil.copyfile(demo.TRUSTED_CHECKER, trusted / "fixtures/source/verify.py")
             (trusted / "pins.json").write_bytes(demo.canonical(context_pins))
+            name = load_apple_image(layout, pin, output, receipt["runtime_commands"])
             try:
                 runtime_run(["container", "run", "--rm", "--cpus", "1", "--memory", "512M",
                              "--read-only", "--network", "none", "--entrypoint", "python",

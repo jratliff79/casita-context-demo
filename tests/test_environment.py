@@ -53,6 +53,18 @@ class EnvironmentChecks(unittest.TestCase):
                 environment.load_apple_image(self.layout, self.pin, self.folder, [])
         run.assert_not_called()
 
+    def test_post_load_failures_delete_only_the_generated_image_name(self):
+        for inspect_result in ("invalid JSON", RuntimeError("inspection failed"), "[]"):
+            with self.subTest(inspect_result=inspect_result):
+                with patch("environment.runtime_run", side_effect=["loaded", inspect_result, "deleted"]) as run:
+                    with self.assertRaises((ValueError, RuntimeError)):
+                        environment.load_apple_image(self.layout, self.pin, self.folder, [])
+                calls = run.call_args_list
+                self.assertEqual(len(calls), 3)
+                inspected_name = calls[1].args[0][-1]
+                self.assertTrue(inspected_name.startswith("localhost/casita-context-demo-worker:"))
+                self.assertEqual(calls[2].args[0], ["container", "image", "delete", inspected_name])
+
     def test_extra_files_and_links_rejected(self):
         extra = self.layout / "extra"
         extra.write_bytes(b"not part of this image")

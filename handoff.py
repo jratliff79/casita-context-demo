@@ -16,7 +16,10 @@ MAX_TRANSFER_BYTES = 1_000_000
 
 
 def read_pins(path, role):
-    raw = path.read_bytes()
+    if path.is_symlink() or not path.is_file():
+        raise ValueError("pin input must be a regular file without links")
+    with path.open("rb") as stream:
+        raw = stream.read(10_001)
     if len(raw) > 10_000:
         raise ValueError("pin file exceeds limit")
     pins = json.loads(raw)
@@ -49,6 +52,8 @@ def export(store, output, prefix, pins, role, receipt):
 
 def receive(store, archive, pins, output, receipt):
     # Pins must arrive through a trusted channel outside the archive.
+    if archive.is_symlink() or not archive.is_file():
+        raise ValueError("archive input must be a regular file without links")
     if archive.stat().st_size > MAX_TRANSFER_BYTES:
         raise ValueError("archive exceeds demo transfer limit")
     demo.checked_archive(archive, pins["archive_sha256"])

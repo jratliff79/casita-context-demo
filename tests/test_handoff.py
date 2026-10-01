@@ -41,6 +41,18 @@ class PortableWorkerChecks(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "limit"):
             handoff.read_pins(path, "input")
 
+    def test_linked_transfer_inputs_rejected(self):
+        regular = self.folder / "regular.json"
+        regular.write_bytes(demo.canonical(self.pins))
+        linked = self.folder / "linked.json"
+        linked.symlink_to(regular)
+        with self.assertRaisesRegex(ValueError, "regular file"):
+            handoff.read_pins(linked, "input")
+        store = Mock()
+        with self.assertRaisesRegex(ValueError, "regular file"):
+            handoff.receive(store, linked, self.pins, self.folder, {})
+        store.run.assert_not_called()
+
     def test_wrong_archive_pin_rejected_before_store_initialization(self):
         archive = self.folder / "input.casitar"
         archive.write_bytes(b"unexpected archive")

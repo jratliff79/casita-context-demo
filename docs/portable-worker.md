@@ -33,7 +33,8 @@ python3 handoff.py work --casita /path/to/casita \
   --output output/worker
 ```
 
-Input pin schemas and identifiers are checked. Archive size is bounded to 1 MB,
+Input pin schemas and identifiers are checked. Transfer inputs must be regular
+files without links. Pin reads are capped at 10 KB; archive size is bounded to 1 MB,
 and its expected SHA-256 is checked before store initialization or import.
 Imported roots must match the expected keys, independent of archive ordering.
 Manifest/file hashes are checked before the local checker reads observations.

@@ -1,6 +1,6 @@
 # Local validation
 
-On 2026-10-01, thirteen unit checks passed and the real Casita end-to-end demo
+On 2026-10-01, fourteen unit checks passed and the real Casita end-to-end demo
 completed all 33 commands successfully on macOS arm64. The context archive
 was 5,880 bytes, with two distinct context roots and one shared unchanged
 source directory identity. Both restored contexts matched their expected
@@ -22,7 +22,7 @@ archive order preserved the requested version order.
 The [sanitized receipt summary](validation.json) records the tested Casita
 source revision, executable hash, context pins, archive hash and shared object
 key, plus result-return pins and controls. Raw commands and results remain under
-ignored `output/result-return-validation/receipt.json`; they can contain local paths.
+ignored `output/result-return-checker-validation/receipt.json`; they can contain local paths.
 
 Before publication, packaging was changed from copying a whole source directory
 to selecting only three intended fixture files. Regression checks confirm that
@@ -30,6 +30,10 @@ Python caches and unselected local files are excluded and linked fixture inputs
 are rejected. The real run then restored exactly those three evidence files and
 their manifest in each context. This review covers the demo's selected synthetic
 inputs, not arbitrary future user-supplied data or Casita's implementation.
+
+A regression test places an overriding regular `fixtures` package on Python's
+search path. The checker is loaded directly from the same fixed repository bytes
+that are hashed, so that foreign package cannot supply a different callable.
 
 Reproduce from the repository root with the tested Casita build:
 

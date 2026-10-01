@@ -9,9 +9,8 @@ import shutil
 import subprocess
 import sys
 
-from fixtures.source.verify import verify as trusted_verify
-
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
+TRUSTED_CHECKER = FIXTURES / "source/verify.py"
 MAX_BYTES = 1_000_000
 
 
@@ -114,10 +113,19 @@ def checked_archive(archive, expected_sha):
         raise ValueError("archive SHA-256 mismatch")
 
 
+def load_trusted_checker():
+    # Execute only this repository's fixed local checker. Compile the same bytes
+    # we hash, without package resolution or a cached Python bytecode lookup.
+    data = TRUSTED_CHECKER.read_bytes()
+    namespace = {"__name__": "casita_demo_trusted_checker"}
+    exec(compile(data, str(TRUSTED_CHECKER), "exec"), namespace)
+    return namespace["verify"], digest(data)
+
+
 def expected_result(context, context_id, directory_key):
     """Use the repository's trusted checker; received source is data only."""
     verify_context(context, context_id)
-    checker_sha = digest((FIXTURES / "source/verify.py").read_bytes())
+    trusted_verify, checker_sha = load_trusted_checker()
     if digest((context / "source/verify.py").read_bytes()) != checker_sha:
         raise ValueError("received checker differs from trusted local checker")
     observation = json.loads((context / "observation.json").read_bytes())

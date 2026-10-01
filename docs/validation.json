@@ -4,7 +4,7 @@
   "casita_source_commit": "b8366af1d3859b47db9cb45f910522b7c24ee35d",
   "casita_binary_sha256": "823a11b73b460303fa24522eb55e9f3b33873af44f05366029c8b29f8f02a45d",
   "casita_version": "casita 0.1.0",
-  "unit_tests_passed": 13,
+  "unit_tests_passed": 14,
   "casita_commands_succeeded": 33,
   "archive_bytes": 5880,
   "pins": {
@@ -52,5 +52,6 @@
     "received_code_executed": false,
     "sandbox_tested": false,
     "execution_attested": false
-  }
+  },
+  "foreign_checker_package_rejected": true
 }

@@ -1,11 +1,14 @@
 import json
+import os
 from pathlib import Path
 import tempfile
+import subprocess
+import sys
 import unittest
 from unittest.mock import patch
 
 import demo
-from fixtures.source.verify import verify
+verify, _ = demo.load_trusted_checker()
 
 
 class HandoffChecks(unittest.TestCase):
@@ -103,6 +106,30 @@ class HandoffChecks(unittest.TestCase):
             data = demo.canonical(result)
             (folder / "result.json").write_bytes(data)
             demo.verify_result(folder, demo.digest(data), context, pin, "synthetic-directory-key")
+
+    def test_foreign_fixtures_package_cannot_replace_the_hashed_checker(self):
+        package = Path(self.temp.name) / "fixtures"
+        (package / "source").mkdir(parents=True)
+        (package / "__init__.py").write_text("")
+        (package / "source/__init__.py").write_text("")
+        (package / "source/verify.py").write_text("raise AssertionError('foreign checker executed')\n")
+        script = """import json, os, tempfile
+from pathlib import Path
+import fixtures
+assert Path(fixtures.__file__) == Path(os.environ['PYTHONPATH']) / 'fixtures/__init__.py'
+import demo
+with tempfile.TemporaryDirectory() as directory:
+    context = Path(directory) / 'context'
+    pin = demo.create_context(context, 'v1')
+    print(json.dumps(demo.expected_result(context, pin, 'synthetic-key')))
+"""
+        result = subprocess.run([sys.executable, "-B", "-c", script],
+            cwd=demo.FIXTURES.parent, env={**os.environ, "PYTHONPATH": self.temp.name},
+            capture_output=True, text=True, timeout=10)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        returned = json.loads(result.stdout)
+        self.assertEqual(returned["checker_sha256"], demo.digest(demo.TRUSTED_CHECKER.read_bytes()))
+        self.assertEqual(returned["verdict"], "rejected: source or output audio timing unavailable")
 
     def test_altered_rebound_and_wrong_context_results_rejected(self):
         folder = Path(self.temp.name) / "result"

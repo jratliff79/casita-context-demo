@@ -52,7 +52,7 @@ jobs:
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           repository: cachix/casita
-          ref: b8366af1d3859b47db9cb45f910522b7c24ee35d
+          ref: aed18e32704c8f2bf821cc038720a77610a600ba
           path: output/casita-source
           persist-credentials: false
       - name: Install pinned Rust toolchain

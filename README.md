@@ -132,22 +132,25 @@ no claim about model accuracy, token reduction, speed or net storage savings.
 
 ## Tested Casita build
 
-The initial demo is tested against Casita source commit
-`b8366af1d3859b47db9cb45f910522b7c24ee35d`, with default CLI features. This is a
-pinned tested revision, not a claim that it is the newest upstream commit. Casita
-is pre-release and its CLI may change. To reproduce that build, follow upstream's
-source installation workflow with the tested revision:
+CI targets Casita source commit
+`aed18e32704c8f2bf821cc038720a77610a600ba`, with default CLI features. This was
+upstream `main` when checked on 2026-10-01. Keep the immutable pin when reproducing
+the checks; upstream may have advanced since then. Casita is pre-release and its
+CLI may change. Follow upstream's source installation workflow with this revision:
 
 ```sh
 git clone https://github.com/cachix/casita.git
 cd casita
-git checkout b8366af1d3859b47db9cb45f910522b7c24ee35d
+git checkout aed18e32704c8f2bf821cc038720a77610a600ba
 cargo install --path crates/casita --bin casita
 ```
 
 That source requires Rust 1.94.1 or newer. The demo receipt records the executable
 hash and reported version; a version string alone does not identify a source
-commit. See [validation](docs/validation.md) for the recorded local run.
+commit. The [local validation](docs/validation.md) and
+[cross-platform trial](docs/portable-worker.md#executed-cross-platform-trial)
+record the earlier `b8366af1` build; those historical receipts are not evidence
+of a local build at the current CI pin.
 
 ## Development
 

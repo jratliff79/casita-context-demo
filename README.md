@@ -51,6 +51,11 @@ Give these verified files to a reviewer, then compare its diagnosis with
 [the example answer](docs/expected-answer.md). The demo prepares and verifies
 the handoff and runs the demo's deterministic checker; it does not run an AI reviewer.
 
+To split the sender, worker and return verifier into independent processes, use
+[the portable worker guide](docs/portable-worker.md). The same three commands can
+run on separate hosts. A recorded macOS → Apple Container Linux VM → macOS trial
+is included; it is not a physical remote-machine or execution-attestation claim.
+
 ## What Casita does here
 
 ```mermaid

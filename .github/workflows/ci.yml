@@ -69,6 +69,13 @@ jobs:
           persist-credentials: false
       - name: Install pinned Rust toolchain
         run: rustup toolchain install 1.94.1 --profile minimal
+      - name: Check out immutable selected-Git review source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          repository: jratliff79/casita-context-demo
+          ref: 5cc171423d293ad5ca6b2e5323718d4f699e1136
+          path: output/git-review-source
+          persist-credentials: false
       - name: Install CI dependency snapshot
         run: cp ci/Cargo.lock output/casita-source/Cargo.lock
       - name: Build Casita with locked dependencies
@@ -234,6 +241,32 @@ jobs:
               assert role["ok"] and all(c["exit_code"] == 0 for c in role["commands"])
           assert not (folder / "rejected-modified-pins/store").exists()
           print("PASS: synthetic Git selections, signed round trip, exact citations and rejection controls")
+          PY
+
+      - name: Replay the public selected-Git capsule review
+        run: |
+          python git_review_replay.py --casita output/casita-build/debug/casita --source output/git-review-source --output output/public-git-review-replay
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          folder = Path("output/public-git-review-replay")
+          receipt = json.loads((folder / "receipt.json").read_text())
+          assert receipt["ok"] and receipt["public_source_snapshot"]
+          assert receipt["synthetic_fixture"] is False and receipt["fresh_ai_review"] is False
+          assert receipt["review_quality_verified"] is False and receipt["execution_attested"] is False
+          assert receipt["received_code_executed"] is False and receipt["os_sandbox_enforced"] is False
+          assert receipt["original_git_verified"] and receipt["citations_verified"]
+          assert receipt["input_signature_verified"] and receipt["result_signature_verified"]
+          assert receipt["finding_count"] == 1
+          assert receipt["negative_controls"] == {
+              "wrong_context": True, "wrong_commit": True, "invented_excerpt": True,
+              "wrong_blob": True, "uncaptured_lines": True,
+          }
+          assert receipt["throwaway_private_keys_removed"] and not (folder / "throwaway-keys").exists()
+          for name in ("sender", "receiver", "reviewer-return", "verified-return"):
+              role = json.loads((folder / name / "receipt.json").read_text())
+              assert role["ok"] and all(c["exit_code"] == 0 for c in role["commands"])
+          print("PASS: recorded public Git review, signed return, original Git citations and rejection controls")
           PY
 
   environment:

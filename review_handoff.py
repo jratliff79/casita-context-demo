@@ -114,14 +114,18 @@ def validate_report(report, context, pins):
 
 
 def export(store, output, folder, content_id, role, key, receipt):
+    # Match the receiver's restored-file budget before initializing a store.
+    demo.file_map(folder)
     store.run("init")
     root = "review/context" if role == "review-input" else "review/result"
     store.run("import", folder, "--root", root)
     directory = store.roots()[root]
     archive = output / "handoff.casitar"
     store.run("archive", "create", "--root", root, "--output", archive, "--json")
+    # Archive framing also counts toward the receiver's transport budget.
+    archive_bytes = auth.read_regular(archive, demo.MAX_BYTES)
     store.run("archive", "verify", archive, "--json")
-    pins = {"schema": f"casita-context-demo.{role}-pins.v1", "archive_sha256": demo.digest(archive.read_bytes()),
+    pins = {"schema": f"casita-context-demo.{role}-pins.v1", "archive_sha256": demo.digest(archive_bytes),
             "content_id": content_id, "directory_key": directory}
     (output / "pins.json").write_bytes(demo.canonical(pins))
     auth.sign_demo_pins(output / "pins.json", key, output / "pins.sig", role)

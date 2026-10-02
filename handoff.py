@@ -10,6 +10,7 @@ import subprocess
 import sys
 
 import demo
+import authentication
 
 VERSIONS = ("v1", "v2")
 MAX_TRANSFER_BYTES = 1_000_000
@@ -22,6 +23,11 @@ def read_pins(path, role):
         raw = stream.read(10_001)
     if len(raw) > 10_000:
         raise ValueError("pin file exceeds limit")
+    return parse_pins(raw, role)
+
+
+def parse_pins(raw, role):
+    """Parse the same bytes that an authenticated caller verified."""
     pins = json.loads(raw)
     if not isinstance(pins, dict) or set(pins) != {"schema", "archive_sha256", *VERSIONS} or pins["schema"] != f"casita-context-demo.{role}-pins.v1":
         raise ValueError("unexpected pin schema")
@@ -37,6 +43,19 @@ def read_pins(path, role):
         if not isinstance(pin["directory_key"], str) or not re.fullmatch(r"casita\.directory\.v1:[A-Za-z0-9_-]{43}", pin["directory_key"]):
             raise ValueError("invalid directory key")
     return pins
+
+
+def transfer_pins(args, role, receipt):
+    options = [getattr(args, name, None) for name in ("signature", "allowed_signers", "signer")]
+    if any(value is not None for value in options):
+        if not all(value is not None for value in options):
+            raise ValueError("signature verification requires signature, allowed signers and signer")
+        raw = authentication.verify_pins(args.pins, *options, role)
+        pins = parse_pins(raw, role)
+        receipt["authentication"] = {"verified": True, "signer": args.signer,
+            "namespace": authentication.NAMESPACES[role], "pins_sha256": demo.digest(raw)}
+        return pins
+    return read_pins(args.pins, role)
 
 
 def export(store, output, prefix, pins, role, receipt):
@@ -81,7 +100,7 @@ def prepare(store, output, receipt):
 
 
 def work(store, args, output, receipt):
-    pins = read_pins(args.pins, "input")
+    pins = transfer_pins(args, "input", receipt)
     receive(store, args.archive, pins, output, receipt)
     results = {}
     for version in VERSIONS:
@@ -100,7 +119,7 @@ def work(store, args, output, receipt):
 
 def verify_return(store, args, output, receipt):
     original = read_pins(args.original / "pins.json", "input")
-    results = read_pins(args.pins, "result")
+    results = transfer_pins(args, "result", receipt)
     receive(store, args.archive, results, output, receipt)
     for version in VERSIONS:
         demo.verify_result(output / "received" / version, results[version]["result_id"],
@@ -148,11 +167,17 @@ def main():
     parser.add_argument("--archive", type=Path)
     parser.add_argument("--pins", type=Path)
     parser.add_argument("--original", type=Path, help="trusted sender output for return verification")
+    parser.add_argument("--signature", type=Path, help="detached OpenSSH signature over exact pin bytes")
+    parser.add_argument("--allowed-signers", type=Path, help="independently trusted OpenSSH allowed-signers file")
+    parser.add_argument("--signer", help="expected identity in the trusted allowed-signers file")
     args = parser.parse_args()
     if args.mode != "prepare" and (args.archive is None or args.pins is None):
         parser.error("work and verify require --archive and --pins")
     if args.mode == "verify" and args.original is None:
         parser.error("verify requires --original")
+    auth_options = (args.signature, args.allowed_signers, args.signer)
+    if any(v is not None for v in auth_options) and (args.mode == "prepare" or not all(v is not None for v in auth_options)):
+        parser.error("work/verify signature checking requires all three authentication options")
     try:
         run(args)
     except (ValueError, OSError, RuntimeError, subprocess.TimeoutExpired) as error:

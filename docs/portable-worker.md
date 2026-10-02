@@ -6,7 +6,7 @@ and keeps a raw receipt under that output. This supplements `demo.py`; the origi
 single-command demonstration remains available.
 
 Pre-provision the same reviewed revision of this demo and the tested Casita build
-on both sides. The worker needs `handoff.py`, `demo.py` and the separately trusted
+on both sides. The worker needs `handoff.py`, `authentication.py`, `demo.py` and the separately trusted
 `fixtures/source/verify.py`. Do not install or execute source received inside the
 context archive. The worker compares received checker bytes with its local
 checker, then executes only the trusted local bytes whose hash it records.

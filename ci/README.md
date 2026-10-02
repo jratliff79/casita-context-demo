@@ -17,6 +17,9 @@ The OCI job imports a digest-pinned public Python image anonymously, checks the
 restored layout and runs the trusted host checker; it does not execute the image.
 Both jobs use the same source pin, toolchain and dependency snapshot. The separate
 Apple Container execution is recorded in [the local image trial](../docs/pinned-environment.json).
+The default-feature handoff job also runs [the signed pin example](../docs/signed-handoff.md)
+with OpenSSH and temporary keys. This adds authentication checks without changing
+the Casita dependency snapshot or introducing a signing service.
 
 When changing the tested Casita revision, regenerate the lockfile in a fresh
 public-source checkout, review its dependency sources, and validate the locked

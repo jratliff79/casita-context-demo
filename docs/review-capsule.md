@@ -121,8 +121,11 @@ The agent returned one P2 finding: the synthetic checker accepts negative or
 infinite output audio durations in certain cases. The orchestrator confirmed the
 two examples using the separately trusted local checker, without executing the
 received capsule. The finding concerns the packaged historical snapshot; the
-report does not silently update if later code changes. Fixing the checker is a
-separate change from this protocol demonstration.
+report does not silently update if later code changes. The current local checker
+now rejects nonpositive, nonfinite and nonnumeric output durations, including
+booleans. The recorded report and its public source pin remain unchanged, so the
+historical finding can still be transported and checked against its original
+source. This fix is separate from the recorded AI review invocation.
 
 The signed report was restored into a new return store. Its signature, original
 context binding, file hash and quoted lines verified. A replay also rejected two

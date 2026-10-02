@@ -119,6 +119,7 @@ the handoff and runs the demo's deterministic checker; it does not run an AI rev
 | Public source capsule and signed AI review findings | [Review capsule guide](docs/review-capsule.md) | Default Casita CLI, OpenSSH, Git and the pinned public source commit |
 | Selected Git lines and a signed static-review return | [Git review guide](docs/git-review.md) | Default Casita CLI, OpenSSH and Git; synthetic walkthrough included |
 | Recorded public Git review, six verified citations and reproduced size bug | [Selected-Git review case](docs/git-review-case.md) | Default Casita CLI, OpenSSH, Git and the pinned public source commit; no AI account |
+| Base/head diff capsule with versioned citations | [Git diff review guide](docs/git-diff-review.md) | Default Casita CLI, OpenSSH and both pinned Git commits; public PR walkthrough included |
 | Image and context transport with a trusted host check | [Environment transport guide](docs/pinned-environment.md#transport-check) | Casita built with `oci`; public registry access |
 | Trusted checker in the restored image | [Apple Container guide](docs/pinned-environment.md#apple-container-trial) | OCI-enabled Casita, public registry access and Apple Container running on a Mac |
 

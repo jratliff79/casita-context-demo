@@ -1,6 +1,7 @@
 import argparse
 import copy
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -146,6 +147,11 @@ class GitReviewChecks(unittest.TestCase):
         self.assertEqual(review.git_blob(self.repository, self.commit, "classifier.py"), original)
         self.assertTrue(review.verify_git_source(self.repository, self.context, self.ident))
 
+    def test_source_paths_remain_repo_relative_from_a_subdirectory(self):
+        child = self.repository / "subdirectory"
+        child.mkdir()
+        self.assertTrue(review.verify_git_source(child, self.context, self.ident))
+
     def test_paths_and_selection_limits(self):
         for path in ("../file.py", "/file.py", "a//file.py", "a/./file.py", ".", "a\\file.py"):
             with self.subTest(path=path), self.assertRaises(ValueError):
@@ -155,6 +161,50 @@ class GitReviewChecks(unittest.TestCase):
                 review.validate_selection({"id": "test", "path": "file.py", "start": start, "end": end})
         with self.assertRaisesRegex(ValueError, "exceeds Git blob lines"):
             review.capture_selection(self.repository, self.commit, {"id": "test", "path": "classifier.py", "start": 1, "end": 10})
+
+    def test_only_lf_defines_original_git_line_numbers(self):
+        content = 'first\vpart\fmore\x85nel\u2028ls\u2029ps\rinside\nsecond\nthird'
+        (self.repository / "separators.txt").write_bytes(content.encode())
+        review.git(self.repository, "add", "--", "separators.txt")
+        review.git(self.repository, "-c", "user.name=Synthetic Example", "-c", "user.email=example@example.invalid",
+                   "-c", "commit.gpgsign=false", "commit", "-q", "-m", "Synthetic separators")
+        commit = review.git(self.repository, "rev-parse", "HEAD").decode().strip()
+        item = review.capture_selection(self.repository, commit,
+            {"id": "separators", "path": "separators.txt", "start": 1, "end": 2})
+        self.assertEqual(item["lines"], [content.split("\n")[0], "second"])
+        review.validate_selection(item, captured=True)
+        with self.assertRaisesRegex(ValueError, "exceeds Git blob lines"):
+            review.capture_selection(self.repository, commit,
+                {"id": "separators", "path": "separators.txt", "start": 4, "end": 4})
+
+    def test_crlf_normalization_and_empty_or_unterminated_lines(self):
+        for raw, expected in ((b"a\r\nb\r\n", ["a", "b"]), (b"", []),
+                              (b"\n\n", ["", ""]), (b"a\r", ["a\r"])):
+            with self.subTest(raw=raw):
+                self.assertEqual(review.git_lines(raw), expected)
+
+    def test_repository_local_environment_cannot_redirect_source(self):
+        other = self.base / "other-repository"
+        other.mkdir()
+        review.git(other, "init", "-q")
+        (other / "classifier.py").write_text("OTHER_SYNTHETIC_REPOSITORY = True\n")
+        review.git(other, "add", "--", "classifier.py")
+        review.git(other, "-c", "user.name=Synthetic Example", "-c", "user.email=example@example.invalid",
+                   "-c", "commit.gpgsign=false", "commit", "-q", "-m", "Different synthetic commit")
+        for overrides in ({"GIT_DIR": str(other / ".git")},
+                          {"GIT_OBJECT_DIRECTORY": str(other / ".git/objects")},
+                          {"GIT_COMMON_DIR": str(other / ".git"), "GIT_WORK_TREE": str(other)},
+                          {"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "core.bare", "GIT_CONFIG_VALUE_0": "true"}):
+            with self.subTest(overrides=overrides), patch.dict(os.environ, overrides):
+                self.assertEqual(review.git(self.repository, "rev-parse", "HEAD").decode().strip(), self.commit)
+                self.assertTrue(review.verify_git_source(self.repository, self.context, self.ident))
+                self.assertEqual(review.git(self.repository, "config", "--get", "core.bare").decode().strip(), "false")
+        other_head = review.git(other, "rev-parse", "HEAD")
+        with patch.dict(os.environ, {"GIT_DIR": str(other / ".git")}):
+            fixture = self.base / "hook-fixture"
+            make_repository(fixture)
+        self.assertTrue((fixture / ".git").is_dir())
+        self.assertEqual(review.git(other, "rev-parse", "HEAD"), other_head)
 
     def test_duplicate_ids_and_unknown_spec_fields(self):
         for duplicate in (True, False):

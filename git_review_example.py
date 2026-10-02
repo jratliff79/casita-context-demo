@@ -25,7 +25,7 @@ def needs_performance_check(page):
 '''
     (folder / "classifier.py").write_bytes(classifier)
     (folder / "pages.json").write_bytes(b'[\n  "HomePage",\n  "PricingPage",\n  "ChartsPage"\n]\n')
-    env = dict(os.environ, GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL=os.devnull,
+    env = dict(review.git_environment(), GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL=os.devnull,
                GIT_AUTHOR_DATE="2026-01-01T00:00:00+0000", GIT_COMMITTER_DATE="2026-01-01T00:00:00+0000")
     def git(*args):
         return subprocess.check_output(["git", "-C", str(folder), *args], env=env, timeout=15,

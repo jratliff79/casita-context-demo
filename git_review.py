@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Locally hand off selected immutable Git lines and verify returned citations."""
 import argparse
+from functools import lru_cache
 import json
 import os
 from pathlib import Path, PurePosixPath
@@ -86,15 +87,41 @@ def validate_selection(item, captured=False):
     if captured:
         hex_digest(item["blob_sha256"], 64, "blob hash")
         if (not isinstance(item["lines"], list) or len(item["lines"]) != end - start + 1 or
-                any(not isinstance(line, str) or "\n" in line or "\r" in line for line in item["lines"])):
+                any(not isinstance(line, str) or "\n" in line for line in item["lines"])):
             raise ValueError("invalid captured lines")
     return item
 
 
+@lru_cache(maxsize=1)
+def local_git_variables():
+    # Ask the installed Git which variables are repository-local. Enumeration
+    # itself must not inherit a foreign repository or injected Git configuration.
+    clean = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    raw = subprocess.check_output(["git", "rev-parse", "--local-env-vars"],
+                                  stdin=subprocess.DEVNULL, timeout=15, env=clean)
+    return frozenset(raw.decode("ascii").splitlines())
+
+
+def git_environment():
+    local = local_git_variables()
+    env = {k: v for k, v in os.environ.items()
+           if k not in local and not k.startswith(("GIT_CONFIG_KEY_", "GIT_CONFIG_VALUE_"))}
+    env["GIT_NO_REPLACE_OBJECTS"] = "1"
+    return env
+
+
 def git(repository, *args):
-    env = dict(os.environ, GIT_NO_REPLACE_OBJECTS="1")
     return subprocess.check_output(["git", "-C", str(repository), *args],
-                                   stdin=subprocess.DEVNULL, timeout=15, env=env)
+                                   stdin=subprocess.DEVNULL, timeout=15, env=git_environment())
+
+
+def git_lines(blob):
+    # Git line numbers count LF bytes, not Python's broader Unicode separators.
+    parts = blob.decode("utf-8").split("\n")
+    lines = [line[:-1] if line.endswith("\r") else line for line in parts[:-1]]
+    if parts[-1]:
+        lines.append(parts[-1])
+    return lines
 
 
 def git_blob(repository, commit, path):
@@ -102,7 +129,7 @@ def git_blob(repository, commit, path):
     source_path(path)
     if git(repository, "rev-parse", "--verify", commit + "^{commit}").decode().strip() != commit:
         raise ValueError("Git object is not the exact commit")
-    tree = git(repository, "ls-tree", "-z", commit, "--", path).split(b"\x00")
+    tree = git(repository, "ls-tree", "--full-tree", "-z", commit, "--", path).split(b"\x00")
     entries = [entry for entry in tree if entry]
     if len(entries) != 1:
         raise ValueError("source path is not one Git blob")
@@ -122,7 +149,7 @@ def git_blob(repository, commit, path):
 def capture_selection(repository, commit, item):
     validate_selection(item)
     blob = git_blob(repository, commit, item["path"])
-    lines = blob.decode("utf-8").splitlines()
+    lines = git_lines(blob)
     if item["end"] > len(lines):
         raise ValueError("selection exceeds Git blob lines")
     return dict(item, blob_sha256=demo.digest(blob), lines=lines[item["start"] - 1:item["end"]])

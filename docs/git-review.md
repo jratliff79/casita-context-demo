@@ -86,7 +86,11 @@ verification only covers the source selections. A signed observation is still
 sender-supplied data, not authenticated runtime execution. Packaging does not
 redact secrets. Review the selected bytes and metadata before sharing anything.
 
-Source capture reads immutable Git blobs, with Git replacement objects disabled.
+Source capture reads immutable Git blobs, with Git replacement objects disabled
+and Git's repository-local environment variables cleared so `--source` selects
+the intended repository. Line numbers count LF boundaries; CRLF endings are
+normalized by removing the CR before LF. Other separator characters inside a
+line remain data and do not create extra source lines.
 It never includes dirty or untracked checkout files. The sender receipt records
 the Casita binary hash, commands, signed pins and original Git verification.
 

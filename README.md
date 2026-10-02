@@ -72,8 +72,9 @@ The image examples select a reviewed public image by its full manifest digest.
 They verify its manifest, config, layers and platform before runtime loading.
 `--runtime none` runs the checker on the host; `--runtime apple` runs it in the
 restored image. Both use synthetic evidence and the separately trusted checker.
-The portable worker and image guides record local Mac/Linux VM trials; physical
-remote-machine execution and execution attestation remain outside those checks.
+The [physical worker trial](docs/physical-worker.md) records a Mac-to-Linux
+round trip over SSH. The image guide records local Mac/Linux VM trials.
+Execution attestation remains outside these checks.
 
 ## What Casita does here
 

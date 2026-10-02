@@ -94,6 +94,46 @@ class HandoffChecks(unittest.TestCase):
             self.assertEqual(verify(observation["source_packets"], observation["output_audio_duration"]),
                              observation["verification_result"])
 
+    def test_invalid_output_durations_rejected_as_unavailable(self):
+        rows = [{"pts": 0, "duration": 0.063}]
+        for duration in (-0.1, -1, 0, float("inf"), float("-inf"), float("nan"),
+                         None, "N/A", "0.063", True, False, [], {}, 10 ** 400):
+            with self.subTest(duration=duration):
+                self.assertEqual(verify(rows, duration),
+                                 "rejected: source or output audio timing unavailable")
+
+    def test_valid_output_timing_preserves_negative_pts_and_shortening_tolerance(self):
+        rows = [{"pts": -0.021, "duration": 1}]
+        self.assertEqual(verify(rows, 1), "accepted")
+        self.assertEqual(verify(rows, 0.75), "accepted")
+        self.assertEqual(verify(rows, 0.749), "rejected: audio shortened")
+
+    def test_json_exponent_overflow_rejected_through_context_and_result_checks(self):
+        context = Path(self.temp.name) / "overflow-context"
+        demo.create_context(context, "v2")
+        observation = json.loads((context / "observation.json").read_bytes())
+        raw = json.dumps(observation).replace('"output_audio_duration": 0.063',
+                                              '"output_audio_duration": 1e309').encode()
+        self.assertEqual(json.loads(raw)["output_audio_duration"], float("inf"))
+        (context / "observation.json").write_bytes(raw)
+        manifest = json.loads((context / "manifest.json").read_bytes())
+        manifest["files"]["observation.json"] = demo.digest(raw)
+        manifest_bytes = demo.canonical(manifest)
+        (context / "manifest.json").write_bytes(manifest_bytes)
+        pin = demo.digest(manifest_bytes)
+        result = demo.expected_result(context, pin, "synthetic-directory-key")
+        self.assertEqual(result["verdict"], "rejected: source or output audio timing unavailable")
+        folder = Path(self.temp.name) / "overflow-result"
+        folder.mkdir()
+        result_bytes = demo.canonical(result)
+        (folder / "result.json").write_bytes(result_bytes)
+        demo.verify_result(folder, demo.digest(result_bytes), context, pin, "synthetic-directory-key")
+        result["verdict"] = "accepted"
+        forged = demo.canonical(result)
+        (folder / "result.json").write_bytes(forged)
+        with self.assertRaisesRegex(ValueError, "does not match original context"):
+            demo.verify_result(folder, demo.digest(forged), context, pin, "synthetic-directory-key")
+
     def test_results_match_both_original_contexts(self):
         for version in ("v1", "v2"):
             context = Path(self.temp.name) / version

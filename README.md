@@ -121,7 +121,8 @@ The source has AAC audio and recorded conversion exit zero. In v1, the first
 packet's duration is `N/A`; the displayed verifier rejects unknown source
 timing even though later packets and output timing are usable. In v2, that one
 duration is numeric and the same verifier accepts it. A finite negative start
-timestamp is allowed in both cases.
+timestamp is allowed in both cases. Output duration must be a positive finite
+JSON number; booleans and unavailable timing values are rejected.
 
 These observations are synthetic, and the verifier is a small teaching
 fixture. They are not real FFmpeg output, a reproduction of a private incident,

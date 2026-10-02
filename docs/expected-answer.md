@@ -12,6 +12,11 @@ the unknown duration that matters. V2 provides the discriminating control:
 only the first packet duration changes to 0.021 seconds, producing a 0.063-second
 source span and acceptance against the 0.063-second output.
 
+Output duration must also be a positive finite numeric value. Negative, zero,
+nonfinite, nonnumeric and boolean values represent unavailable timing and are
+rejected before the shortening comparison. This includes a JSON number such as
+`1e309` that overflows to infinity when decoded by Python.
+
 For real evidence, preserve strict rejection until complete stream timing can
 be established. Capture direct trusted-tool responses and distinguish authentic
 unknown timing from any adapter manipulation. Do not silently discard a packet

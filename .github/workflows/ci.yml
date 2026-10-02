@@ -78,6 +78,14 @@ jobs:
           persist-credentials: false
       - name: Install CI dependency snapshot
         run: cp ci/Cargo.lock output/casita-source/Cargo.lock
+      - name: Check out immutable public diff source and its history
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          repository: jratliff79/casita-context-demo
+          ref: 002fe4d138a4b17f972dec7639ddda5a4eb62d70
+          fetch-depth: 0
+          path: output/git-diff-source
+          persist-credentials: false
       - name: Build Casita with locked dependencies
         run: >-
           cargo +1.94.1 build --locked --package casita --bin casita
@@ -267,6 +275,35 @@ jobs:
               role = json.loads((folder / name / "receipt.json").read_text())
               assert role["ok"] and all(c["exit_code"] == 0 for c in role["commands"])
           print("PASS: recorded public Git review, signed return, original Git citations and rejection controls")
+          PY
+
+      - name: Run the public base/head diff review handoff
+        run: |
+          python git_diff_example.py --casita output/casita-build/debug/casita --source output/git-diff-source --output output/git-diff-example
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          folder = Path("output/git-diff-example")
+          receipt = json.loads((folder / "receipt.json").read_text())
+          assert receipt["ok"] and receipt["public_source_snapshot"] and receipt["scripted_report"]
+          assert receipt["synthetic_fixture"] is False and receipt["fresh_ai_review"] is False
+          assert receipt["review_quality_verified"] is False and receipt["execution_attested"] is False
+          assert receipt["received_code_executed"] is False and receipt["patch_applied"] is False
+          assert receipt["os_sandbox_enforced"] is False
+          assert receipt["original_git_verified"] and receipt["citations_verified"]
+          assert receipt["input_signature_verified"] and receipt["result_signature_verified"]
+          assert receipt["base_commit"] == "5cc171423d293ad5ca6b2e5323718d4f699e1136"
+          assert receipt["head_commit"] == "002fe4d138a4b17f972dec7639ddda5a4eb62d70"
+          assert receipt["negative_controls"] == {
+              "wrong_base": True, "wrong_head": True, "wrong_version": True,
+              "invented_excerpt": True, "wrong_blob": True, "uncaptured_lines": True,
+              "rebound_signed_diff": True,
+          }
+          assert receipt["throwaway_private_keys_removed"] and not (folder / "throwaway-keys").exists()
+          for name in ("sender", "receiver", "reviewer-return", "verified-return"):
+              role = json.loads((folder / name / "receipt.json").read_text())
+              assert role["ok"] and all(c["exit_code"] == 0 for c in role["commands"])
+          print("PASS: public diff, both original commits, signed return and versioned citations")
           PY
 
   environment:

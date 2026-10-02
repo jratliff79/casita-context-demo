@@ -1,0 +1,68 @@
+{
+  "schema": "casita-context-demo.public-git-diff-source.v1",
+  "repository": "https://github.com/jratliff79/casita-context-demo",
+  "pull_request": 15,
+  "license": "MIT",
+  "files": {
+    "base": {
+      "git_review.py": "c68e35d524d1982a314d415f76dc0ad159cc7b8d6cc7a5ca5d06a1d6884b8536",
+      "review_handoff.py": "085c677d39b0705abcc31627711195dfdaff48c0bc649916cabe3a2bff33aaf7",
+      "LICENSE": "b13e1d0ce5c2b67d711e935f670df74b6d899616f9f5630c498b3f8679ab5f6c"
+    },
+    "head": {
+      "git_review.py": "d5a935c54daec19db2be8cf87c92cdd790814dadfc576b17c69c5bcc4dfb1ef3",
+      "review_handoff.py": "84ad17fe3390c32a9f03ae5eef2c0c6ddbcd3cb60b9bae092db66ab07884ac55",
+      "LICENSE": "b13e1d0ce5c2b67d711e935f670df74b6d899616f9f5630c498b3f8679ab5f6c"
+    }
+  },
+  "spec": {
+    "schema": "casita-context-demo.git-diff-spec.v1",
+    "source_label": "Public MIT source: jratliff79/casita-context-demo PR 15",
+    "base_commit": "5cc171423d293ad5ca6b2e5323718d4f699e1136",
+    "head_commit": "002fe4d138a4b17f972dec7639ddda5a4eb62d70",
+    "sensitivity": "restricted",
+    "purpose": "Protocol demonstration of selected public PR 15 size-budget changes. The return is a scripted citation control, not a new AI review.",
+    "paths": [
+      "git_review.py",
+      "review_handoff.py",
+      "LICENSE"
+    ],
+    "selections": [
+      {
+        "version": "base",
+        "id": "budget",
+        "path": "git_review.py",
+        "start": 303,
+        "end": 311
+      },
+      {
+        "version": "base",
+        "id": "export",
+        "path": "review_handoff.py",
+        "start": 116,
+        "end": 128
+      },
+      {
+        "version": "head",
+        "id": "budget",
+        "path": "git_review.py",
+        "start": 303,
+        "end": 313
+      },
+      {
+        "version": "head",
+        "id": "export",
+        "path": "review_handoff.py",
+        "start": 116,
+        "end": 132
+      },
+      {
+        "version": "head",
+        "id": "license",
+        "path": "LICENSE",
+        "start": 1,
+        "end": 21
+      }
+    ]
+  }
+}

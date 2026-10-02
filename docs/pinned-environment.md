@@ -15,6 +15,11 @@ Casitar is bounded to 30 MB. A registry outage or rate limit fails the run.
 
 ## Transport check
 
+Start with the [shared prerequisites](../README.md#prerequisites). The
+[optional uv runner](../README.md#optional-uv-runner) selects the host Python
+interpreter; the restored image's Python version is governed by the image pin.
+Casita still needs OCI support, and Apple execution additionally needs the runtime.
+
 From this demo's repository root, check out the [pinned Casita source](../README.md#tested-casita-build)
 under ignored `output/`. Copy the dependency snapshot before building with OCI support:
 

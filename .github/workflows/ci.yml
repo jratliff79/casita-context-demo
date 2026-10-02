@@ -91,6 +91,14 @@ jobs:
           cargo +1.94.1 build --locked --package casita --bin casita
           --manifest-path output/casita-source/Cargo.toml
           --target-dir output/casita-build
+      - name: Check out immutable recorded diff review source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          repository: jratliff79/casita-context-demo
+          ref: 0e01f69d661837eb5073fde11a1c7fd03d3702b3
+          fetch-depth: 0
+          path: output/diff-review-source
+          persist-credentials: false
       - name: Stage disposable fixtures and generate a cache
         run: |
           python - <<'PY'
@@ -304,6 +312,36 @@ jobs:
               role = json.loads((folder / name / "receipt.json").read_text())
               assert role["ok"] and all(c["exit_code"] == 0 for c in role["commands"])
           print("PASS: public diff, both original commits, signed return and versioned citations")
+          PY
+
+      - name: Replay the recorded empty public diff review
+        run: |
+          python git_diff_replay.py --casita output/casita-build/debug/casita --source output/diff-review-source --output output/recorded-diff-review
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          folder = Path("output/recorded-diff-review")
+          receipt = json.loads((folder / "receipt.json").read_text())
+          assert receipt["ok"] and receipt["public_source_snapshot"] and receipt["recorded_ai_report"]
+          assert receipt["scripted_report"] is False and receipt["fresh_ai_review"] is False
+          assert receipt["review_quality_verified"] is False and receipt["execution_attested"] is False
+          assert receipt["received_code_executed"] is False and receipt["patch_applied"] is False
+          assert receipt["os_sandbox_enforced"] is False
+          assert receipt["original_git_verified"] and receipt["citations_verified"]
+          assert receipt["input_signature_verified"] and receipt["result_signature_verified"]
+          assert receipt["finding_count"] == 0 and receipt["citation_count"] == 0
+          assert receipt["context_pins"]["content_id"] == "447199974f6217e55b5c8ded266234c82b0fdaa3fd70621e610ea95ffced2839"
+          assert receipt["negative_controls"] == {
+              "wrong_base": True, "wrong_head": True, "wrong_version": True,
+              "invented_excerpt": True, "wrong_blob": True, "uncaptured_lines": True,
+              "rebound_signed_diff": True,
+          }
+          assert receipt["throwaway_private_keys_removed"] and not (folder / "throwaway-keys").exists()
+          assert (folder / "verified-return/result/report.json").read_bytes() == Path("docs/diff-review-report.json").read_bytes()
+          for name in ("sender", "receiver", "reviewer-return", "verified-return"):
+              role = json.loads((folder / name / "receipt.json").read_text())
+              assert role["ok"] and all(c["exit_code"] == 0 for c in role["commands"])
+          print("PASS: recorded empty report unchanged, both source commits and independent controls")
           PY
 
   environment:

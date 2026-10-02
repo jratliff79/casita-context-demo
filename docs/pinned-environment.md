@@ -15,19 +15,25 @@ Casitar is bounded to 30 MB. A registry outage or rate limit fails the run.
 
 ## Transport check
 
-Build the [pinned Casita source](../README.md#tested-casita-build) with OCI support:
+From this demo's repository root, check out the [pinned Casita source](../README.md#tested-casita-build)
+under ignored `output/`. Copy the dependency snapshot before building with OCI support:
 
 ```sh
-cargo build --release --locked --package casita --bin casita --features oci
+git clone https://github.com/cachix/casita.git output/casita-source
+git -C output/casita-source checkout aed18e32704c8f2bf821cc038720a77610a600ba
+cp ci/Cargo.lock output/casita-source/Cargo.lock
+cargo build --release --locked --package casita --bin casita --features oci \
+  --manifest-path output/casita-source/Cargo.toml --target-dir output/casita-build
 ```
 
-Upstream ignores `Cargo.lock`. Copy this demo's `ci/Cargo.lock` into that checkout
-first, as described in [the dependency snapshot guide](../ci/README.md).
+Use an absent source directory for the clone and Rust 1.94.1 or newer.
+Upstream ignores `Cargo.lock`; the copied snapshot makes the locked build possible.
+See [the dependency snapshot guide](../ci/README.md) for its provenance.
 
-From this demo's repository root, select that executable and a new output directory:
+Select the resulting executable and a new output directory:
 
 ```sh
-python3 environment.py --casita /path/to/oci-enabled-casita \
+python3 environment.py --casita output/casita-build/release/casita \
   --output output/environment --platform linux/amd64 --runtime none
 ```
 
@@ -43,7 +49,7 @@ loaded or executed. Hosted CI uses this mode on Linux with the amd64 image pin.
 On a Mac with Apple Container running, select its native architecture:
 
 ```sh
-python3 environment.py --casita /path/to/oci-enabled-casita \
+python3 environment.py --casita output/casita-build/release/casita \
   --output output/environment-apple --platform linux/arm64 --runtime apple
 ```
 

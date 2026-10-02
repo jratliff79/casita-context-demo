@@ -5,7 +5,8 @@ example stores two versions of a synthetic investigation, preserves unchanged
 source under the same content identity, and hands both versions to a fresh store
 through a portable Casitar archive. A trusted local checker then produces results
 and returns them through another archive to a third store for verification against
-the original contexts.
+the original contexts. An optional image handoff carries a pinned public Python
+environment alongside that evidence and can run the trusted checker in Apple Container.
 
 The receiver gets a task, source code, observations and a file-hash manifest.
 It checks expected pins before reading the evidence. This local simulation
@@ -51,16 +52,21 @@ Give these verified files to a reviewer, then compare its diagnosis with
 [the example answer](docs/expected-answer.md). The demo prepares and verifies
 the handoff and runs the demo's deterministic checker; it does not run an AI reviewer.
 
-To split the sender, worker and return verifier into independent processes, use
-[the portable worker guide](docs/portable-worker.md). The same three commands can
-run on separate hosts. A recorded macOS → Apple Container Linux VM → macOS trial
-is included; it is not a physical remote-machine or execution-attestation claim.
+## Choose a demonstration
 
-To carry a reviewed public Python image alongside both contexts, use the
-[pinned environment guide](docs/pinned-environment.md). It exports the OCI image
-layout and context graphs together, restores them into a fresh store, and can run
-the trusted checker in that restored image through Apple Container. The image
-manifest, config, layer digests and platform are verified before runtime loading.
+| Demonstration | Entry point | Requirements beyond Python 3.9+ |
+| --- | --- | --- |
+| Two context versions and verified result return | `demo.py`, as above | Default Casita CLI |
+| Separate sender, worker and return-verifier processes | [Portable worker guide](docs/portable-worker.md) | Default Casita CLI on each side |
+| Image and context transport with a trusted host check | [Environment transport guide](docs/pinned-environment.md#transport-check) | Casita built with `oci`; public registry access |
+| Trusted checker in the restored image | [Apple Container guide](docs/pinned-environment.md#apple-container-trial) | OCI-enabled Casita, public registry access and Apple Container running on a Mac |
+
+The image examples select a reviewed public image by its full manifest digest.
+They verify its manifest, config, layers and platform before runtime loading.
+`--runtime none` runs the checker on the host; `--runtime apple` runs it in the
+restored image. Both use synthetic evidence and the separately trusted checker.
+The portable worker and image guides record local Mac/Linux VM trials; physical
+remote-machine execution and execution attestation remain outside those checks.
 
 ## What Casita does here
 
@@ -139,8 +145,9 @@ no claim about model accuracy, token reduction, speed or net storage savings.
 ## Tested Casita build
 
 CI targets Casita source commit
-`aed18e32704c8f2bf821cc038720a77610a600ba`, with default CLI features. This was
-upstream `main` when checked on 2026-10-01. Keep the immutable pin when reproducing
+`aed18e32704c8f2bf821cc038720a77610a600ba`. The original handoff job uses default
+CLI features; the image job additionally enables `oci`. This was upstream `main`
+when checked on 2026-10-01. Keep the immutable pin when reproducing
 the checks; upstream may have advanced since then. Casita is pre-release and its
 CLI may change. Follow upstream's source installation workflow with this revision:
 
@@ -156,7 +163,8 @@ hash and reported version; a version string alone does not identify a source
 commit. The [local validation](docs/validation.md) and
 [cross-platform trial](docs/portable-worker.md#executed-cross-platform-trial)
 record the earlier `b8366af1` build; those historical receipts are not evidence
-of a local build at the current CI pin.
+of a local build at the current CI pin. The [pinned image trial](docs/pinned-environment.json)
+records the newer `aed18e32` build with OCI support and its executed Apple Container check.
 
 ## Development
 
@@ -167,7 +175,8 @@ python3 demo.py --output output/another-run
 
 Unit checks cover fixture selection, linked inputs, wrong pins, forged manifests,
 extra files, symlinks, archive pin mismatch, fixture consistency and preservation
-of an existing output.
+of an existing output. Image checks also cover blob corruption, platform/config
+pins, runtime identity readback and cleanup after post-load validation failures.
 The real CLI run exercises root identity, sharing, multi-root portable transport,
 restore, returned-result verification and integrity audits. Both are needed to validate
 changes to the demonstration.
@@ -189,7 +198,9 @@ free of private evidence.
 
 This example's code, tests and documentation were developed with substantial
 assistance from OpenAI Codex. The fixtures are synthetic; executed checks and
-their limits are recorded in [validation](docs/validation.md). AI assistance
+their limits are recorded in the [initial validation](docs/validation.md),
+[portable worker trial](docs/portable-worker.md#executed-cross-platform-trial) and
+[pinned image trial](docs/pinned-environment.md#recorded-scope). AI assistance
 does not replace maintainer review or responsibility for the published work.
 
 AI-assisted contributions are welcome. Describe substantial AI assistance in

@@ -209,6 +209,33 @@ jobs:
           print("PASS: recorded AI report, signed source/result transport, exact citations and signed invalid-report controls")
           PY
 
+      - name: Run synthetic selected-Git-lines review handoff
+        run: |
+          python git_review_example.py --casita output/casita-build/debug/casita --output output/git-review-example
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          folder = Path("output/git-review-example")
+          receipt = json.loads((folder / "receipt.json").read_text())
+          assert receipt["ok"] and receipt["synthetic_fixture"]
+          assert receipt["fresh_ai_review"] is False and receipt["review_quality_verified"] is False
+          assert receipt["received_code_executed"] is False and receipt["execution_attested"] is False
+          assert receipt["os_sandbox_enforced"] is False
+          assert receipt["original_git_verified"] and receipt["citations_verified"]
+          assert receipt["input_signature_verified"] and receipt["result_signature_verified"]
+          assert receipt["working_tree_data_excluded"] and receipt["finding_count"] == 1
+          assert receipt["negative_controls"] == {
+              "wrong_context": True, "wrong_commit": True, "invented_excerpt": True,
+              "wrong_blob": True, "uncaptured_lines": True, "modified_pins_before_import": True,
+          }
+          assert receipt["throwaway_private_keys_removed"] and not (folder / "throwaway-keys").exists()
+          for name in ("sender", "receiver", "reviewer-return", "verified-return"):
+              role = json.loads((folder / name / "receipt.json").read_text())
+              assert role["ok"] and all(c["exit_code"] == 0 for c in role["commands"])
+          assert not (folder / "rejected-modified-pins/store").exists()
+          print("PASS: synthetic Git selections, signed round trip, exact citations and rejection controls")
+          PY
+
   environment:
     name: OCI environment transport
     runs-on: ubuntu-24.04

@@ -55,6 +55,13 @@ jobs:
           ref: aed18e32704c8f2bf821cc038720a77610a600ba
           path: output/casita-source
           persist-credentials: false
+      - name: Check out immutable public review source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          repository: jratliff79/casita-context-demo
+          ref: de2c03a89ceef6a0b751ed137c91a4710dccaf19
+          path: output/review-source
+          persist-credentials: false
       - name: Install pinned Rust toolchain
         run: rustup toolchain install 1.94.1 --profile minimal
       - name: Install CI dependency snapshot
@@ -173,6 +180,27 @@ jobs:
           assert receipt["received_code_executed"] is False and receipt["execution_attested"] is False
           assert receipt["verdicts"] == {"v1": "rejected: source or output audio timing unavailable", "v2": "accepted"}
           print("PASS: signed pins, original-context result verification and pre-import signature controls")
+          PY
+
+      - name: Replay recorded AI review through signed source and result capsules
+        run: |
+          python review_replay.py --casita output/casita-build/debug/casita --source output/review-source --report docs/review-report.json --output output/review-replay
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          folder = Path("output/review-replay")
+          receipt = json.loads((folder / "receipt.json").read_text())
+          assert receipt["ok"] and receipt["original_context_verified"] and receipt["citations_verified"]
+          assert receipt["input_signature_verified"] and receipt["result_signature_verified"]
+          assert receipt["fresh_ai_review"] is False and receipt["review_quality_verified"] is False
+          assert receipt["execution_attested"] is False
+          assert receipt["finding_count"] == 1
+          assert receipt["negative_controls"] == {"wrong_context": True, "invented_excerpt": True}
+          assert receipt["throwaway_private_keys_removed"] and not (folder / "throwaway-keys").exists()
+          for mode in ("sender", "receiver", "reviewer-return", "verified-return"):
+              role = json.loads((folder / mode / "receipt.json").read_text())
+              assert role["ok"] and all(c["exit_code"] == 0 for c in role["commands"])
+          print("PASS: recorded AI report, signed source/result transport, exact citations and signed invalid-report controls")
           PY
 
   environment:

@@ -1,6 +1,7 @@
 # Working on this example
 
-Keep this a small independent Casita demonstration. Use synthetic fixtures;
+Keep this a small independent Casita demonstration. Use synthetic fixtures or
+explicitly labelled allowlisted snapshots of public, licensed source;
 do not import private repositories, incident records, credentials or local paths
 into tracked examples. Do not execute evidence supplied by a context recipient.
 
@@ -23,5 +24,6 @@ explicitly authorize merging that specific PR.
 
 Disclose substantial AI assistance in the PR description and report only checks
 that were actually executed. Do not describe AI review as human review. Keep
-fixtures labelled synthetic and preserve the validation and privacy boundaries
+synthetic fixtures labelled synthetic and public snapshots labelled with their
+repository, immutable commit and license. Preserve the validation and privacy boundaries
 above.

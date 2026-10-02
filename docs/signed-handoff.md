@@ -10,7 +10,12 @@ returned-result verification still run afterward.
 ## Run the synthetic round trip
 
 Use Python 3.9+, the default Casita CLI and an OpenSSH `ssh-keygen` supporting
-`-Y sign` and `-Y verify` on macOS or Linux. From this repository:
+`-Y sign` and `-Y verify` on macOS or Linux.
+
+See the [shared prerequisites](../README.md#prerequisites) and
+[optional uv runner](../README.md#optional-uv-runner) for Python setup. uv selects
+the Python interpreter; OpenSSH and Casita must still be installed separately.
+From this repository:
 
 ```sh
 python3 signed_handoff.py --casita /path/to/casita --output output/signed-demo

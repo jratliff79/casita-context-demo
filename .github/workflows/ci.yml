@@ -48,6 +48,11 @@ jobs:
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: '3.12'
+      - name: Install tested uv runner
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+        with:
+          version: '0.12.22'
+          enable-cache: false
       - name: Check out tested Casita source
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
@@ -86,9 +91,10 @@ jobs:
               shutil.copyfile(name, target)
           PY
           python -m py_compile output/ci-worktree/fixtures/source/verify.py
-      - name: Run fresh-store handoff
+      - name: Run uv quick start with fresh stores
         run: >-
-          python output/ci-worktree/demo.py --casita output/casita-build/debug/casita
+          uv run --no-project --python 3.12 python output/ci-worktree/demo.py
+          --casita output/casita-build/debug/casita
           --output output/ci-handoff
       - name: Check receipt and exact restored file sets
         run: |

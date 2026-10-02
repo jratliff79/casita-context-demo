@@ -5,6 +5,11 @@ uses a new output directory and its own Casita store. It refuses existing output
 and keeps a raw receipt under that output. This supplements `demo.py`; the original
 single-command demonstration remains available.
 
+Start with the [shared prerequisites](../README.md#prerequisites). Each side needs
+Python 3.9+ and its own Casita executable. The
+[optional uv runner](../README.md#optional-uv-runner) can select Python 3.12 for
+each command below; the unsigned worker does not require OpenSSH signing support.
+
 Pre-provision the same reviewed revision of this demo and the tested Casita build
 on both sides. The worker needs `handoff.py`, `authentication.py`, `demo.py` and the separately trusted
 `fixtures/source/verify.py`. Do not install or execute source received inside the

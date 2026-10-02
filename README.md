@@ -18,9 +18,35 @@ a capsule-only reviewer found a real bug in this public demo, its returned
 citations verified, and a regression-tested fix merged. You can replay the
 recorded handoff without an AI account.
 
+## Prerequisites
+
+The examples are tested on macOS and Linux. The commands below use a POSIX shell.
+All Python code uses the standard library; no pip packages or virtual environment
+are required.
+
+- **Python 3.9+**, or [uv](https://docs.astral.sh/uv/getting-started/installation/)
+  to select and, if needed, download Python 3.12. uv is optional.
+- **The Casita CLI**, built from the [tested source revision](#tested-casita-build).
+  Python and uv do not install Casita. Put it on `PATH`, or pass its executable
+  path with `--casita`. Building it from source requires Git and Rust 1.94.1+.
+- **Git** to clone this demo and prepare the public-source review example.
+- **OpenSSH `ssh-keygen` with `-Y sign` and `-Y verify`** for the signed handoff,
+  review replay and unit tests. The basic demo and unsigned worker do not need it.
+
+The [demonstration table](#choose-a-demonstration) lists additional requirements
+for OCI image transport and Apple Container execution. Neither is needed for the
+basic demo. Use a new output directory for every run, and keep raw output private.
+
 ## Run it
 
-You need Python 3.9+ and the Casita CLI. From this repository:
+Clone the public repository and enter it:
+
+```sh
+git clone https://github.com/jratliff79/casita-context-demo.git
+cd casita-context-demo
+```
+
+If Python and Casita are already on `PATH`:
 
 ```sh
 python3 demo.py
@@ -31,6 +57,26 @@ Or select an executable and a new output directory:
 ```sh
 python3 demo.py --casita /path/to/casita --output output/my-demo
 ```
+
+### Optional uv runner
+
+After [installing uv](https://docs.astral.sh/uv/getting-started/installation/), run
+the same demo with a selected Python version:
+
+```sh
+uv run --no-project --python 3.12 python demo.py \
+  --casita /path/to/casita --output output/uv-demo
+```
+
+uv uses a matching Python interpreter or downloads one if needed; the first
+download requires network access. `--no-project` runs this standard-library demo
+without installing a surrounding Python project. This selects the Python 3.12
+series, not a fixed patch release. It does not provision Casita, OpenSSH or an
+image runtime. See [uv's script guide](https://docs.astral.sh/uv/guides/scripts/).
+
+For other guides' host Python commands, replace `python3` with
+`uv run --no-project --python 3.12 python`. Run from this repository's root and
+keep the guide's other prerequisites and arguments.
 
 The command uses only fresh stores inside the output directory. It refuses an
 existing output directory, does not use your global Casita store, and keeps a
@@ -52,7 +98,8 @@ Receiver task: .../received/v1/task.md
 Receipt: .../receipt.json
 ```
 
-Open `output/demo/received/v1/task.md`, `source/verify.py` and `observation.json`.
+In your chosen output directory, open `received/v1/task.md`,
+`received/v1/source/verify.py` and `received/v1/observation.json`.
 Give these verified files to a reviewer, then compare its diagnosis with
 [the example answer](docs/expected-answer.md). The demo prepares and verifies
 the handoff and runs the demo's deterministic checker; it does not run an AI reviewer.
@@ -185,6 +232,17 @@ python3 -m unittest discover -s tests -v
 python3 demo.py --output output/another-run
 ```
 
+Or select Python 3.12 with uv:
+
+```sh
+uv run --no-project --python 3.12 python -m unittest discover -s tests -v
+uv run --no-project --python 3.12 python demo.py \
+  --casita /path/to/casita --output output/uv-development
+```
+
+The unit suite invokes OpenSSH for signature checks, but does not require Casita
+or an image runtime. The real demo command additionally requires Casita.
+
 Unit checks cover fixture selection, linked inputs, wrong pins, forged manifests,
 extra files, symlinks, archive pin mismatch, fixture consistency and preservation
 of an existing output. Image checks also cover blob corruption, platform/config
@@ -197,11 +255,12 @@ The real CLI run exercises root identity, sharing, multi-root portable transport
 restore, returned-result verification and integrity audits. Both are needed to validate
 changes to the demonstration.
 
-[CI](.github/workflows/ci.yml) runs the unit tests on Python 3.9 and 3.12, then
+[CI](.github/workflows/ci.yml) runs the unit tests on plain Python 3.9 and 3.12, then
 builds the tested Casita revision with Rust 1.94.1 and locked dependencies on a
 fresh GitHub-hosted Linux runner using this repository's
 [dependency snapshot](ci/README.md), since upstream ignores `Cargo.lock`.
-Its handoff check uses a disposable fixture copy under `output/` and verifies
+Its handoff check runs the uv quick start with uv 0.12.22 and Python 3.12,
+using a disposable fixture copy under `output/`, and verifies
 restored file sets, exclusion of a generated Python cache, and result-return controls. This is a
 signed and unsigned transport check; the signed control rejects replacement pins
 and archives before initializing a receiver store. It remains a

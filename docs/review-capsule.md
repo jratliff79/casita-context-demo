@@ -15,8 +15,13 @@ private project, credentials, real media or incident records.
 ## Replay the recorded report
 
 You need Python 3.9+, Git, OpenSSH signing support on macOS or Linux, and the
-default Casita CLI. If your local clone contains the pinned commit, use it as
-`--source`. Otherwise, obtain a separate public checkout under ignored output:
+default Casita CLI.
+
+The [shared prerequisites](../README.md#prerequisites) and
+[optional uv runner](../README.md#optional-uv-runner) cover Python setup. uv does
+not install the required Git, OpenSSH or Casita executables. If your local clone
+contains the pinned commit, use it as `--source`. Otherwise, obtain a separate
+public checkout under ignored output:
 
 ```sh
 git clone https://github.com/jratliff79/casita-context-demo.git output/review-source

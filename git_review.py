@@ -303,9 +303,11 @@ def run(args):
         elif args.mode == "return":
             pins = transport.parse_pins(auth.read_regular(args.context / "input-pins.json", 10_000), "review-input")
             report = validate_report(read_json(args.report, demo.MAX_BYTES), args.context / "context", pins)
+            raw = demo.canonical(report)
+            if len(raw) > demo.MAX_BYTES:
+                raise ValueError("canonical review report exceeds its byte limit")
             folder = output / "result"
             folder.mkdir()
-            raw = demo.canonical(report)
             (folder / "report.json").write_bytes(raw)
             transport.export(store, output, folder, demo.digest(raw), "review-result", args.signing_key, receipt)
             receipt["finding_count"] = len(report["findings"])

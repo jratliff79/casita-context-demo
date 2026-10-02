@@ -103,6 +103,31 @@ class ReviewChecks(unittest.TestCase):
                 review.receive(store, self.transfer_args(), self.folder, "review-input", {})
         store.run.assert_not_called()
 
+    def test_export_rejects_oversized_files_before_initialization(self):
+        store = Mock()
+        with patch.object(demo, "MAX_BYTES", 10), self.assertRaisesRegex(ValueError, "byte limit"):
+            review.export(store, self.folder, self.context, "0" * 64, "review-input", self.folder / "unused", {})
+        store.run.assert_not_called()
+
+    def test_export_rejects_archive_overhead_before_signing(self):
+        # Restored files fit, while archive framing pushes transport over budget.
+        payload = self.folder / "payload"
+        payload.mkdir()
+        (payload / "report.json").write_bytes(b"1234567890")
+        store = Mock()
+        store.roots.return_value = {"review/result": self.pins["directory_key"]}
+        def create_archive(*command):
+            if command[:2] == ("archive", "create"):
+                (self.folder / "handoff.casitar").write_bytes(b"framing" + b"1234567890")
+        store.run.side_effect = create_archive
+        with patch.object(demo, "MAX_BYTES", 10), patch.object(review.auth, "sign_demo_pins") as sign:
+            with self.assertRaisesRegex(ValueError, "exceeds limit"):
+                review.export(store, self.folder, payload, "0" * 64, "review-result", self.folder / "unused", {})
+        sign.assert_not_called()
+        self.assertFalse((self.folder / "pins.json").exists())
+        self.assertNotIn(("archive", "verify", self.folder / "handoff.casitar", "--json"),
+                         [call.args for call in store.run.call_args_list])
+
     def transfer_args(self):
         return argparse.Namespace(pins=self.folder / "pins.json", signature=self.folder / "pins.sig",
             allowed_signers=self.folder / "allowed", signer="synthetic-sender", archive=self.folder / "input.casitar")

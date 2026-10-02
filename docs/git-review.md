@@ -6,6 +6,13 @@ return a signed static report, and let the sender verify each citation against
 the original Git objects. It uses the existing Casita transport and OpenSSH pin
 signatures. It does not invoke a model or execute received source.
 
+For a real public-source use of this command, see the
+[selected-Git review case](git-review-case.md). It records one fresh capsule-only
+review, verified citations, an independent bug reproduction and a model-free
+replay. Outgoing restored files and Casitar archives must each fit the receiver's
+1,000,000-byte budget. Canonical JSON escaping and archive framing count toward
+those limits; oversized output fails before pins are signed.
+
 The existing [public review example](review-capsule.md) remains pinned to its
 allowlisted snapshot. This command accepts a caller-selected repository and
 specification; it does not automatically discover files, repository URLs, logs,

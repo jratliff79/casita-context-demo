@@ -18,6 +18,11 @@ a capsule-only reviewer found a real bug in this public demo, its returned
 citations verified, and a regression-tested fix merged. You can replay the
 recorded handoff without an AI account.
 
+The [selected-Git review case](docs/git-review-case.md) repeats that workflow
+against the merged Git handoff tool. A fresh capsule-only reviewer identified a
+report-size bug; an independent local reproduction confirmed it. Its recorded
+report and six source citations can be replayed through the signed transport.
+
 ## Prerequisites
 
 The examples are tested on macOS and Linux. The commands below use a POSIX shell.
@@ -113,6 +118,7 @@ the handoff and runs the demo's deterministic checker; it does not run an AI rev
 | Signed input and result pins with pre-import rejection checks | [Signed handoff guide](docs/signed-handoff.md) | Default Casita CLI and OpenSSH `ssh-keygen -Y` on macOS or Linux |
 | Public source capsule and signed AI review findings | [Review capsule guide](docs/review-capsule.md) | Default Casita CLI, OpenSSH, Git and the pinned public source commit |
 | Selected Git lines and a signed static-review return | [Git review guide](docs/git-review.md) | Default Casita CLI, OpenSSH and Git; synthetic walkthrough included |
+| Recorded public Git review, six verified citations and reproduced size bug | [Selected-Git review case](docs/git-review-case.md) | Default Casita CLI, OpenSSH, Git and the pinned public source commit; no AI account |
 | Image and context transport with a trusted host check | [Environment transport guide](docs/pinned-environment.md#transport-check) | Casita built with `oci`; public registry access |
 | Trusted checker in the restored image | [Apple Container guide](docs/pinned-environment.md#apple-container-trial) | OCI-enabled Casita, public registry access and Apple Container running on a Mac |
 

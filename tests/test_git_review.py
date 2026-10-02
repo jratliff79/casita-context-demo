@@ -2,6 +2,7 @@ import argparse
 import copy
 import json
 import os
+import sys
 from pathlib import Path
 import tempfile
 import unittest
@@ -237,6 +238,47 @@ class GitReviewChecks(unittest.TestCase):
         with patch.object(review.shutil, "which", return_value="/unused/casita"), self.assertRaises(FileExistsError):
             review.run(argparse.Namespace(output=output, mode="prepare", casita="casita"))
         self.assertEqual(sentinel.read_text(), "preserve")
+
+    def oversized_canonical_report(self):
+        # Literal UTF-8 fits the input budget, but repeated exact citations
+        # expand when canonical JSON escapes each non-ASCII character.
+        (self.repository / "unicode.txt").write_text("\u0080" * 10_000 + "\n", encoding="utf-8")
+        review.git(self.repository, "add", "--", "unicode.txt")
+        review.git(self.repository, "-c", "user.name=Synthetic Example", "-c", "user.email=example@example.invalid",
+                   "-c", "commit.gpgsign=false", "commit", "-q", "-m", "Synthetic long line")
+        commit = review.git(self.repository, "rev-parse", "HEAD").decode().strip()
+        spec = copy.deepcopy(self.spec)
+        spec.update(commit=commit, selections=[{"id": "unicode", "path": "unicode.txt", "start": 1, "end": 1}])
+        self.spec_path.write_bytes(demo.canonical(spec))
+        receiver = self.base / "unicode-receiver"
+        receiver.mkdir()
+        ident = review.create_context(receiver / "context", self.repository, self.spec_path)
+        pins = dict(self.pins, content_id=ident, archive_sha256="0" * 64,
+                    schema="casita-context-demo.review-input-pins.v1")
+        (receiver / "input-pins.json").write_bytes(demo.canonical(pins))
+        _, sources = review.verify_context(receiver / "context", ident)
+        item = sources["unicode"]
+        finding = {"title": "Synthetic size control", "body": "Not a reviewer finding.", "priority": "P2",
+                   "citations": [{"selection_id": "unicode", "path": "unicode.txt", "blob_sha256": item["blob_sha256"],
+                                  "line_start": 1, "line_end": 1, "excerpt": item["lines"][0]}]}
+        report = dict(self.report, context_id=ident, source_commit=commit, findings=[finding] * 20)
+        review.validate_report(report, receiver / "context", pins)
+        path = self.base / "unicode-report.json"
+        path.write_bytes(json.dumps(report, ensure_ascii=False).encode("utf-8"))
+        self.assertLess(path.stat().st_size, demo.MAX_BYTES)
+        self.assertGreater(len(demo.canonical(report)), demo.MAX_BYTES)
+        return receiver, path
+
+    def test_expanded_report_rejected_before_store_or_artifact_creation(self):
+        receiver, report = self.oversized_canonical_report()
+        output = self.base / "oversized-return"
+        with patch.object(review.demo, "Casita") as store:
+            with self.assertRaisesRegex(ValueError, "byte limit"):
+                review.run(argparse.Namespace(mode="return", casita=sys.executable, output=output,
+                           context=receiver, report=report, signing_key=self.base / "unused-key"))
+        store.return_value.run.assert_not_called()
+        self.assertFalse((output / "result").exists())
+        self.assertFalse((output / "pins.json").exists())
 
 
 if __name__ == "__main__":

@@ -6,7 +6,9 @@ import subprocess
 import tempfile
 
 NAMESPACES = {"input": "casita-context-demo.input-pins.v1",
-              "result": "casita-context-demo.result-pins.v1"}
+              "result": "casita-context-demo.result-pins.v1",
+              "review-input": "casita-context-demo.review-input-pins.v1",
+              "review-result": "casita-context-demo.review-result-pins.v1"}
 
 
 def read_regular(path, limit):

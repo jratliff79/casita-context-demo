@@ -59,6 +59,7 @@ the handoff and runs the demo's deterministic checker; it does not run an AI rev
 | Two context versions and verified result return | `demo.py`, as above | Default Casita CLI |
 | Separate sender, worker and return-verifier processes | [Portable worker guide](docs/portable-worker.md) | Default Casita CLI on each side |
 | Signed input and result pins with pre-import rejection checks | [Signed handoff guide](docs/signed-handoff.md) | Default Casita CLI and OpenSSH `ssh-keygen -Y` on macOS or Linux |
+| Public source capsule and signed AI review findings | [Review capsule guide](docs/review-capsule.md) | Default Casita CLI, OpenSSH, Git and the pinned public source commit |
 | Image and context transport with a trusted host check | [Environment transport guide](docs/pinned-environment.md#transport-check) | Casita built with `oci`; public registry access |
 | Trusted checker in the restored image | [Apple Container guide](docs/pinned-environment.md#apple-container-trial) | OCI-enabled Casita, public registry access and Apple Container running on a Mac |
 
@@ -183,6 +184,8 @@ of an existing output. Image checks also cover blob corruption, platform/config
 pins, runtime identity readback and cleanup after post-load validation failures.
 Signature tests invoke OpenSSH with temporary keys and check signer/namespace
 binding, file limits, schema checks, exact verified bytes and rejection before import.
+Review report checks bind findings to the original context and verify each cited
+file hash and exact line excerpt. They do not judge whether a finding is correct.
 The real CLI run exercises root identity, sharing, multi-root portable transport,
 restore, returned-result verification and integrity audits. Both are needed to validate
 changes to the demonstration.
@@ -199,17 +202,22 @@ correctness check using a debug CLI build, not a performance benchmark. The work
 permissions and does not upload raw receipts, stores or context archives.
 An additional OCI job builds with `--features oci` and checks image/context
 transport plus the trusted host checker. It does not run Apple Container.
+The handoff job also replays a recorded capsule-only AI review of an allowlisted
+public source snapshot, signs its return and rejects correctly signed reports
+with a wrong context or invented excerpt. It does not invoke an AI reviewer.
 
 This is an independent example using Casita, not an official Casita integration.
 MIT licensed; contributions should keep the example small, reproducible and
 free of private evidence.
 
 This example's code, tests and documentation were developed with substantial
-assistance from OpenAI Codex. The fixtures are synthetic; executed checks and
+assistance from OpenAI Codex. Timing fixtures are synthetic; the review example
+uses labelled public source. Executed checks and
 their limits are recorded in the [initial validation](docs/validation.md),
 [portable worker trial](docs/portable-worker.md#executed-cross-platform-trial) and
 [pinned image trial](docs/pinned-environment.md#recorded-scope), with the
-[signed handoff check](docs/signed-handoff.md#recorded-scope) recorded separately. AI assistance
+[signed handoff check](docs/signed-handoff.md#recorded-scope) and
+[public source review](docs/review-capsule.md#recorded-trial) recorded separately. AI assistance
 does not replace maintainer review or responsibility for the published work.
 
 AI-assisted contributions are welcome. Describe substantial AI assistance in

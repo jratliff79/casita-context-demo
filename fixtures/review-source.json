@@ -1,0 +1,18 @@
+{
+  "commit": "de2c03a89ceef6a0b751ed137c91a4710dccaf19",
+  "files": {
+    "LICENSE": "b13e1d0ce5c2b67d711e935f670df74b6d899616f9f5630c498b3f8679ab5f6c",
+    "authentication.py": "81f1d4ee391957f7990152201fe8db71a1c97b6981868c397f1cc727a1542d35",
+    "demo.py": "6e4f8d34c17657986a2bcf4f56cb95ded5d714bcac471534291ccd1fe8df88ae",
+    "fixtures/source/verify.py": "ced8aafa86ae4d2c1a3eda79ad63c42db55e13d1e873529e8a26835cabde46ea",
+    "fixtures/v1/observation.json": "b82e82fde3619f038ce07a22ca314b2703aa30e33250dfbbeb5300b4e1a414da",
+    "fixtures/v1/task.md": "1a451005e3703ea25f64610dc13ba1e34961096acd8c6f91259272b3eb28c95e",
+    "fixtures/v2/observation.json": "0bb5b521f8ff35ff435f842984516db3e2e8a9b5981a30180555dc2fe7e8cd51",
+    "fixtures/v2/task.md": "1a451005e3703ea25f64610dc13ba1e34961096acd8c6f91259272b3eb28c95e",
+    "handoff.py": "1ea95eab4a7e06bd070a660e1394145696172581883c38f226a17405a1722c78",
+    "tests/test_authentication.py": "c7bdb5f5de62c7eb06054e1dd9bab4900591651d75637b03d30515f20be17433",
+    "tests/test_demo.py": "507ed1f6e7b0ce499802a36adc39369571a0dd5fd94764d36babcbc778fe6cc4",
+    "tests/test_handoff.py": "984bd510659e1451f20276c2dda4dfa3c2b381471311568cd21340da4fb816d6"
+  },
+  "repository": "https://github.com/jratliff79/casita-context-demo"
+}

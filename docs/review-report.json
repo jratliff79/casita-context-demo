@@ -1,0 +1,30 @@
+{
+  "schema": "casita-context-demo.review-report.v1",
+  "context_id": "3056d42b15ddec96957fd40c4df4205de0e78ccaaf786fffc5b1bb45f00be89b",
+  "context_directory_key": "casita.directory.v1:oPx-miZo3nTiPtKq5FqDE-ymyt2IaGHaGIRSQ3LtBkw",
+  "source_repository": "https://github.com/jratliff79/casita-context-demo",
+  "source_commit": "de2c03a89ceef6a0b751ed137c91a4710dccaf19",
+  "reviewer": "Codex capsule-only static reviewer",
+  "scope": "static review; no received code executed",
+  "findings": [
+    {
+      "path": "source/fixtures/source/verify.py",
+      "file_sha256": "ced8aafa86ae4d2c1a3eda79ad63c42db55e13d1e873529e8a26835cabde46ea",
+      "line_start": 19,
+      "line_end": 23,
+      "excerpt": "def verify(source_rows, output_duration):\n    source_duration = packet_span(source_rows)\n    if source_duration is None or not output_duration:\n        return \"rejected: source or output audio timing unavailable\"\n    return \"accepted\" if output_duration >= source_duration - 0.25 else \"rejected: audio shortened\"",
+      "priority": "P2",
+      "title": "Validate output duration before accepting the timing result",
+      "body": "The output timing check only rejects falsy values. With source_rows equal to [{\"pts\": 0, \"duration\": 0.063}] and output_duration equal to -0.1, the duration is truthy and passes the comparison against -0.187, producing an accepted verdict for an impossible negative audio duration. A positive infinite duration also passes for any finite source span; Python's JSON decoder can produce this from the JSON numeric literal 1e309. expected_result forwards the decoded output_audio_duration directly to this checker, and verify_result recomputes the same verdict, so pin and result verification do not correct it. Require a finite, positive numeric output duration before applying the shortening tolerance, and cover invalid output timing in the checker tests."
+    }
+  ],
+  "limitations": [
+    "Only the packaged public source snapshot was inspected; no other files, memory, credentials, keys, or network sources were accessed.",
+    "No received code, imports, tests, signing commands, or Casita commands were executed; the finding is based on static control flow and arithmetic.",
+    "The review covered authentication.py, handoff.py, demo.py, the trusted fixture checker, their packaged tests, fixture observations, and capsule metadata.",
+    "The packaged authentication tests import signed_handoff, but that implementation is absent from the capsule, so its orchestration and cleanup behavior could not be reviewed.",
+    "Casita implementation and runtime behavior, OpenSSH implementation, external configuration, and deployment context were unavailable.",
+    "The packaged fixture observations use finite positive output durations; the finding concerns other observation values accepted by the same checker path.",
+    "This static review does not establish execution provenance, sandboxing, signature validity, or exhaustive absence of defects."
+  ]
+}

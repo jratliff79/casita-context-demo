@@ -1,0 +1,54 @@
+{
+  "actual_ai_review_invoked": true,
+  "agent_reported_no_received_code_execution": true,
+  "architecture": "arm64",
+  "baseline_casita_commands_passed": 33,
+  "casita_binary_sha256": "4ca1b670d989838bba50708f3ae56c3ac6ff227d4b46f60060ba7f9607007daf",
+  "casita_features": "default",
+  "casita_source_commit": "aed18e32704c8f2bf821cc038720a77610a600ba",
+  "checked_on": "2026-10-01",
+  "citations_verified": true,
+  "context_pins": {
+    "archive_sha256": "644db24a4dd803ce368a34b3c98013bfd3c784c8ac057f9456d5de20df8bb3ae",
+    "content_id": "3056d42b15ddec96957fd40c4df4205de0e78ccaaf786fffc5b1bb45f00be89b",
+    "directory_key": "casita.directory.v1:oPx-miZo3nTiPtKq5FqDE-ymyt2IaGHaGIRSQ3LtBkw",
+    "schema": "casita-context-demo.review-input-pins.v1"
+  },
+  "execution_attested": false,
+  "finding_count": 1,
+  "finding_triage": {
+    "infinite_output_duration_example": {
+      "output_duration": "positive infinity",
+      "trusted_local_verdict": "accepted"
+    },
+    "negative_output_duration_example": {
+      "output_duration": -0.1,
+      "source_duration": 0.063,
+      "source_pts": 0,
+      "trusted_local_verdict": "accepted"
+    },
+    "received_capsule_executed_for_triage": false
+  },
+  "input_signature_verified": true,
+  "original_context_verified": true,
+  "platform": "macOS",
+  "public_source_allowlist": "fixtures/review-source.json",
+  "replay_negative_controls": {
+    "invented_excerpt": true,
+    "wrong_context": true
+  },
+  "result_pins": {
+    "archive_sha256": "b53f23480932dd90e65274e62ccce31a01721a30207dd1f605f7188cdd87dcbc",
+    "content_id": "0878b39dab67a20cfb86bf1c26a0d68ebe97995adbdf17a35a1e382463cab468",
+    "directory_key": "casita.directory.v1:P-lXC90dvz7dFPFBUQGRorw_jtm9-YgmlkyykjvgXvY",
+    "schema": "casita-context-demo.review-result-pins.v1"
+  },
+  "result_signature_verified": true,
+  "review_quality_verified": false,
+  "reviewer_context": "verified capsule only; instruction restriction, not sandbox attestation",
+  "schema": "casita-context-demo.actual-review-trial.v1",
+  "source_commit": "de2c03a89ceef6a0b751ed137c91a4710dccaf19",
+  "source_files": 12,
+  "throwaway_private_keys_removed": true,
+  "unit_tests_passed": 53
+}

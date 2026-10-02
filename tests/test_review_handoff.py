@@ -74,6 +74,18 @@ class ReviewChecks(unittest.TestCase):
             with self.assertRaises(ValueError):
                 review.validate_report(report, self.context, self.pins)
 
+    def test_changed_citation_bytes_cannot_retain_the_original_hash(self):
+        original_read = review.auth.read_regular
+        def changed_read(path, limit):
+            if path == self.context / "source/example.py":
+                return b"def altered():\n    return 2\n"
+            return original_read(path, limit)
+        report = copy.deepcopy(self.report)
+        report["findings"][0]["excerpt"] = "def altered():\n    return 2"
+        with patch.object(review.auth, "read_regular", side_effect=changed_read):
+            with self.assertRaisesRegex(ValueError, "changed while reading"):
+                review.validate_report(report, self.context, self.pins)
+
     def test_rebound_context_cannot_claim_different_public_source(self):
         source = self.context / "source/example.py"
         source.write_bytes(b"changed public code\n")

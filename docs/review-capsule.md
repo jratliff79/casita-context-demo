@@ -127,7 +127,7 @@ separate change from this protocol demonstration.
 The signed report was restored into a new return store. Its signature, original
 context binding, file hash and quoted lines verified. A replay also rejected two
 correctly signed reports carrying an incorrect context ID and invented excerpt.
-The baseline demo and 53 unit tests passed locally. This was macOS arm64 with the
+The baseline demo and 54 unit tests passed locally. This was macOS arm64 with the
 default-feature Casita build at `aed18e32704c8f2bf821cc038720a77610a600ba`.
 The [sanitized trial receipt](review-validation.json) records checks and limits;
 it contains no keys, signatures, local paths or raw command output.

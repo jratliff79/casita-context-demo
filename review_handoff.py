@@ -98,7 +98,10 @@ def validate_report(report, context, pins):
                 or finding["file_sha256"] != manifest["files"][path]):
             raise ValueError("finding does not cite a packaged source hash")
         start, end = finding["line_start"], finding["line_end"]
-        lines = auth.read_regular(context / path, demo.MAX_BYTES).decode("utf-8").splitlines()
+        cited_bytes = auth.read_regular(context / path, demo.MAX_BYTES)
+        if demo.digest(cited_bytes) != manifest["files"][path]:
+            raise ValueError("cited source changed while reading")
+        lines = cited_bytes.decode("utf-8").splitlines()
         if type(start) is not int or type(end) is not int or not 1 <= start <= end <= len(lines) or end - start >= 10:
             raise ValueError("invalid citation lines")
         if finding["excerpt"] != "\n".join(lines[start - 1:end]):

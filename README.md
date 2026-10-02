@@ -13,6 +13,11 @@ It checks expected pins before reading the evidence. This local simulation
 creates those pins at the sender and reads them at the receiver. No model,
 cloud account, agent framework or private project is required.
 
+For a complete AI-context example, read [from signed capsule to landed fix](docs/review-to-fix.md):
+a capsule-only reviewer found a real bug in this public demo, its returned
+citations verified, and a regression-tested fix merged. You can replay the
+recorded handoff without an AI account.
+
 ## Run it
 
 You need Python 3.9+ and the Casita CLI. From this repository:

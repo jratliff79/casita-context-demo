@@ -63,6 +63,11 @@ fixtures and deterministic result JSON, with no credentials or private projects.
 
 ## Executed cross-platform trial
 
+A later [physical machine trial](physical-worker.md) used the same three roles
+over SSH from a Mac to a separate Linux x86_64 host and back, with the updated
+checker and Casita `aed18e32`. The earlier local VM trial below is retained as
+its own historical record.
+
 On 2026-10-01, the Mac prepared both contexts, a fresh Apple Container Linux arm64
 VM ran the worker, and the Mac verified both returned results. The worker's only
 incoming handoff files were the context archive and separate pins; its trusted

@@ -1,0 +1,102 @@
+{
+  "date_utc": "2026-10-02",
+  "scope": "physical macOS arm64 sender to Linux x86_64 worker over authenticated SSH and back; public synthetic fixtures; execution unattested",
+  "demo_commit": "01a43157c7e74967cc9b30da49a320047469e3e3",
+  "casita_source_commit": "aed18e32704c8f2bf821cc038720a77610a600ba",
+  "physical_remote_machine_tested": true,
+  "network_transport": "SSH and SCP with existing host configuration; agent forwarding disabled",
+  "worker_virtualization_probe": "none",
+  "received_code_executed": false,
+  "sandbox_tested": false,
+  "execution_attested": false,
+  "trusted_runtime_sha256": {
+    "demo.py": "6e4f8d34c17657986a2bcf4f56cb95ded5d714bcac471534291ccd1fe8df88ae",
+    "handoff.py": "1ea95eab4a7e06bd070a660e1394145696172581883c38f226a17405a1722c78",
+    "authentication.py": "3a9834af800be8cce17221b6fffdab8cffe3b2b174550b53d7a1c2c1184fb8d4",
+    "fixtures/source/verify.py": "89311eac5819d315d2c7e4aa6f36b5ca6a2521803a30a761e5643f4c6062a9d4"
+  },
+  "build": {
+    "toolchain": "Rust 1.94.1",
+    "profile": "debug",
+    "dependencies": "ci/Cargo.lock with cargo --locked",
+    "image_digests": [
+      "rust@sha256:6ae102bdbf528294bc79ad6e1fae682f6f7c2a6e6621506ba959f9685b308a55"
+    ],
+    "image_id": "sha256:6ae102bdbf528294bc79ad6e1fae682f6f7c2a6e6621506ba959f9685b308a55",
+    "cpu_limit": 2,
+    "memory_limit_bytes": 4294967296,
+    "container_removed": true
+  },
+  "negative_controls": {
+    "altered_input_rejected_before_store_init": true,
+    "altered_result_rejected_before_store_init": true
+  },
+  "cleanup": {
+    "remote_scratch_removed": true,
+    "new_compiler_image_removed": true,
+    "raw_evidence_retained_locally": true
+  },
+  "phases": {
+    "sender": {
+      "mode": "prepare",
+      "ok": true,
+      "platform": "Darwin",
+      "architecture": "arm64",
+      "python_version": "3.9.6",
+      "casita_version": "casita 0.1.0",
+      "casita_binary_sha256": "4ca1b670d989838bba50708f3ae56c3ac6ff227d4b46f60060ba7f9607007daf",
+      "casita_commands_succeeded": 9,
+      "pins": {
+        "archive_sha256": "0052fdb5dfb0bfa5f4fc8b357c71d327c8d59f23cfd4e9035fbcadcdbf75ed12",
+        "schema": "casita-context-demo.input-pins.v1",
+        "v1": {
+          "context_id": "1023b3d355ae246c7f95bae922d0cb8371d81126d52b0b8137680b0c54ff9138",
+          "directory_key": "casita.directory.v1:vGq6ti2Dr_3IhgtZG6xjwvtLI0ngPQdWpSZ9_61nc5Q"
+        },
+        "v2": {
+          "context_id": "0c48b07cf250c9e5c2aa6e86f09c316894e662bfcf60be782b6f7f34dc01b977",
+          "directory_key": "casita.directory.v1:hyq8HOOHhU2YoZYJMtm1jrMrqqBlzA8Al4Jp6vhR2WU"
+        }
+      },
+      "archive_bytes": 6106
+    },
+    "worker": {
+      "mode": "work",
+      "ok": true,
+      "platform": "Linux",
+      "architecture": "x86_64",
+      "python_version": "3.13.5",
+      "casita_version": "casita 0.1.0",
+      "casita_binary_sha256": "eaddbcfdd5aad1908d02b77be7232ee275aa181fbe4a22a875ed3492b5325576",
+      "casita_commands_succeeded": 13,
+      "pins": {
+        "archive_sha256": "d14073e63c2e0cc07eb40760d09cca47e23e3031819ddc0ee31517e8751f4a28",
+        "schema": "casita-context-demo.result-pins.v1",
+        "v1": {
+          "directory_key": "casita.directory.v1:xZIvYToGSlZK7hWViqjpmveqWPw3UdREodf02MXYGZA",
+          "result_id": "6a15eb42d3d690aa4f19765596e8648ba6e8401c078fddc0a9ec9ae915c1ba3d"
+        },
+        "v2": {
+          "directory_key": "casita.directory.v1:OrNLGdHp5Er5duWvWQ5KM9VqtP9_5rQZYXZMMoXOOyU",
+          "result_id": "f60607999b2eed4526d2412184bfe72978db7aa0f9f4245221e21402966a6a92"
+        }
+      },
+      "archive_bytes": 2076,
+      "verdicts": {
+        "v1": "rejected: source or output audio timing unavailable",
+        "v2": "accepted"
+      }
+    },
+    "return": {
+      "mode": "verify",
+      "ok": true,
+      "platform": "Darwin",
+      "architecture": "arm64",
+      "python_version": "3.9.6",
+      "casita_version": "casita 0.1.0",
+      "casita_binary_sha256": "4ca1b670d989838bba50708f3ae56c3ac6ff227d4b46f60060ba7f9607007daf",
+      "casita_commands_succeeded": 7,
+      "original_contexts_verified": true
+    }
+  }
+}

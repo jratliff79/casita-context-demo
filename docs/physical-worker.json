@@ -19,13 +19,13 @@
     "toolchain": "Rust 1.94.1",
     "profile": "debug",
     "dependencies": "ci/Cargo.lock with cargo --locked",
-    "image_digests": [
-      "rust@sha256:6ae102bdbf528294bc79ad6e1fae682f6f7c2a6e6621506ba959f9685b308a55"
-    ],
-    "image_id": "sha256:6ae102bdbf528294bc79ad6e1fae682f6f7c2a6e6621506ba959f9685b308a55",
     "cpu_limit": 2,
     "memory_limit_bytes": 4294967296,
-    "container_removed": true
+    "container_removed": true,
+    "image_index_digest": "sha256:6ae102bdbf528294bc79ad6e1fae682f6f7c2a6e6621506ba959f9685b308a55",
+    "linux_amd64_manifest_digest": "sha256:4ec71e955e6c08aeb238885083222ddff79d82eb87654a96c76e38e94da1a53b",
+    "linux_amd64_config_digest": "sha256:1c3316753323aa5edd4c2be762323794f4aa9f4335635dc4c7964ee99cb986d2",
+    "registry_descriptors_sha256_verified": true
   },
   "negative_controls": {
     "altered_input_rejected_before_store_init": true,

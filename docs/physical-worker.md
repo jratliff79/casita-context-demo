@@ -22,7 +22,10 @@ omitted. The inputs contain only this repository's public synthetic fixtures.
    the upstream main revision checked at the time of the trial. The Linux debug
    CLI was built with Rust 1.94.1 and this demo's CI lockfile using `cargo --locked`.
    A disposable compiler container had two CPUs and 4 GiB of memory; its image
-   digest is recorded in the receipt. The resulting CLI and Python worker ran
+   index, Linux amd64 manifest and configuration digests are recorded separately
+   in the receipt. Their registry bytes were retrieved by digest and SHA-256
+   checked after the trial, following the [registry API](https://docs.docker.com/reference/api/registry/latest/).
+   The resulting CLI and Python worker ran
    directly on the Linux host, whose virtualization probe reported `none`.
 3. **Transfer the contexts.** The Mac ran `handoff.py prepare`. Only its
    `handoff.casitar` and `pins.json` were sent as handoff inputs through the

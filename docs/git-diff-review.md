@@ -5,6 +5,11 @@ immutable Git commits. It includes a derived unified diff, original blob hashes
 and selected surrounding source ranges. A static report can cite either version
 or both. The final verifier checks the diff and each selection against the
 original Git blobs, then verifies the returned report against those selections.
+
+The [recorded diff review case](diff-review-case.md) uses this workflow for one
+fresh capsule-only review of public PR #16. The reviewer returned zero findings.
+Its replay preserves the empty report and runs independent synthetic rejection
+controls; it does not invoke a model or certify runtime correctness.
 It uses the existing signed input/result transport, with fresh stores and
 the same 1,000,000-byte restored-file and archive budgets.
 

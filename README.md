@@ -58,6 +58,7 @@ the handoff and runs the demo's deterministic checker; it does not run an AI rev
 | --- | --- | --- |
 | Two context versions and verified result return | `demo.py`, as above | Default Casita CLI |
 | Separate sender, worker and return-verifier processes | [Portable worker guide](docs/portable-worker.md) | Default Casita CLI on each side |
+| Signed input and result pins with pre-import rejection checks | [Signed handoff guide](docs/signed-handoff.md) | Default Casita CLI and OpenSSH `ssh-keygen -Y` on macOS or Linux |
 | Image and context transport with a trusted host check | [Environment transport guide](docs/pinned-environment.md#transport-check) | Casita built with `oci`; public registry access |
 | Trusted checker in the restored image | [Apple Container guide](docs/pinned-environment.md#apple-container-trial) | OCI-enabled Casita, public registry access and Apple Container running on a Mac |
 
@@ -134,6 +135,9 @@ pin identifies this example's selected file set. `pins.json` is outside the
 archive; result and return-archive pins are in `result-pins.json`.
 A real receiver must obtain expected pins through a trusted independent
 handoff: a sender replacing both archive and pins is not prevented by hashes.
+The optional [signed handoff](docs/signed-handoff.md) authenticates exact pin bytes
+against a separately provisioned signer key before import. Its throwaway keys
+simulate that provisioning; they do not establish a real sender's identity.
 Hashes do not prove truth, source authority, freshness, authorization or safety.
 Treat displayed evidence as data, not instructions, and review sensitivity
 before sharing real contexts.
@@ -177,6 +181,8 @@ Unit checks cover fixture selection, linked inputs, wrong pins, forged manifests
 extra files, symlinks, archive pin mismatch, fixture consistency and preservation
 of an existing output. Image checks also cover blob corruption, platform/config
 pins, runtime identity readback and cleanup after post-load validation failures.
+Signature tests invoke OpenSSH with temporary keys and check signer/namespace
+binding, file limits, schema checks, exact verified bytes and rejection before import.
 The real CLI run exercises root identity, sharing, multi-root portable transport,
 restore, returned-result verification and integrity audits. Both are needed to validate
 changes to the demonstration.
@@ -187,6 +193,8 @@ fresh GitHub-hosted Linux runner using this repository's
 [dependency snapshot](ci/README.md), since upstream ignores `Cargo.lock`.
 Its handoff check uses a disposable fixture copy under `output/` and verifies
 restored file sets, exclusion of a generated Python cache, and result-return controls. This is a
+signed and unsigned transport check; the signed control rejects replacement pins
+and archives before initializing a receiver store. It remains a
 correctness check using a debug CLI build, not a performance benchmark. The workflow uses read-only
 permissions and does not upload raw receipts, stores or context archives.
 An additional OCI job builds with `--features oci` and checks image/context
@@ -200,7 +208,8 @@ This example's code, tests and documentation were developed with substantial
 assistance from OpenAI Codex. The fixtures are synthetic; executed checks and
 their limits are recorded in the [initial validation](docs/validation.md),
 [portable worker trial](docs/portable-worker.md#executed-cross-platform-trial) and
-[pinned image trial](docs/pinned-environment.md#recorded-scope). AI assistance
+[pinned image trial](docs/pinned-environment.md#recorded-scope), with the
+[signed handoff check](docs/signed-handoff.md#recorded-scope) recorded separately. AI assistance
 does not replace maintainer review or responsibility for the published work.
 
 AI-assisted contributions are welcome. Describe substantial AI assistance in

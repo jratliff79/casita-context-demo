@@ -1,0 +1,41 @@
+{
+  "architecture": "arm64",
+  "baseline_casita_commands_passed": 33,
+  "casita_binary_sha256": "4ca1b670d989838bba50708f3ae56c3ac6ff227d4b46f60060ba7f9607007daf",
+  "casita_features": "default",
+  "casita_source_commit": "aed18e32704c8f2bf821cc038720a77610a600ba",
+  "checked_on": "2026-10-01",
+  "execution_attested": false,
+  "input_authentication": {
+    "namespace": "casita-context-demo.input-pins.v1",
+    "pins_sha256": "21f0cc0c8b0b989d719acd02509fa5623798213da0a5b7adbd2d60c9c2357ad4",
+    "signer": "synthetic-sender",
+    "verified": true
+  },
+  "negative_controls": {
+    "replaced_archive_and_pins": true,
+    "unknown_signing_key": true,
+    "wrong_identity": true,
+    "wrong_namespace": true
+  },
+  "ok": true,
+  "openssh_version": "10.3p1",
+  "original_contexts_verified": true,
+  "platform": "macOS",
+  "received_code_executed": false,
+  "result_authentication": {
+    "namespace": "casita-context-demo.result-pins.v1",
+    "pins_sha256": "2234d4ebf2eae1a90e42a3331769dcee3576d0686ff6b69f7ba5c8ba920c57f4",
+    "signer": "synthetic-worker",
+    "verified": true
+  },
+  "schema": "casita-context-demo.signed-handoff.v1",
+  "scope": "synthetic local trust provisioning; no execution attestation or freshness proof",
+  "throwaway_private_keys_removed": true,
+  "unit_tests_passed": 43,
+  "unsigned_replacement_accepted": true,
+  "verdicts": {
+    "v1": "rejected: source or output audio timing unavailable",
+    "v2": "accepted"
+  }
+}

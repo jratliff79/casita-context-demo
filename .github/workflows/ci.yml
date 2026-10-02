@@ -71,7 +71,7 @@ jobs:
           import shutil
 
           work = Path("output/ci-worktree")
-          for name in ("demo.py", "handoff.py", "fixtures/source/verify.py",
+          for name in ("demo.py", "handoff.py", "authentication.py", "signed_handoff.py", "fixtures/source/verify.py",
                        "fixtures/v1/observation.json", "fixtures/v1/task.md",
                        "fixtures/v2/observation.json", "fixtures/v2/task.md"):
               target = work / name
@@ -152,6 +152,27 @@ jobs:
           returned = json.loads(Path("output/portable-return/receipt.json").read_text())
           assert returned["original_contexts_verified"]
           print("PASS: separate-process portable handoff and original-context result verification")
+          PY
+
+      - name: Run authenticated input and result handoff
+        run: |
+          python output/ci-worktree/signed_handoff.py --casita output/casita-build/debug/casita --output output/signed-handoff
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          folder = Path("output/signed-handoff")
+          receipt = json.loads((folder / "receipt.json").read_text())
+          assert receipt["ok"] and receipt["original_contexts_verified"]
+          assert receipt["input_authentication"]["verified"] and receipt["result_authentication"]["verified"]
+          assert receipt["unsigned_replacement_accepted"] and receipt["throwaway_private_keys_removed"]
+          assert receipt["negative_controls"] == {
+              "replaced_archive_and_pins": True, "unknown_signing_key": True,
+              "wrong_namespace": True, "wrong_identity": True,
+          }
+          assert not (folder / "throwaway-keys").exists()
+          assert receipt["received_code_executed"] is False and receipt["execution_attested"] is False
+          assert receipt["verdicts"] == {"v1": "rejected: source or output audio timing unavailable", "v2": "accepted"}
+          print("PASS: signed pins, original-context result verification and pre-import signature controls")
           PY
 
   environment:

@@ -7,13 +7,20 @@ from pathlib import Path
 import subprocess
 import sys
 
+import authentication as auth
+import demo
 import git_diff_example as example
 
 SOURCE = json.loads((Path(__file__).parent / "fixtures/diff-review-source.json").read_bytes())
 
 
 def run(args):
-    return example.run(args, source=SOURCE, report_path=args.report)
+    # Pin the actual recorded artifact, not just its context/schema. Pass the
+    # verified snapshot onward so replacement of the caller's path cannot win.
+    raw = auth.read_regular(args.report, demo.MAX_BYTES)
+    if demo.digest(raw) != SOURCE["report_sha256"]:
+        raise ValueError("report differs from pinned recorded AI artifact")
+    return example.run(args, source=SOURCE, report_raw=raw)
 
 
 def main():

@@ -1,6 +1,7 @@
 import copy
 import json
 from pathlib import Path
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -40,10 +41,42 @@ class RecordedDiffChecks(unittest.TestCase):
     def test_replay_uses_recorded_report_and_explicit_public_fixture(self):
         with patch.object(example, "run", return_value={"ok": True}) as run:
             class Args:
-                report = Path("recorded.json")
+                report = Path(__file__).parent.parent / "docs/diff-review-report.json"
             args = Args()
             replay.run(args)
-            run.assert_called_once_with(args, source=replay.SOURCE, report_path=args.report)
+            run.assert_called_once_with(args, source=replay.SOURCE, report_raw=args.report.read_bytes())
+
+    def test_edited_context_bound_report_rejected_before_artifacts(self):
+        original = Path(__file__).parent.parent / "docs/diff-review-report.json"
+        report = json.loads(original.read_bytes())
+        report["reviewer"] = "edited or newly authored report"
+        with tempfile.TemporaryDirectory() as name:
+            class Args:
+                pass
+            args = Args()
+            args.report = Path(name) / "edited.json"
+            args.output = Path(name) / "output"
+            args.report.write_text(json.dumps(report))
+            with patch.object(example, "run") as run, self.assertRaisesRegex(ValueError, "pinned recorded AI artifact"):
+                replay.run(args)
+            run.assert_not_called()
+            self.assertFalse(args.output.exists())
+
+    def test_verified_snapshot_is_passed_even_if_report_path_changes(self):
+        original = (Path(__file__).parent.parent / "docs/diff-review-report.json").read_bytes()
+        with tempfile.TemporaryDirectory() as name:
+            class Args:
+                pass
+            args = Args()
+            args.report = Path(name) / "report.json"
+            args.report.write_bytes(original)
+            def replace_path(options, source, report_raw):
+                options.report.write_bytes(b"replaced after digest verification")
+                self.assertEqual(report_raw, original)
+                return {"ok": True}
+            with patch.object(example, "run", side_effect=replace_path):
+                self.assertTrue(replay.run(args)["ok"])
+            self.assertNotEqual(args.report.read_bytes(), original)
 
     def test_recorded_report_is_empty_and_has_no_synthetic_finding(self):
         path = Path(__file__).parent.parent / "docs/diff-review-report.json"

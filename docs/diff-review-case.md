@@ -72,7 +72,11 @@ uv run --no-project --python 3.12 python git_diff_replay.py --source . \
 The replay verifies the allowlist against immutable Git objects before creating
 artifacts, reconstructs the same observation and capsule, generates throwaway
 keys, and runs the four signed roles in fresh stores. It returns the recorded
-report unchanged. It invokes no model, executes no received code and applies no
+report unchanged. The source fixture also pins the recorded report's SHA256;
+even a schema-valid, context-bound edited report is rejected before artifact
+creation. `--report` can select another path containing those exact bytes.
+The verified byte snapshot is passed onward without reopening the selected path.
+It invokes no model, executes no received code and applies no
 patch. It verifies the transport bindings, not the historical reviewer session.
 
 Expected final output:

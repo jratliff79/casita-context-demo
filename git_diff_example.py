@@ -68,14 +68,14 @@ def control_report(report, selections):
     return control
 
 
-def run(args, source=SOURCE, report_path=None):
+def run(args, source=SOURCE, report_raw=None):
     verify_public_source(args.source, source)
     output = args.output.resolve()
     output.mkdir(parents=True, mode=0o700, exist_ok=False)
     keys = output / "throwaway-keys"
     keys.mkdir(mode=0o700)
     receipt = {"schema": "casita-context-demo.git-diff-example.v1", "public_source_snapshot": True,
-               "synthetic_fixture": False, "scripted_report": report_path is None, "recorded_ai_report": report_path is not None,
+               "synthetic_fixture": False, "scripted_report": report_raw is None, "recorded_ai_report": report_raw is not None,
                "fresh_ai_review": False,
                "received_code_executed": False, "execution_attested": False, "review_quality_verified": False,
                "os_sandbox_enforced": False, "patch_applied": False, "negative_controls": {}}
@@ -103,7 +103,7 @@ def run(args, source=SOURCE, report_path=None):
         prepared = role("prepare", "sender", source=args.source, spec=output / "spec.json", observation=observation, signing_key=keys / "sender")
         received = role("receive", "receiver", **transfer(output / "sender", "sender"))
         manifest, selections = diff.verify_context(output / "receiver/context", prepared["pins"]["content_id"])
-        report = review.read_json(report_path, demo.MAX_BYTES) if report_path is not None else scripted_report(manifest, selections, prepared["pins"])
+        report = review.parse_json(report_raw) if report_raw is not None else scripted_report(manifest, selections, prepared["pins"])
         (output / "report.json").write_bytes(demo.canonical(report))
         returned = role("return", "reviewer-return", context=output / "receiver", report=output / "report.json",
                         signing_key=keys / "return-controller")
@@ -175,7 +175,7 @@ def run(args, source=SOURCE, report_path=None):
         shutil.rmtree(keys)
         receipt["throwaway_private_keys_removed"] = True
         (output / "receipt.json").write_bytes(demo.canonical(receipt))
-    kind = "recorded" if report_path is not None else "scripted"
+    kind = "recorded" if report_raw is not None else "scripted"
     print(f"PASS: public base/head diff, signed {kind} return, versioned citations and rejection controls")
     return receipt
 

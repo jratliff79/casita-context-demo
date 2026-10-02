@@ -134,5 +134,6 @@
       "fixtures/git-diff-source.json": "6877a77da89b836acca63d2d1f5b2aee653b88e84e5955344a9da2889192e1df",
       "LICENSE": "b13e1d0ce5c2b67d711e935f670df74b6d899616f9f5630c498b3f8679ab5f6c"
     }
-  }
+  },
+  "report_sha256": "474f14b453c9c8f51a45a25c74720fbfa2bcae853993d582d721a06c76cb1c48"
 }

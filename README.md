@@ -29,7 +29,7 @@ are required.
 - **The Casita CLI**, built from the [tested source revision](#tested-casita-build).
   Python and uv do not install Casita. Put it on `PATH`, or pass its executable
   path with `--casita`. Building it from source requires Git and Rust 1.94.1+.
-- **Git** to clone this demo and prepare the public-source review example.
+- **Git** to clone this demo and prepare either source-review example.
 - **OpenSSH `ssh-keygen` with `-Y sign` and `-Y verify`** for the signed handoff,
   review replay and unit tests. The basic demo and unsigned worker do not need it.
 
@@ -112,6 +112,7 @@ the handoff and runs the demo's deterministic checker; it does not run an AI rev
 | Separate sender, worker and return-verifier processes | [Portable worker guide](docs/portable-worker.md) | Default Casita CLI on each side |
 | Signed input and result pins with pre-import rejection checks | [Signed handoff guide](docs/signed-handoff.md) | Default Casita CLI and OpenSSH `ssh-keygen -Y` on macOS or Linux |
 | Public source capsule and signed AI review findings | [Review capsule guide](docs/review-capsule.md) | Default Casita CLI, OpenSSH, Git and the pinned public source commit |
+| Selected Git lines and a signed static-review return | [Git review guide](docs/git-review.md) | Default Casita CLI, OpenSSH and Git; synthetic walkthrough included |
 | Image and context transport with a trusted host check | [Environment transport guide](docs/pinned-environment.md#transport-check) | Casita built with `oci`; public registry access |
 | Trusted checker in the restored image | [Apple Container guide](docs/pinned-environment.md#apple-container-trial) | OCI-enabled Casita, public registry access and Apple Container running on a Mac |
 
@@ -271,6 +272,9 @@ transport plus the trusted host checker. It does not run Apple Container.
 The handoff job also replays a recorded capsule-only AI review of an allowlisted
 public source snapshot, signs its return and rejects correctly signed reports
 with a wrong context or invented excerpt. It does not invoke an AI reviewer.
+It also runs the selected-Git-lines protocol with a synthetic repository and
+scripted report, checks dirty-checkout exclusion, and rejects signed reports
+with incorrect source bindings or citations. This is not a fresh AI review.
 
 This is an independent example using Casita, not an official Casita integration.
 MIT licensed; contributions should keep the example small, reproducible and

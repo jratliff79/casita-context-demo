@@ -27,5 +27,6 @@ the Casita dependency snapshot or introducing a signing service.
 When changing the tested Casita revision, regenerate the lockfile in a fresh
 public-source checkout, review its dependency sources, and validate the locked
 build and handoff on the hosted Linux runner before merging. Update the source
-pin, toolchain and README together. The CI build uses the snapshot, while the
-README's simple source-install instructions resolve their own dependencies.
+pin, toolchain and README together. The
+[README build](../README.md#tested-casita-build) uses the same snapshot and source pin. It accepts Rust/Cargo 1.94.1 or newer; CI pins the compiler to 1.94.1.
+The command is a local debug build and does not install or replace a global CLI.

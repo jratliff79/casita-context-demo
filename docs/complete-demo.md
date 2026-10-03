@@ -12,6 +12,11 @@ Have Python 3.9+, Git, OpenSSH signing support and the
 [prerequisites](../README.md#prerequisites) explain installation and optional uv.
 Casita is a separate executable; uv supplies Python and does not install Casita.
 
+If you followed the README build, you are already in the demo root with
+`CASITA_DEMO_BIN` set. Continue to the three stages below.
+
+Otherwise, clone the demo and select your existing tested executable:
+
 ```sh
 git clone https://github.com/jratliff79/casita-context-demo.git
 cd casita-context-demo

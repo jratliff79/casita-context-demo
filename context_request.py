@@ -14,7 +14,7 @@ import git_review as review
 import review_handoff as transport
 
 REQUEST_SCHEMA = "casita-context-demo.context-request.v1"
-RESPONSE_SCHEMA = "casita-context-demo.context-response.v1"
+RESPONSE_SCHEMA = diff.RESPONSE_SCHEMA
 REQUEST_LIMIT = 64_000
 
 
@@ -55,7 +55,7 @@ def covers(selections, wanted):
 def validate_approval(spec, request, manifest):
     fields = {"schema", "source_label", "base_commit", "head_commit", "sensitivity",
               "purpose", "paths", "selections"}
-    if (not isinstance(spec, dict) or set(spec) != fields or spec["schema"] != diff.SPEC_SCHEMA
+    if (not isinstance(spec, dict) or set(spec) != fields or spec["schema"] not in (diff.SPEC_SCHEMA, diff.SUPPLEMENT_SPEC_SCHEMA)
             or spec["sensitivity"] != manifest["sensitivity"]
             or any(spec[v + "_commit"] != manifest[v + "_commit"] for v in diff.VERSIONS)):
         raise ValueError("approved spec differs from parent commits or sensitivity")

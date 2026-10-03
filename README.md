@@ -13,6 +13,9 @@ It checks expected pins before reading the evidence. This local simulation
 creates those pins at the sender and reads them at the receiver. No model,
 cloud account, agent framework or private project is required.
 
+For the [complete runnable walkthrough](docs/complete-demo.md), run the basic
+transport, unchanged-helper supplement and recorded public review in a fresh clone.
+
 For a complete AI-context example, read [from signed capsule to landed fix](docs/review-to-fix.md):
 a capsule-only reviewer found a real bug in this public demo, its returned
 citations verified, and a regression-tested fix merged. You can replay the
@@ -122,6 +125,7 @@ the handoff and runs the demo's deterministic checker; it does not run an AI rev
 | Base/head diff capsule with versioned citations | [Git diff review guide](docs/git-diff-review.md) | Default Casita CLI, OpenSSH and both pinned Git commits; public PR walkthrough included |
 | Preview an explicit diff scope and suggest source ranges before signing | [Diff scope preview guide](docs/git-diff-preview.md) | Git and both pinned commits; no Casita or signing key needed |
 | Recorded capsule-only review of a real public diff, with an empty return | [Recorded diff review case](docs/diff-review-case.md) | Default Casita CLI, OpenSSH and both pinned public commits; no AI account |
+| Missing-context request with an unchanged-helper-only signed supplement | [Context request guide](docs/context-requests.md) | Default Casita CLI, OpenSSH and Git; no AI account |
 | Image and context transport with a trusted host check | [Environment transport guide](docs/pinned-environment.md#transport-check) | Casita built with `oci`; public registry access |
 | Trusted checker in the restored image | [Apple Container guide](docs/pinned-environment.md#apple-container-trial) | OCI-enabled Casita, public registry access and Apple Container running on a Mac |
 

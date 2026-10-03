@@ -65,7 +65,9 @@ protocol. Our actual supplement retained the changed request helper and succeede
 The reviewer had not received that documentation and explicitly listed it as
 missing. We preserve its report unchanged and classify the concern as a
 **reproduced, documented protocol limitation**, not a newly confirmed defect.
-Supporting unchanged-only supplements could be a separate feature decision.
+The current [context-request walkthrough](context-requests.md) now supports
+unchanged-only supplements through an explicit supplement schema. This recorded
+trial and its replay remain pinned to the earlier combined-supplement behavior.
 
 This case shows a request narrowing uncertainty and changing a review conclusion.
 It also shows why exact citations, signatures and a reproduced error do not by

@@ -28,14 +28,14 @@ Use Python 3.9+, Git, OpenSSH signing support and the
 is needed for the Python code.
 
 ```sh
-python3 context_request_example.py --casita /path/to/casita \
+python3 context_request_example.py --helpers-only --casita /path/to/casita \
   --output output/context-request
 ```
 
 Optional uv:
 
 ```sh
-uv run --no-project --python 3.12 python context_request_example.py \
+uv run --no-project --python 3.12 python context_request_example.py --helpers-only \
   --casita /path/to/casita --output output/context-request-uv
 ```
 
@@ -48,20 +48,24 @@ Use a new output directory. The command:
    the missing helper; zero findings is not evidence of correctness.
 3. Requests both helper versions, bound to the initial context ID, directory key
    and commits.
-4. Uses a separately supplied explicit spec to approve gate/helper paths and
-   ranges. The preview includes all changed hunks of those paths.
+4. Uses a separately supplied explicit supplement spec to approve just the
+   unchanged helper's base/head ranges: 12 selected lines. The initial gate
+   source stays in the parent capsule.
 5. Signs and restores the supplement in a fresh store. Before using it, checks
    the parent identity, unchanged commits/sensitivity, canonical request hash
    and coverage of every requested range.
-6. Returns a scripted finding with exact supplement citations, then verifies
-   its signature, report binding and citations against original Git.
+6. Returns a scripted finding citing only the helper in this supplement, then
+   verifies its signature, report binding and citation against original Git.
 7. Rejects wrong request bindings, unapproved source, a correctly signed
    supplement naming the wrong parent, and a signed supplement report presented
-   as a report for the initial capsule. Removes throwaway private keys.
+   as a report for the initial capsule. It also rejects correctly signed,
+   internally consistent invented helper source against original Git. Removes
+   throwaway private keys.
 
 The base gate explicitly excludes booleans. Its head delegates to a helper whose
-numeric branch admits them. The final scripted report cites that interaction;
-neither source version is executed.
+numeric branch admits them. The helper-only report cites the supplemental helper;
+it cannot cite gate lines retained only in the parent. Neither source version is
+executed. Omit `--helpers-only` to replay the older combined gate/helper example.
 
 Inspect `preview/request.json`, `preview/PREVIEW.md`,
 `preview/context/changes.json`, the initial/final report files and `receipt.json`.
@@ -87,8 +91,20 @@ The approved spec must keep the parent commits and sensitivity, explicitly list
 every exposed path/range, and cover every requested range. It may explicitly
 include additional surrounding source. Inspect the entire unsigned context before
 signing: added/deleted files and all changed hunks in approved paths can expose
-more than the citation ranges. At least one approved path must contain a change,
-as required by the existing diff protocol.
+more than the citation ranges.
+
+Use `schema: "casita-context-demo.git-diff-supplement-spec.v1"` for a new
+supplement that may contain only unchanged dependencies. Its signed context has
+`schema: "casita-context-demo.git-diff-supplement-context.v1"` and requires
+well-formed parent/request metadata. The receiver must still authenticate the
+pins and check the association to its trusted parent and exact request; the new
+schema does not establish that association by itself.
+
+Ordinary `git-diff-spec.v1` scopes continue to require a changed path. Historical
+combined supplements retain their original schema, identities and replay behavior.
+Both kinds use the same explicit allowlists, frozen commits and original-Git
+checks. A helper-only report can cite only its supplemental ranges; keep the
+parent evidence available separately when reviewing the original change.
 
 After running the example, reproduce its preview in a new directory:
 

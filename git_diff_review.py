@@ -11,6 +11,9 @@ import git_review as review
 
 CONTEXT_SCHEMA = "casita-context-demo.git-diff-context.v1"
 SPEC_SCHEMA = "casita-context-demo.git-diff-spec.v1"
+SUPPLEMENT_SPEC_SCHEMA = "casita-context-demo.git-diff-supplement-spec.v1"
+SUPPLEMENT_CONTEXT_SCHEMA = "casita-context-demo.git-diff-supplement-context.v1"
+RESPONSE_SCHEMA = "casita-context-demo.context-response.v1"
 REPORT_SCHEMA = "casita-context-demo.git-diff-report.v1"
 RECEIPT_SCHEMA = "casita-context-demo.git-diff-receipt.v1"
 CHANGES_SCHEMA = "casita-context-demo.git-diff-changes.v1"
@@ -79,7 +82,7 @@ def diff_lines(raw):
     return [part + "\n" for part in parts[:-1]] + ([parts[-1]] if parts[-1] else [])
 
 
-def make_changes(repository, commits, paths):
+def make_changes(repository, commits, paths, *, allow_unchanged=False):
     validate_commits(commits)
     validate_paths(paths)
     files = []
@@ -96,7 +99,7 @@ def make_changes(repository, commits, paths):
         patch = "".join(line if line.endswith("\n") else line + "\n\\ No newline at end of file\n"
                         for line in chunks)
         files.append({"path": path, "base": before, "head": after, "diff": patch})
-    if not changed:
+    if not changed and not allow_unchanged:
         raise ValueError("allowlisted paths contain no changes")
     return {"schema": CHANGES_SCHEMA, "base_commit": commits["base_commit"], "head_commit": commits["head_commit"], "files": files}
 
@@ -123,15 +126,33 @@ def validate_changes(value, manifest):
             raise ValueError("diff path is absent at both commits")
         changed |= item["base"] != item["head"]
     validate_paths(paths)
-    if not changed:
+    if not changed and manifest["schema"] != SUPPLEMENT_CONTEXT_SCHEMA:
         raise ValueError("allowlisted paths contain no changes")
     return {item["path"]: item for item in value["files"]}
+
+
+def validate_supplement_observation(value, manifest):
+    fields = {"schema", "parent_context_id", "parent_directory_key", "request_sha256",
+              "base_commit", "head_commit"}
+    if not isinstance(value, dict) or set(value) != {"context_response"}:
+        raise ValueError("supplement requires parent and request metadata")
+    response = value["context_response"]
+    if (not isinstance(response, dict) or set(response) != fields
+            or response["schema"] != RESPONSE_SCHEMA
+            or any(response[v + "_commit"] != manifest[v + "_commit"] for v in VERSIONS)):
+        raise ValueError("invalid supplement parent and request metadata")
+    # Syntax only. The association checker validates the caller-trusted parent.
+    review.transport.parse_pins(demo.canonical(dict(
+        schema="casita-context-demo.review-input-pins.v1", archive_sha256="0" * 64,
+        content_id=response["parent_context_id"], directory_key=response["parent_directory_key"])),
+        "review-input")
+    review.hex_digest(response["request_sha256"], 64, "canonical request hash")
 
 
 def create_context(folder, repository, spec_path, observation=None):
     spec = review.read_json(spec_path)
     fields = {"schema", "source_label", "base_commit", "head_commit", "sensitivity", "purpose", "paths", "selections"}
-    if not isinstance(spec, dict) or set(spec) != fields or spec["schema"] != SPEC_SCHEMA:
+    if not isinstance(spec, dict) or set(spec) != fields or spec["schema"] not in (SPEC_SCHEMA, SUPPLEMENT_SPEC_SCHEMA):
         raise ValueError("invalid Git diff spec")
     review.text(spec["source_label"], "explicit source label", 120)
     review.text(spec["purpose"], "purpose", 1000)
@@ -146,7 +167,15 @@ def create_context(folder, repository, spec_path, observation=None):
         raise ValueError("duplicate versioned selection ID")
     if any(s["path"] not in spec["paths"] for s in selections):
         raise ValueError("selection path is outside explicit diff allowlist")
-    changes = make_changes(repository, spec, spec["paths"])
+    supplemental = spec["schema"] == SUPPLEMENT_SPEC_SCHEMA
+    observation_value = None
+    if observation is not None:
+        observation_value = review.read_json(observation)
+        if not isinstance(observation_value, dict):
+            raise ValueError("observation must be a JSON object")
+    if supplemental:
+        validate_supplement_observation(observation_value, spec)
+    changes = make_changes(repository, spec, spec["paths"], allow_unchanged=supplemental)
     folder.mkdir()
     for item in selections:
         target = folder / "source" / item["version"] / (item["id"] + ".json")
@@ -154,13 +183,10 @@ def create_context(folder, repository, spec_path, observation=None):
         target.write_bytes(demo.canonical(item))
     (folder / "task.json").write_bytes(TASK)
     (folder / "changes.json").write_bytes(demo.canonical(changes))
-    if observation is not None:
-        value = review.read_json(observation)
-        if not isinstance(value, dict):
-            raise ValueError("observation must be a JSON object")
-        (folder / "observation.json").write_bytes(demo.canonical(value))
+    if observation_value is not None:
+        (folder / "observation.json").write_bytes(demo.canonical(observation_value))
     manifest = {k: spec[k] for k in ("source_label", "base_commit", "head_commit", "sensitivity", "purpose")}
-    manifest.update(schema=CONTEXT_SCHEMA, sharing="local-only", files=demo.file_map(folder))
+    manifest.update(schema=SUPPLEMENT_CONTEXT_SCHEMA if supplemental else CONTEXT_SCHEMA, sharing="local-only", files=demo.file_map(folder))
     raw = demo.canonical(manifest)
     (folder / "manifest.json").write_bytes(raw)
     ident = demo.digest(raw)
@@ -177,14 +203,14 @@ def verify_context(folder, content_id):
         raise ValueError("context manifest changed while reading")
     manifest = review.parse_json(raw)
     fields = {"schema", "source_label", "base_commit", "head_commit", "sensitivity", "sharing", "purpose", "files"}
-    if (not isinstance(manifest, dict) or set(manifest) != fields or manifest["schema"] != CONTEXT_SCHEMA
+    if (not isinstance(manifest, dict) or set(manifest) != fields or manifest["schema"] not in (CONTEXT_SCHEMA, SUPPLEMENT_CONTEXT_SCHEMA)
             or manifest["files"] != inventory or manifest["sharing"] != "local-only"
             or manifest["sensitivity"] not in ("synthetic", "restricted")):
         raise ValueError("invalid Git diff context")
     validate_commits(manifest)
     review.text(manifest["source_label"], "source label", 120)
     review.text(manifest["purpose"], "purpose", 1000)
-    selections, changes = {}, None
+    selections, changes, observation = {}, None, None
     if inventory.get("task.json") != demo.digest(TASK):
         raise ValueError("diff task differs from trusted schema")
     for name, expected in inventory.items():
@@ -201,6 +227,7 @@ def verify_context(folder, content_id):
         elif name == "observation.json":
             if not isinstance(value, dict):
                 raise ValueError("observation must be a JSON object")
+            observation = value
         else:
             selection(value, captured=True)
             key = value["version"] + ":" + value["id"]
@@ -209,6 +236,8 @@ def verify_context(folder, content_id):
             selections[key] = value
     if changes is None or not 1 <= len(selections) <= 20:
         raise ValueError("missing diff or invalid selection count")
+    if manifest["schema"] == SUPPLEMENT_CONTEXT_SCHEMA:
+        validate_supplement_observation(observation, manifest)
     for item in selections.values():
         info = changes.get(item["path"], {}).get(item["version"])
         if info is None or info["blob_sha256"] != item["blob_sha256"]:
@@ -220,7 +249,8 @@ def verify_git_source(repository, folder, content_id):
     manifest, selections = verify_context(folder, content_id)
     changes = review.read_json(folder / "changes.json", demo.MAX_BYTES)
     paths = [item["path"] for item in changes["files"]]
-    if make_changes(repository, manifest, paths) != changes:
+    if make_changes(repository, manifest, paths,
+                    allow_unchanged=manifest["schema"] == SUPPLEMENT_CONTEXT_SCHEMA) != changes:
         raise ValueError("diff differs from original Git blobs")
     for item in selections.values():
         spec = {k: item[k] for k in ("version", "id", "path", "start", "end")}

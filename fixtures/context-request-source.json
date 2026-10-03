@@ -1,0 +1,194 @@
+{
+  "artifact_sha256": {
+    "assessment": "66d40884ab815a8c09f942360414652fcce9eaa0aecef9f695baecb2f8ea93a2",
+    "initial_report": "e041abb2efcaf5b6995015f3a168adf36dc656815869227f4d5fe41cf60a1796",
+    "request": "d4d65f1f9156df3494cb0de6e52bf7dcc05553337536ca5d90021de502aaeaf2",
+    "supplement_report": "69540f4de93eee917ee541d05b9767d055417601254118b5115b28ff24e08867"
+  },
+  "controller_adjudication": "The recorded report raised one P2 concern. Its unchanged-only rejection was reproduced, but the pinned guide already requires a changed path. It is recorded as a documented limitation, not a newly confirmed defect.",
+  "initial": {
+    "files": {
+      "base": {
+        "LICENSE": "b13e1d0ce5c2b67d711e935f670df74b6d899616f9f5630c498b3f8679ab5f6c",
+        "context_request.py": null
+      },
+      "head": {
+        "LICENSE": "b13e1d0ce5c2b67d711e935f670df74b6d899616f9f5630c498b3f8679ab5f6c",
+        "context_request.py": "5ab142b4f91061d19eed79893e64f51162395c163f43f462822bfc4c632b3555"
+      }
+    },
+    "license": "MIT",
+    "observation": {
+      "available_public_source": [
+        {
+          "blob_sha256": "5ab142b4f91061d19eed79893e64f51162395c163f43f462822bfc4c632b3555",
+          "line_count": 158,
+          "path": "context_request.py",
+          "version": "head"
+        },
+        {
+          "blob_sha256": "ccf95b1013bf2afcada5f8c66895c301f9acf7f04d9387a0ef7f0c3599339512",
+          "line_count": 208,
+          "path": "git_diff_plan.py",
+          "version": "head"
+        },
+        {
+          "blob_sha256": "f3b27b8cf21d57436186b813ac75c41005b197320f1a0eb131140e5970ebd861",
+          "line_count": 260,
+          "path": "git_diff_review.py",
+          "version": "head"
+        },
+        {
+          "blob_sha256": "0b9ac6741d451e1e7f9eecc5b75fa3d44444310ef76b4156d293a2d758451ce1",
+          "line_count": 368,
+          "path": "git_review.py",
+          "version": "head"
+        },
+        {
+          "blob_sha256": "84ad17fe3390c32a9f03ae5eef2c0c6ddbcd3cb60b9bae092db66ab07884ac55",
+          "line_count": 223,
+          "path": "review_handoff.py",
+          "version": "head"
+        },
+        {
+          "blob_sha256": "6e4f8d34c17657986a2bcf4f56cb95ded5d714bcac471534291ccd1fe8df88ae",
+          "line_count": 326,
+          "path": "demo.py",
+          "version": "head"
+        },
+        {
+          "blob_sha256": "3a9834af800be8cce17221b6fffdab8cffe3b2b174550b53d7a1c2c1184fb8d4",
+          "line_count": 69,
+          "path": "authentication.py",
+          "version": "head"
+        },
+        {
+          "blob_sha256": "81ce9ba27e3c520284037329a0e11b2ca92171ebf1509c195a50e521b5d30340",
+          "line_count": 158,
+          "path": "tests/test_context_request.py",
+          "version": "head"
+        },
+        {
+          "blob_sha256": "0d20440607d42f73e32f7d4f12665c7534a217bc9f61b38d6e9f8e2645a9dcd6",
+          "line_count": 145,
+          "path": "docs/context-requests.md",
+          "version": "head"
+        },
+        {
+          "blob_sha256": "b13e1d0ce5c2b67d711e935f670df74b6d899616f9f5630c498b3f8679ab5f6c",
+          "line_count": 21,
+          "path": "LICENSE",
+          "version": "head"
+        }
+      ],
+      "license": "MIT",
+      "pull_request": 19,
+      "repository": "https://github.com/jratliff79/casita-context-demo"
+    },
+    "repository": "https://github.com/jratliff79/casita-context-demo",
+    "spec": {
+      "base_commit": "23bae1883cfa6cbaa696e4408f15ef268fff503c",
+      "head_commit": "133459e56fce11e93358a6f1b9b1b9cff9985a5b",
+      "paths": [
+        "context_request.py",
+        "LICENSE"
+      ],
+      "purpose": "Static correctness review of the newly introduced context-request helper using only supplied public source. Report supported actionable defects and explicitly state missing context.",
+      "schema": "casita-context-demo.git-diff-spec.v1",
+      "selections": [
+        {
+          "end": 158,
+          "id": "context-request",
+          "path": "context_request.py",
+          "start": 1,
+          "version": "head"
+        },
+        {
+          "end": 21,
+          "id": "license",
+          "path": "LICENSE",
+          "start": 1,
+          "version": "head"
+        }
+      ],
+      "sensitivity": "restricted",
+      "source_label": "Public MIT Casita Context Demo PR 19"
+    }
+  },
+  "license": "MIT",
+  "pull_request": 19,
+  "repository": "https://github.com/jratliff79/casita-context-demo",
+  "schema": "casita-context-demo.public-context-request-source.v1",
+  "supplement": {
+    "files": {
+      "base": {
+        "LICENSE": "b13e1d0ce5c2b67d711e935f670df74b6d899616f9f5630c498b3f8679ab5f6c",
+        "context_request.py": null,
+        "git_diff_plan.py": "ccf95b1013bf2afcada5f8c66895c301f9acf7f04d9387a0ef7f0c3599339512",
+        "git_diff_review.py": "f3b27b8cf21d57436186b813ac75c41005b197320f1a0eb131140e5970ebd861",
+        "review_handoff.py": "84ad17fe3390c32a9f03ae5eef2c0c6ddbcd3cb60b9bae092db66ab07884ac55"
+      },
+      "head": {
+        "LICENSE": "b13e1d0ce5c2b67d711e935f670df74b6d899616f9f5630c498b3f8679ab5f6c",
+        "context_request.py": "5ab142b4f91061d19eed79893e64f51162395c163f43f462822bfc4c632b3555",
+        "git_diff_plan.py": "ccf95b1013bf2afcada5f8c66895c301f9acf7f04d9387a0ef7f0c3599339512",
+        "git_diff_review.py": "f3b27b8cf21d57436186b813ac75c41005b197320f1a0eb131140e5970ebd861",
+        "review_handoff.py": "84ad17fe3390c32a9f03ae5eef2c0c6ddbcd3cb60b9bae092db66ab07884ac55"
+      }
+    },
+    "license": "MIT",
+    "repository": "https://github.com/jratliff79/casita-context-demo",
+    "spec": {
+      "base_commit": "23bae1883cfa6cbaa696e4408f15ef268fff503c",
+      "head_commit": "133459e56fce11e93358a6f1b9b1b9cff9985a5b",
+      "paths": [
+        "context_request.py",
+        "LICENSE",
+        "git_diff_review.py",
+        "git_diff_plan.py",
+        "review_handoff.py"
+      ],
+      "purpose": "Static correctness review of the new request helper and three separately approved public dependencies requested by the initial reviewer.",
+      "schema": "casita-context-demo.git-diff-spec.v1",
+      "selections": [
+        {
+          "end": 158,
+          "id": "context-request",
+          "path": "context_request.py",
+          "start": 1,
+          "version": "head"
+        },
+        {
+          "end": 21,
+          "id": "license",
+          "path": "LICENSE",
+          "start": 1,
+          "version": "head"
+        },
+        {
+          "end": 260,
+          "id": "selection-context-verification",
+          "path": "git_diff_review.py",
+          "start": 1,
+          "version": "head"
+        },
+        {
+          "end": 208,
+          "id": "supplement-preview-contract",
+          "path": "git_diff_plan.py",
+          "start": 1,
+          "version": "head"
+        },
+        {
+          "end": 223,
+          "id": "input-pin-validation",
+          "path": "review_handoff.py",
+          "start": 1,
+          "version": "head"
+        }
+      ],
+      "sensitivity": "restricted",
+      "source_label": "Public MIT Casita Context Demo PR 19"
+    }
+  }
+}

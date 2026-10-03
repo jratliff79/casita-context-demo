@@ -1,0 +1,18 @@
+{
+  "schema": "casita-context-demo.git-diff-report.v1",
+  "context_id": "15d9fc2746f2201cdd0aa5f496783c0d3366d5cf05455f36e89b1b7c4b98ac62",
+  "context_directory_key": "casita.directory.v1:CDr1zeGcQ2SaA1UounZZUy_UFBYXQ4H2LncmNXznK1g",
+  "base_commit": "23bae1883cfa6cbaa696e4408f15ef268fff503c",
+  "head_commit": "133459e56fce11e93358a6f1b9b1b9cff9985a5b",
+  "reviewer": "fresh Codex capsule-only static reviewer",
+  "scope": "static review; no received code executed",
+  "findings": [],
+  "limitations": [
+    "Initial review is limited to supplied head/context_request.py lines 1-158, head/LICENSE lines 1-21, changes.json, manifest.json, observation.json, task.json output schema and citation rules, and sibling input-pins.json. There is no supplied base source selection for the newly introduced helper.",
+    "No actionable correctness defect is established from this initial evidence. Empty findings is not a claim that the omitted dependency behavior is correct.",
+    "git_diff_review.py is omitted: its selection validation, verify_context return shape and verification guarantees, and verify_git_source behavior are needed to assess the calls at context_request.py lines 27, 41, 64, 69, 96, 118 and 125.",
+    "git_diff_plan.py is omitted: preview and preview_markdown contracts are needed to establish what source and changes are exposed by context_request.py lines 101-109 and whether the approved path and range limits are enforced.",
+    "review_handoff.py is omitted: parse_pins behavior is needed to assess which input pin fields and relationships are checked by context_request.py lines 21-22.",
+    "demo.py, git_review.py, authentication.py, tests/test_context_request.py and docs/context-requests.md are also omitted. Their behavior and intended policy are not assumed. No received source was executed or imported, no tests were run, and no repository, Git objects, network, memory, controller files, previous reports or other agent output were accessed. Supplied hashes and observation inventory were treated as evidence without independently proving Git provenance, signature authentication or runtime behavior."
+  ]
+}

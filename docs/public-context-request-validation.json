@@ -1,0 +1,113 @@
+{
+  "casita_binary_sha256": "4ca1b670d989838bba50708f3ae56c3ac6ff227d4b46f60060ba7f9607007daf",
+  "casita_source_commit": "aed18e32704c8f2bf821cc038720a77610a600ba",
+  "checks": {
+    "actual_trial_input_signatures_verified": true,
+    "basic_casita_demo_passed": true,
+    "direct_replay_passed": true,
+    "local_ci_adaptations": [
+      "Use python3 instead of python",
+      "Use the tested local Casita executable",
+      "Use the full local public clone for pinned source objects"
+    ],
+    "local_ci_step_assertions_passed": true,
+    "unit_tests": [
+      {
+        "count": 134,
+        "passed": true,
+        "python": "3.9.6"
+      },
+      {
+        "count": 134,
+        "passed": true,
+        "python": "3.12.14"
+      }
+    ],
+    "uv_python_3_12_15_replay_passed": true
+  },
+  "limits": [
+    "One instruction-limited reviewer, not an OS sandbox.",
+    "The recorded P2 concern reproduces a documented protocol limitation; no newly confirmed defect or quality improvement is claimed.",
+    "The replay uses recorded artifacts and invokes no model.",
+    "Local validation receipt, not a GitHub Actions run; no raw logs, archives or keys are published."
+  ],
+  "platform": "macOS arm64",
+  "recorded_date": "2026-10-02",
+  "replay": {
+    "base_commit": "23bae1883cfa6cbaa696e4408f15ef268fff503c",
+    "binding": {
+      "parent_context_id": "15d9fc2746f2201cdd0aa5f496783c0d3366d5cf05455f36e89b1b7c4b98ac62",
+      "received_code_executed": false,
+      "request_binding_verified": true,
+      "request_sha256": "e596ae0c88f044468e86fe37c56e2a2c492b0c3058bd126f9fa027904576179c",
+      "supplement_context_id": "3842f669001e1275e2cba7282161d04f06914dda61754a437dabd872a4eb8263"
+    },
+    "citations_verified": true,
+    "execution_attested": false,
+    "final_citation_count": 4,
+    "final_finding_count": 1,
+    "fresh_ai_review": false,
+    "head_commit": "133459e56fce11e93358a6f1b9b1b9cff9985a5b",
+    "initial_citation_count": 0,
+    "initial_finding_count": 0,
+    "input_signatures_verified": true,
+    "negative_controls": {
+      "signed_report_for_other_context": true,
+      "unapproved_source": true,
+      "wrong_base_commit": true,
+      "wrong_context_directory_key": true,
+      "wrong_context_id": true,
+      "wrong_head_commit": true
+    },
+    "ok": true,
+    "original_git_verified": true,
+    "os_sandbox_enforced": false,
+    "patch_applied": false,
+    "public_source_snapshot": true,
+    "received_code_executed": false,
+    "recorded_ai_reports": true,
+    "returned_signatures_verified": true,
+    "review_quality_verified": false,
+    "schema": "casita-context-demo.context-request-replay.v1",
+    "scripted_report": false,
+    "source_license": "MIT",
+    "source_repository": "https://github.com/jratliff79/casita-context-demo",
+    "throwaway_private_keys_removed": true
+  },
+  "schema": "casita-context-demo.public-context-request-validation.v1",
+  "trial": {
+    "base_commit": "23bae1883cfa6cbaa696e4408f15ef268fff503c",
+    "binding": {
+      "parent_context_id": "15d9fc2746f2201cdd0aa5f496783c0d3366d5cf05455f36e89b1b7c4b98ac62",
+      "received_code_executed": false,
+      "request_binding_verified": true,
+      "request_sha256": "e596ae0c88f044468e86fe37c56e2a2c492b0c3058bd126f9fa027904576179c",
+      "supplement_context_id": "3842f669001e1275e2cba7282161d04f06914dda61754a437dabd872a4eb8263"
+    },
+    "citations_verified": true,
+    "controller_adjudication": "Reproduced documented diff-protocol limitation; not a newly confirmed correctness defect.",
+    "documentation_requirement_verified": true,
+    "execution_attested": false,
+    "final_citation_count": 4,
+    "final_finding_count": 1,
+    "fresh_ai_review": true,
+    "head_commit": "133459e56fce11e93358a6f1b9b1b9cff9985a5b",
+    "initial_finding_count": 0,
+    "ok": true,
+    "original_git_verified": true,
+    "os_sandbox_enforced": false,
+    "patch_applied": false,
+    "public_source_snapshot": true,
+    "publication_performed": false,
+    "received_code_executed": false,
+    "returned_signatures_verified": true,
+    "review_quality_verified": false,
+    "schema": "casita-context-demo.public-context-request-trial.v1",
+    "scripted_report": false,
+    "signed_report_for_other_context_rejected": true,
+    "source_license": "MIT",
+    "source_repository": "https://github.com/jratliff79/casita-context-demo",
+    "throwaway_private_keys_removed": true,
+    "unchanged_only_rejection_reproduced": true
+  }
+}

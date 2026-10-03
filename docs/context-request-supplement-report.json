@@ -1,0 +1,63 @@
+{
+  "schema": "casita-context-demo.git-diff-report.v1",
+  "context_id": "3842f669001e1275e2cba7282161d04f06914dda61754a437dabd872a4eb8263",
+  "context_directory_key": "casita.directory.v1:OkoWmLBgoXv7EU4GUevgTKZiErhZ9nggmWIsbipv9aU",
+  "base_commit": "23bae1883cfa6cbaa696e4408f15ef268fff503c",
+  "head_commit": "133459e56fce11e93358a6f1b9b1b9cff9985a5b",
+  "reviewer": "fresh Codex capsule-only static reviewer",
+  "scope": "static review; no received code executed",
+  "findings": [
+    {
+      "title": "Allow supplements containing only unchanged dependencies",
+      "body": "When a reviewer requests an unchanged dependency and the operator approves only that dependency, validate_approval accepts the spec but preview_response passes it directly to plan.preview. That calls diff.create_context, whose make_changes rejects any allowlist without a changed file with ValueError(\"allowlisted paths contain no changes\"). The supplied changes metadata shows git_diff_review.py, git_diff_plan.py and review_handoff.py are unchanged between the original commits, so approving just these requested dependencies triggers this path. A valid missing-context request therefore cannot produce a supplement unless the operator also approves an unrelated changed path. Support unchanged-only supplement contexts, including their verification, without requiring approval of extra changed source.",
+      "priority": "P2",
+      "citations": [
+        {
+          "version": "head",
+          "selection_id": "context-request",
+          "path": "context_request.py",
+          "blob_sha256": "5ab142b4f91061d19eed79893e64f51162395c163f43f462822bfc4c632b3555",
+          "line_start": 92,
+          "line_end": 98,
+          "excerpt": "    validate_approval(spec, request, manifest)\n    diff.verify_git_source(repository, parent, pins[\"content_id\"])\n    observation = response_observation(request)\n    with tempfile.TemporaryDirectory(prefix=\"context-response-\") as name:\n        observation_path = Path(name) / \"observation.json\"\n        observation_path.write_bytes(demo.canonical(observation))\n        summary, files = plan.preview(repository, spec, observation_path)"
+        },
+        {
+          "version": "head",
+          "selection_id": "supplement-preview-contract",
+          "path": "git_diff_plan.py",
+          "blob_sha256": "ccf95b1013bf2afcada5f8c66895c301f9acf7f04d9387a0ef7f0c3599339512",
+          "line_start": 101,
+          "line_end": 106,
+          "excerpt": "        spec_path.write_bytes(demo.canonical(spec))\n        context = folder / \"context\"\n        content_id = diff.create_context(context, repository, spec_path, observation)\n        diff.verify_git_source(repository, context, content_id)\n        files = {p.relative_to(context).as_posix(): p.read_bytes()\n                 for p in context.rglob(\"*\") if p.is_file()}"
+        },
+        {
+          "version": "head",
+          "selection_id": "selection-context-verification",
+          "path": "git_diff_review.py",
+          "blob_sha256": "f3b27b8cf21d57436186b813ac75c41005b197320f1a0eb131140e5970ebd861",
+          "line_start": 144,
+          "line_end": 150,
+          "excerpt": "    selections = [capture(repository, spec, item) for item in spec[\"selections\"]]\n    if len({(s[\"version\"], s[\"id\"]) for s in selections}) != len(selections):\n        raise ValueError(\"duplicate versioned selection ID\")\n    if any(s[\"path\"] not in spec[\"paths\"] for s in selections):\n        raise ValueError(\"selection path is outside explicit diff allowlist\")\n    changes = make_changes(repository, spec, spec[\"paths\"])\n    folder.mkdir()"
+        },
+        {
+          "version": "head",
+          "selection_id": "selection-context-verification",
+          "path": "git_diff_review.py",
+          "blob_sha256": "f3b27b8cf21d57436186b813ac75c41005b197320f1a0eb131140e5970ebd861",
+          "line_start": 92,
+          "line_end": 100,
+          "excerpt": "        changed |= before != after\n        chunks = difflib.unified_diff(diff_lines(old or b\"\"), diff_lines(new or b\"\"),\n                    fromfile=\"base/\" + path if before else \"/dev/null\",\n                    tofile=\"head/\" + path if after else \"/dev/null\", n=3)\n        patch = \"\".join(line if line.endswith(\"\\n\") else line + \"\\n\\\\ No newline at end of file\\n\"\n                        for line in chunks)\n        files.append({\"path\": path, \"base\": before, \"head\": after, \"diff\": patch})\n    if not changed:\n        raise ValueError(\"allowlisted paths contain no changes\")"
+        }
+      ]
+    }
+  ],
+  "limitations": [
+    "Static review covers the supplied head selections: context_request.py lines 1-158, LICENSE lines 1-21, git_diff_review.py lines 1-260, git_diff_plan.py lines 1-208 and review_handoff.py lines 1-223, plus supplied changes, manifest, observation, output schema and input pins. No base source selections were supplied; the dependency equality claim uses the supplied changes metadata.",
+    "The unchanged-only supplement failure is established by static call tracing, not by executing the helper or reproducing its error.",
+    "git_diff_review.verify_context returns captured selection dictionaries keyed by version and ID, which is compatible with covers(selections.values(), wanted). Its wrapper delegates primitive selection and path validation to the omitted git_review.py; those lower-level checks are not independently assessed.",
+    "The preview constructs an unsigned diff context and includes all changed hunks for approved paths, including lines outside selected ranges and full added or deleted files. It explicitly warns of this exposure; exact-range source confidentiality is not a guarantee of this builder.",
+    "parse_pins validates schema and syntactic digest/key formats. It does not authenticate signatures or independently prove the directory-key/content-id association. review_handoff.receive separately checks signed pins, archive digest and imported directory root, then its caller checks context content; this assessment does not claim independent transport verification.",
+    "demo.py, git_review.py, authentication.py, tests/test_context_request.py and docs/context-requests.md remain omitted. Canonicalization, digest and file-map implementation, primitive source validation, authentication implementation, test coverage and documented workflow requirements are not assumed.",
+    "No received source was executed or imported, and no tests, repository access, Git commands or network access were used. Verified content and exact citations do not establish runtime behavior, review quality or execution attestation."
+  ]
+}

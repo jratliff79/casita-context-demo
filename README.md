@@ -141,6 +141,11 @@ previews an explicitly approved signed supplement. The receiver checks the paren
 and request binding before a source-bound report is returned. It uses scripted
 reports, no AI model or received-source execution.
 
+The [recorded public reviewer trial](docs/context-request-case.md) shows an actual
+request for three dependencies and a changed assessment after supplementation.
+Its replay needs no AI account. The reported concern reproduced a documented
+protocol limitation; it is not presented as a newly confirmed defect.
+
 ## What Casita does here
 
 ```mermaid

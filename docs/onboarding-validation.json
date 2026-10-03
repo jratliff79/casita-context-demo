@@ -25,6 +25,11 @@
   "notes": [
     "Local build used a newer compiler than CI Rust 1.94.1, with the same source and dependency snapshot.",
     "Video renders selected output from executed commands with synthetic narration; it is not a screen capture or live model review.",
-    "Raw artifacts and video remain under ignored output; this receipt includes no local paths or keys."
-  ]
+    "Raw artifacts and video remain under ignored output; this receipt includes no local paths or keys.",
+    "This historical receipt describes the original onboarding commit and local video draft identified above; it does not validate later documentation edits, video revisions or Casita pin updates."
+  ],
+  "demo_repository": "https://github.com/jratliff79/casita-context-demo",
+  "demo_commit": "d0156b91102f443d0b05e6113d655cd2df82eae7",
+  "demo_tree": "9624b53244a2fce93c01ed641c3495aeee5e7da4",
+  "recorded_on": "2026-10-03"
 }

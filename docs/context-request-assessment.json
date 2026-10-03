@@ -1,0 +1,19 @@
+{
+  "initial_finding_count": 0,
+  "final_finding_count": 1,
+  "resolved_questions": [
+    "Selection shape: git_diff_review.verify_context stores the captured selection dictionary unchanged in a version:ID mapping and returns it with the manifest. The dictionaries expose version, path, start and end, so passing selections.values() to the helper coverage check is compatible. The module also cross-checks selected blob hashes against changes metadata.",
+    "Verification boundary: verify_context checks the manifest digest, context inventory, trusted task, captured selection schema and blob metadata; verify_git_source separately recomputes allowlisted diffs and captures from the original Git commits. The helper calls the latter before generating a preview, while verify_response itself performs context and request binding checks rather than a Git source check.",
+    "Preview exposure: git_diff_plan.preview builds the exact unsigned context using diff.create_context, verifies it against Git, returns the context files and summarizes them. Approved paths determine diff source exposure; selection ranges determine captured citation excerpts. Full changed hunks and full added or deleted files may be exposed beyond those ranges, and preview warnings state that behavior.",
+    "Unchanged dependency requests: the preview builder calls make_changes through create_context and rejects allowlists containing no changed file. The supplied changes metadata shows that all three requested dependency modules are unchanged. This resolves the initial uncertainty into a supported correctness finding for unchanged-only supplements.",
+    "Pin checks: review_handoff.parse_pins validates exact schema fields, lowercase 64-character digest formats and directory-key syntax. It performs no cryptographic or directory-content association check itself. The shown receive flow performs signature verification, archive digest checking and root-key matching separately."
+  ],
+  "remaining_questions": [
+    "git_review.py is omitted, so primitive path/selection validation, range enforcement, JSON parsing, text validation and Git blob access behavior cannot be independently assessed.",
+    "demo.py and authentication.py are omitted, so canonical serialization, file inventory and digest implementations, regular-file enforcement and signature primitives cannot be independently assessed.",
+    "The tests and context-request documentation are omitted. Their coverage and any documented requirement to retain parent changed paths in every supplement are unknown.",
+    "No runtime behavior or transport verification was independently exercised by this reviewer; the assessment is static and uses supplied source and metadata only."
+  ],
+  "conclusion_change": "The initial report had no established finding because dependency contracts were missing. The approved supplement resolves those contracts sufficiently to establish one P2 defect: a supplement approved only for unchanged dependencies fails the inherited requirement that an allowlisted diff contain a change. Other resolved questions clarify existing guarantees and exposure rather than producing additional findings. This explanation is unsigned and is not a quality or execution attestation.",
+  "received_code_executed": false
+}

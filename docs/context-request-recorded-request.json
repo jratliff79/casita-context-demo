@@ -1,0 +1,31 @@
+{
+  "schema": "casita-context-demo.context-request.v1",
+  "context_id": "15d9fc2746f2201cdd0aa5f496783c0d3366d5cf05455f36e89b1b7c4b98ac62",
+  "context_directory_key": "casita.directory.v1:CDr1zeGcQ2SaA1UounZZUy_UFBYXQ4H2LncmNXznK1g",
+  "base_commit": "23bae1883cfa6cbaa696e4408f15ef268fff503c",
+  "head_commit": "133459e56fce11e93358a6f1b9b1b9cff9985a5b",
+  "reason": "The new helper delegates the interfaces that determine its correctness to omitted source. git_diff_review.py is needed to inspect selection validation, verify_context’s returned selection objects and verification guarantees, and verify_git_source: verify_response passes those objects to covers(), which expects version/path/start/end, and preview_response depends on the Git check. git_diff_plan.py is needed to trace preview() and preview_markdown(), including whether returned files or changes expose source beyond the explicitly approved paths/ranges. review_handoff.py is needed to determine exactly what parse_pins(canonical(pins), \"review-input\") validates and whether directory-key and content-id relationships relied on by request binding are checked. Complete ranges for these three small interface modules avoid assuming where definitions and their local callees occur; unrelated source, tests and documentation are not requested. These ranges are within the supplied public source inventory. This request does not authorize direct repository access or execution.",
+  "selections": [
+    {
+      "version": "head",
+      "id": "selection-context-verification",
+      "path": "git_diff_review.py",
+      "start": 1,
+      "end": 260
+    },
+    {
+      "version": "head",
+      "id": "supplement-preview-contract",
+      "path": "git_diff_plan.py",
+      "start": 1,
+      "end": 208
+    },
+    {
+      "version": "head",
+      "id": "input-pin-validation",
+      "path": "review_handoff.py",
+      "start": 1,
+      "end": 223
+    }
+  ]
+}

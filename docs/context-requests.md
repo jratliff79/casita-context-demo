@@ -7,7 +7,9 @@ handoff and source-bound report.
 
 All source and reports here are synthetic and scripted. The example invokes no
 AI model and executes no received source. It demonstrates the exchange, not
-improved review quality or a reproduced private incident.
+improved review quality or a reproduced private incident. The separate
+[recorded public trial](context-request-case.md) uses an actual reviewer request
+and reassessment, with controller adjudication of its reported concern.
 
 ```mermaid
 flowchart LR

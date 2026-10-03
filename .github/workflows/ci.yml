@@ -86,6 +86,14 @@ jobs:
           fetch-depth: 0
           path: output/git-diff-source
           persist-credentials: false
+      - name: Check out immutable public context-request review source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          repository: jratliff79/casita-context-demo
+          ref: 133459e56fce11e93358a6f1b9b1b9cff9985a5b
+          fetch-depth: 0
+          path: output/context-request-review-source
+          persist-credentials: false
       - name: Build Casita with locked dependencies
         run: >-
           cargo +1.94.1 build --locked --package casita --bin casita
@@ -383,6 +391,27 @@ jobs:
           assert receipt["dirty_checkout_excluded"] and receipt["throwaway_private_keys_removed"]
           assert not (root / "throwaway-keys").exists()
           print("PASS: synthetic request, approved supplement and rejected wrong bindings")
+          PYCODE
+
+      - name: Replay the recorded public context request and reassessment
+        run: |
+          python context_request_replay.py --source output/context-request-review-source --casita output/casita-build/debug/casita --output output/recorded-context-request
+          python - <<'PYCODE'
+          import json
+          from pathlib import Path
+          root = Path("output/recorded-context-request")
+          receipt = json.loads((root / "receipt.json").read_text())
+          assert receipt["ok"] and receipt["public_source_snapshot"] and receipt["recorded_ai_reports"]
+          assert receipt["scripted_report"] is False and receipt["fresh_ai_review"] is False
+          assert receipt["received_code_executed"] is False and receipt["review_quality_verified"] is False
+          assert receipt["input_signatures_verified"] and receipt["returned_signatures_verified"]
+          assert receipt["original_git_verified"] and receipt["citations_verified"]
+          assert receipt["binding"]["request_binding_verified"]
+          assert receipt["initial_finding_count"] == 0 and receipt["final_finding_count"] == 1
+          assert receipt["initial_citation_count"] == 0 and receipt["final_citation_count"] == 4
+          assert len(receipt["negative_controls"]) == 6 and all(receipt["negative_controls"].values())
+          assert receipt["throwaway_private_keys_removed"] and not (root / "throwaway-keys").exists()
+          print("PASS: recorded request and reassessment bindings; no model or finding-quality claim")
           PYCODE
 
       - name: Replay the recorded empty public diff review

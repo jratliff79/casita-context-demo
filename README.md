@@ -7,6 +7,14 @@ This independent example uses Casita to store and move content-addressed graphs;
 it adds explicit source selection, signed pins, context-request binding and
 citation checks. The runnable examples use synthetic or labelled public source.
 
+## Watch the demo
+
+A 67-second overview of the selected-source handoff, missing-helper request,
+approved supplement and checked return.
+
+Synthetic source, scripted reviewer, edited output from an executed run, and
+synthetic narration. [Read the transcript](docs/demo-video.md#story-and-narration).
+
 **[Start here: run the complete walkthrough](docs/complete-demo.md).** It covers
 basic transport, a request for an omitted helper, and a recorded public review.
 The examples use synthetic fixtures and labelled public MIT source. No AI

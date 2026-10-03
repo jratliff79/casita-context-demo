@@ -32,6 +32,9 @@ both versions' selected ranges, diff bytes, and whether an added or deleted file
 appears in full. Inspect `context/changes.json` for **every changed hunk** and
 `context/source/` for the exact selected source. `preview.json` records hashes,
 the unsigned context identity, sizes, selections and omitted changed path names.
+Undecodable name bytes are escaped for display. The parallel
+`omitted_changed_paths_raw_hex` list preserves the exact Git path bytes in the
+same order, including when two names share the same escaped display string.
 `spec.json` is the input for the existing signed preparation command.
 
 The example suggests six ranges, 230 selected lines and 21,439 unsigned-context

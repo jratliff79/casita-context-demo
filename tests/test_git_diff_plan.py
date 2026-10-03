@@ -1,4 +1,5 @@
 import argparse
+import subprocess
 from pathlib import Path
 import tempfile
 import unittest
@@ -162,6 +163,38 @@ class GitDiffPlanChecks(unittest.TestCase):
         self.assertTrue(summary["files"][0]["full_added_or_deleted_file"])
         self.assertEqual(summary["files"][0]["diff_utf8_bytes"], 0)
         self.assertEqual({s["path"] for s in spec["selections"]}, {"helper.py"})
+
+    def test_non_utf8_omitted_name_is_escaped_and_preserved_without_source(self):
+        name = b"omitted-\xff.txt"
+        # Create the tree directly: some host filesystems cannot represent this
+        # valid Git path. No omitted blob needs to be checked out or read.
+        def plumbing(*args, data):
+            return subprocess.check_output(["git", "-C", str(self.repo), *args],
+                       input=data, timeout=15, env=review.git_environment()).strip()
+        blob = plumbing("hash-object", "-w", "--stdin", data=b"NON_UTF8_OMITTED_CONTENT_SENTINEL\n")
+        code = plumbing("hash-object", "-w", "--stdin", data=b"FIRST = False\n")
+        entries = review.git(self.repo, "ls-tree", "-z", self.head).split(b"\x00")
+        entries = [b"100644 blob " + code + b"\tclassifier.py" if e.endswith(b"\tclassifier.py") else e
+                   for e in entries if e]
+        entries.append(b"100644 blob " + blob + b"\t" + name)
+        literal_name = b"omitted-\\xff.txt"
+        entries.append(b"100644 blob " + blob + b"\t" + literal_name)
+        tree = plumbing("mktree", "-z", data=b"\x00".join(entries) + b"\x00")
+        head = plumbing("-c", "user.name=Synthetic Example", "-c", "user.email=example@example.invalid",
+                        "-c", "commit.gpgsign=false", "commit-tree", tree.decode(), "-p", self.head,
+                        data=b"Synthetic non-UTF-8 omitted path\n").decode()
+        args = self.args(head=head)
+        summary = plan.run(args)
+        self.assertIn("omitted-\\xff.txt", summary["omitted_changed_paths"])
+        index = summary["omitted_changed_paths_raw_hex"].index(name.hex())
+        self.assertEqual(summary["omitted_changed_paths"][index], "omitted-\\xff.txt")
+        self.assertEqual(bytes.fromhex(summary["omitted_changed_paths_raw_hex"][index]), name)
+        literal_index = summary["omitted_changed_paths_raw_hex"].index(literal_name.hex())
+        self.assertEqual(summary["omitted_changed_paths"][literal_index], summary["omitted_changed_paths"][index])
+        raw = b"".join(p.read_bytes() for p in args.output.rglob("*") if p.is_file())
+        self.assertNotIn(b"NON_UTF8_OMITTED_CONTENT_SENTINEL", raw)
+        self.assertEqual(review.read_json(args.output / "preview.json"), summary)
+        self.assertTrue(diff.verify_git_source(self.repo, args.output / "context", summary["content_id"]))
 
     def test_unsafe_paths_binary_links_and_bad_commits_reject(self):
         for updates in (dict(path=["../outside"]), dict(path=["classifier.py"] * 2),

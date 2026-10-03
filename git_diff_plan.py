@@ -111,13 +111,16 @@ def preview(repository, spec, observation=None):
     # Inventory only repository path names outside the explicit source allowlist.
     names = review.git(repository, "diff-tree", "--no-commit-id", "--name-only", "-r",
                        "--no-renames", "-z", spec["base_commit"], spec["head_commit"])
-    changed_paths = sorted(name.decode("utf-8") for name in names.split(b"\x00") if name)
+    changed_paths = sorted(name for name in names.split(b"\x00") if name)
+    allowed = {path.encode("utf-8") for path in spec["paths"]}
+    omitted = [name for name in changed_paths if name not in allowed]
     selected = [review.parse_json(raw) for path, raw in files.items() if path.startswith("source/")]
     summary = dict(schema=PREVIEW_SCHEMA, base_commit=spec["base_commit"], head_commit=spec["head_commit"],
                    sensitivity=spec["sensitivity"], sharing="local-only", content_id=content_id,
                    paths=spec["paths"], selections=spec["selections"],
                    changed_path_count=len(changed_paths),
-                   omitted_changed_paths=[path for path in changed_paths if path not in spec["paths"]],
+                   omitted_changed_paths=[name.decode("utf-8", errors="backslashreplace") for name in omitted],
+                   omitted_changed_paths_raw_hex=[name.hex() for name in omitted],
                    selected_line_count=sum(len(item["lines"]) for item in selected),
                    context_bytes=size, changes_json_bytes=len(files["changes.json"]),
                    files=[dict(path=item["path"], base=item["base"], head=item["head"],
@@ -129,7 +132,7 @@ def preview(repository, spec, observation=None):
                    casita_store_created=False, publication_performed=False,
                    warnings=["All changed hunks in each allowlisted file are included, even outside citation ranges.",
                              "Added and deleted files appear in full in the diff. Unchanged helper suggestions include the full file.",
-                             "Omitted changed paths are path-name metadata, not captured source.",
+                             "Omitted changed paths are display metadata, not source. Raw hex preserves exact path bytes.",
                              "Range suggestions are mechanical windows, not proof of sufficient review context.",
                              "This preview performs no secret scan, signing, Casita import, publication or source execution.",
                              "The archive byte limit is checked separately when preparing the signed handoff."])

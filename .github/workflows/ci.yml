@@ -314,6 +314,58 @@ jobs:
           print("PASS: public diff, both original commits, signed return and versioned citations")
           PY
 
+      - name: Preview explicit public diff scope and restore its generated spec
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          import shutil
+          import subprocess
+          import sys
+          import authentication as auth
+
+          root = Path("output/scope-preview-check")
+          root.mkdir(mode=0o700)
+          source = Path("output/git-diff-source")
+          binary = "output/casita-build/debug/casita"
+          def command(script, *args):
+              subprocess.check_call([sys.executable, script, *map(str, args)])
+          command("git_diff_plan.py", "--source", source,
+              "--base", "5cc171423d293ad5ca6b2e5323718d4f699e1136",
+              "--head", "002fe4d138a4b17f972dec7639ddda5a4eb62d70",
+              "--path", "git_review.py", "--path", "review_handoff.py", "--path", "LICENSE",
+              "--source-label", "Public MIT source from PR 15",
+              "--purpose", "Review the report and archive size guards; identify missing context.",
+              "--output", root / "preview")
+          preview = json.loads((root / "preview/preview.json").read_text())
+          assert preview["selected_line_count"] == 230 and len(preview["selections"]) == 6
+          assert preview["signed"] is False and preview["casita_store_created"] is False
+          keys = root / "throwaway-keys"
+          keys.mkdir(mode=0o700)
+          try:
+              auth.make_demo_key(keys / "sender")
+              auth.provision_demo_signer(keys / "sender", root / "allowed-signers",
+                                        "scope-preview-sender", "review-input")
+              command("git_diff_review.py", "prepare", "--source", source,
+                  "--spec", root / "preview/spec.json", "--casita", binary,
+                  "--signing-key", keys / "sender", "--output", root / "sender")
+              pins = json.loads((root / "sender/pins.json").read_text())
+              assert pins["content_id"] == preview["content_id"]
+              command("git_diff_review.py", "receive", "--casita", binary,
+                  "--archive", root / "sender/handoff.casitar", "--pins", root / "sender/pins.json",
+                  "--signature", root / "sender/pins.sig", "--allowed-signers", root / "allowed-signers",
+                  "--signer", "scope-preview-sender", "--output", root / "receiver")
+              assert json.loads((root / "receiver/receipt.json").read_text())["signature_verified"]
+              for path in (root / "preview/context").rglob("*"):
+                  if path.is_file():
+                      restored = root / "receiver/context" / path.relative_to(root / "preview/context")
+                      assert restored.read_bytes() == path.read_bytes()
+          finally:
+              shutil.rmtree(keys)
+          assert not keys.exists()
+          print("PASS: generated spec restores the exact previewed context; throwaway keys removed")
+          PY
+
       - name: Replay the recorded empty public diff review
         run: |
           python git_diff_replay.py --casita output/casita-build/debug/casita --source output/diff-review-source --output output/recorded-diff-review

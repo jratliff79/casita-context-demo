@@ -68,6 +68,10 @@ Generated archives, reports, trust files and raw receipts stay in ignored
 
 ## Specify a change and its surrounding source
 
+Use the [scope preview helper](git-diff-preview.md) to suggest ranges around
+changed lines in explicitly named paths and inspect the exact unsigned context
+before signing. It also shows omitted changed paths and the full diff exposure.
+
 The generic CLI accepts a spec using the shape below. Replace placeholders with
 full 40-character Git commit IDs and real source line ranges. Keep the spec
 outside tracked public examples when using private source.

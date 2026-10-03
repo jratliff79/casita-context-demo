@@ -1,0 +1,116 @@
+{
+  "basic": {
+    "negative_controls": {
+      "altered_result_rejected": true,
+      "rebound_result_rejected": true,
+      "result_for_other_context_rejected": true
+    },
+    "ok": true,
+    "synthetic_fixture": true,
+    "tampered_context_rejected": true,
+    "verdicts": {
+      "v1": "rejected: source or output audio timing unavailable",
+      "v2": "accepted"
+    }
+  },
+  "boundaries": {
+    "container_execution": false,
+    "execution_attested": false,
+    "fresh_ai_review": false,
+    "performance_measured": false,
+    "received_code_executed": false,
+    "review_quality_verified": false
+  },
+  "builds": {
+    "default": {
+      "binary_sha256": "41620c1da55ae573f0bf875e063287e4f425881d688d201bcbfebbc915fa3d74",
+      "casita_version": "casita 0.1.0",
+      "locked": true
+    },
+    "oci": {
+      "binary_sha256": "6323f193cb5ce7a6205f71e9170f086b24734cfb55ae11d81908c2734cdc89d1",
+      "casita_version": "casita 0.1.0",
+      "locked": true
+    }
+  },
+  "casita_commit": "7c11a8076d2ea0991167cd1d3451ae2f7f1beacb",
+  "casita_repository": "https://github.com/cachix/casita",
+  "checked_on": "2026-10-03",
+  "demo_base_commit": "ab18093802aa1ead637f99236931265d721fa804",
+  "helper_request": {
+    "citations_verified": true,
+    "helpers_only_supplement": true,
+    "input_signatures_verified": true,
+    "negative_controls": {
+      "signed_invented_source": true,
+      "signed_report_for_other_context": true,
+      "signed_wrong_parent": true,
+      "unapproved_source": true,
+      "wrong_context_directory_key": true,
+      "wrong_context_id": true,
+      "wrong_head_commit": true
+    },
+    "ok": true,
+    "only_approved_helper_source": true,
+    "returned_reports_verified": true,
+    "supplement_selected_line_count": 12,
+    "synthetic_fixture": true,
+    "throwaway_private_keys_removed": true
+  },
+  "host": {
+    "machine": "arm64",
+    "python": "3.12.14",
+    "system": "Darwin"
+  },
+  "lockfile_sha256": "d26f11229e72784941d80d6e12388d402d81740fd916f11ab565f349e4d1f0d6",
+  "oci_environment": {
+    "execution_attested": false,
+    "image": {
+      "config_digest": "sha256:8614a50e05881ad79bcf2d4f82028b65a463c03d2d666d255a4332e3d2a0c0ba",
+      "manifest_digest": "sha256:9b8dad7f66b5c7751df6cb7a64a07812e86bed85d0116efe82b3a11209f1440d",
+      "platform": "linux/amd64",
+      "reference": "docker.io/library/python@sha256:9b8dad7f66b5c7751df6cb7a64a07812e86bed85d0116efe82b3a11209f1440d"
+    },
+    "image_layout_verified": true,
+    "ok": true,
+    "original_contexts_verified": true,
+    "received_checker_executed": false,
+    "runtime": "none",
+    "runtime_commands": [],
+    "verdicts": {
+      "v1": "rejected: source or output audio timing unavailable",
+      "v2": "accepted"
+    },
+    "worker_executed_in_container": false,
+    "wrong_image_pin_rejected_before_runtime": true
+  },
+  "recorded_request": {
+    "base_commit": "23bae1883cfa6cbaa696e4408f15ef268fff503c",
+    "citations_verified": true,
+    "head_commit": "133459e56fce11e93358a6f1b9b1b9cff9985a5b",
+    "input_signatures_verified": true,
+    "negative_controls": {
+      "signed_report_for_other_context": true,
+      "unapproved_source": true,
+      "wrong_base_commit": true,
+      "wrong_context_directory_key": true,
+      "wrong_context_id": true,
+      "wrong_head_commit": true
+    },
+    "ok": true,
+    "original_git_verified": true,
+    "public_source_snapshot": true,
+    "recorded_ai_reports": true,
+    "returned_signatures_verified": true,
+    "source_license": "MIT",
+    "source_repository": "https://github.com/jratliff79/casita-context-demo",
+    "throwaway_private_keys_removed": true
+  },
+  "rust_toolchain": "1.94.1",
+  "schema": "casita-context-demo.casita-update-validation.v1",
+  "scope": "Local locked builds, synthetic context/result and signed helper-request transport, recorded MIT public-source report replay, and pinned public OCI layout transport with a trusted host checker. Historical Apple Container and AI review receipts remain separate.",
+  "unit_tests": {
+    "passed": 139,
+    "python": "3.12.14"
+  }
+}

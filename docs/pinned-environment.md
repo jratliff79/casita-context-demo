@@ -25,7 +25,7 @@ under ignored `output/`. Copy the dependency snapshot before building with OCI s
 
 ```sh
 git clone https://github.com/cachix/casita.git output/casita-source
-git -C output/casita-source checkout aed18e32704c8f2bf821cc038720a77610a600ba
+git -C output/casita-source checkout 7c11a8076d2ea0991167cd1d3451ae2f7f1beacb
 cp ci/Cargo.lock output/casita-source/Cargo.lock
 cargo build --release --locked --package casita --bin casita --features oci \
   --manifest-path output/casita-source/Cargo.toml --target-dir output/casita-build
@@ -48,6 +48,8 @@ and unsupported descriptors. The wrong-image-pin control calls the runtime loade
 with a mismatched expected manifest and confirms rejection before any runtime command
 or image tar creation. The checker runs on the host in this mode; the image is not
 loaded or executed. Hosted CI uses this mode on Linux with the amd64 image pin.
+The [current-pin local receipt](casita-update-validation.json) records this mode
+with Casita `7c11a807` and Rust 1.94.1. The Apple trial below remains historical.
 
 ## Apple Container trial
 

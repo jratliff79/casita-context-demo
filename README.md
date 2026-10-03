@@ -231,16 +231,16 @@ no claim about model accuracy, token reduction, speed or net storage savings.
 ## Tested Casita build
 
 CI targets Casita source commit
-`aed18e32704c8f2bf821cc038720a77610a600ba`. The original handoff job uses default
+`7c11a8076d2ea0991167cd1d3451ae2f7f1beacb`. The original handoff job uses default
 CLI features; the image job additionally enables `oci`. This was upstream `main`
-when checked on 2026-10-01. Keep the immutable pin when reproducing
+when checked on 2026-10-03. Keep the immutable pin when reproducing
 the checks; upstream may have advanced since then. Casita is pre-release and its
 CLI may change. Follow upstream's source installation workflow with this revision:
 
 ```sh
 git clone https://github.com/cachix/casita.git
 cd casita
-git checkout aed18e32704c8f2bf821cc038720a77610a600ba
+git checkout 7c11a8076d2ea0991167cd1d3451ae2f7f1beacb
 cargo install --path crates/casita --bin casita
 ```
 
@@ -251,6 +251,10 @@ commit. The [local validation](docs/validation.md) and
 record the earlier `b8366af1` build; those historical receipts are not evidence
 of a local build at the current CI pin. The [pinned image trial](docs/pinned-environment.json)
 records the newer `aed18e32` build with OCI support and its executed Apple Container check.
+The [current-pin validation](docs/casita-update-validation.json) records locked
+default and OCI builds with Rust 1.94.1, the core handoff and request replays,
+and OCI transport with the trusted host checker. It does not rerun the historical
+Apple Container trial or perform a fresh AI review.
 
 ## Development
 

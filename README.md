@@ -1,322 +1,141 @@
 # Casita Context Demo
 
-Share a pinned set of investigation evidence through Casita. This runnable
-example stores two versions of a synthetic investigation, preserves unchanged
-source under the same content identity, and hands both versions to a fresh store
-through a portable Casitar archive. A trusted local checker then produces results
-and returns them through another archive to a third store for verification against
-the original contexts. An optional image handoff carries a pinned public Python
-environment alongside that evidence and can run the trusted checker in Apple Container.
+Share exact source context with a reviewer, request missing lines, and verify the
+returned report against the original evidence. This independent example uses
+Casita to store and move content-addressed graphs; it adds explicit source
+selection, signed pins, context-request binding and citation checks.
 
-The receiver gets a task, source code, observations and a file-hash manifest.
-It checks expected pins before reading the evidence. This local simulation
-creates those pins at the sender and reads them at the receiver. No model,
-cloud account, agent framework or private project is required.
-
-For the [complete runnable walkthrough](docs/complete-demo.md), run the basic
-transport, unchanged-helper supplement and recorded public review in a fresh clone.
-
-For a complete AI-context example, read [from signed capsule to landed fix](docs/review-to-fix.md):
-a capsule-only reviewer found a real bug in this public demo, its returned
-citations verified, and a regression-tested fix merged. You can replay the
-recorded handoff without an AI account.
-
-The [selected-Git review case](docs/git-review-case.md) repeats that workflow
-against the merged Git handoff tool. A fresh capsule-only reviewer identified a
-report-size bug; an independent local reproduction confirmed it. Its recorded
-report and six source citations can be replayed through the signed transport.
+**[Start here: run the complete walkthrough](docs/complete-demo.md).** It covers
+basic transport, a request for an omitted helper, and a recorded public review.
+The examples use synthetic fixtures and labelled public MIT source. No AI
+account, cloud service or Python packages are required. The request example uses
+a scripted reviewer; the public review replays recorded AI reports.
 
 ## Prerequisites
 
-The examples are tested on macOS and Linux. The commands below use a POSIX shell.
-All Python code uses the standard library; no pip packages or virtual environment
-are required.
+The examples are tested on macOS and Linux with a POSIX shell. Python code uses
+only the standard library.
 
-- **Python 3.9+**, or [uv](https://docs.astral.sh/uv/getting-started/installation/)
-  to select and, if needed, download Python 3.12. uv is optional.
-- **The Casita CLI**, built from the [tested source revision](#tested-casita-build).
-  Python and uv do not install Casita. Put it on `PATH`, or pass its executable
-  path with `--casita`. Building it from source requires Git and Rust 1.94.1+.
-- **Git** to clone this demo and prepare either source-review example.
-- **OpenSSH `ssh-keygen` with `-Y sign` and `-Y verify`** for the signed handoff,
-  review replay and unit tests. The basic demo and unsigned worker do not need it.
+- **Python 3.9+**, or optional [uv](https://docs.astral.sh/uv/getting-started/installation/)
+  to select or download Python 3.12.
+- **Casita CLI**, using the [tested build](#tested-casita-build) below. Python and
+  uv do not install Casita. Building requires Git and Rust/Cargo 1.94.1 or newer.
+- **Git**, including full history for the recorded public-source replay.
+- **OpenSSH `ssh-keygen` with `-Y sign` and `-Y verify`** for signed handoffs,
+  recorded reviews and unit tests. The basic transport demo does not need it.
 
-The [demonstration table](#choose-a-demonstration) lists additional requirements
-for OCI image transport and Apple Container execution. Neither is needed for the
-basic demo. Use a new output directory for every run, and keep raw output private.
+OCI images and Apple Container are optional extensions with separate
+[requirements](docs/examples.md). Use new output directories for every run.
 
-## Run it
+## Tested Casita build
 
-Clone the public repository and enter it:
+After installing Git and Rust/Cargo, clone this demo with full history:
 
 ```sh
 git clone https://github.com/jratliff79/casita-context-demo.git
 cd casita-context-demo
 ```
 
-If Python and Casita are already on `PATH`:
+From the demo root, build the default CLI with CI's source and dependency pins:
 
 ```sh
-python3 demo.py
+git clone https://github.com/cachix/casita.git output/casita-source
+git -C output/casita-source checkout aed18e32704c8f2bf821cc038720a77610a600ba
+cp ci/Cargo.lock output/casita-source/Cargo.lock
+cargo build --locked --package casita --bin casita \
+  --manifest-path output/casita-source/Cargo.toml \
+  --target-dir output/casita-build
+export CASITA_DEMO_BIN="$PWD/output/casita-build/debug/casita"
 ```
 
-Or select an executable and a new output directory:
+The first build downloads public dependencies and needs network access. This is
+a debug build for correctness checks. CI uses Rust 1.94.1; a newer host compiler
+uses the same locked dependency snapshot but is not an identical build. See the
+[dependency snapshot](ci/README.md) for details. The optional image demo needs an
+OCI-enabled build, documented in its own guide.
+
+Casita source `aed18e32704c8f2bf821cc038720a77610a600ba` was upstream `main` when
+checked on 2026-10-01. It is an immutable tested snapshot, not a claim of current
+latest upstream. Casita is pre-release and its CLI may change. Keep this pin when
+reproducing these examples. If you already have that build, set
+`CASITA_DEMO_BIN` to its executable path instead.
+
+## Run it
+
+Run the basic transport demo from the repository root:
 
 ```sh
-python3 demo.py --casita /path/to/casita --output output/my-demo
+python3 demo.py --casita "$CASITA_DEMO_BIN" --output output/my-demo
 ```
+
+It saves two synthetic contexts, restores them into a fresh store and returns
+trusted local checker results for verification. Expect `PASS` lines for shared
+source identity, archive restoration, file hashes, returned results and rejection
+of altered or incorrectly bound evidence. It refuses an existing output directory
+and uses fresh explicit stores under `output/`.
+
+Continue with the [complete walkthrough](docs/complete-demo.md) for the signed
+missing-context exchange and recorded public review. The
+[basic transport guide](docs/basic-transport.md) explains the synthetic timing
+fixture, object identities and result checks in detail.
 
 ### Optional uv runner
 
-After [installing uv](https://docs.astral.sh/uv/getting-started/installation/), run
-the same demo with a selected Python version:
+After [installing uv](https://docs.astral.sh/uv/getting-started/installation/):
 
 ```sh
 uv run --no-project --python 3.12 python demo.py \
-  --casita /path/to/casita --output output/uv-demo
+  --casita "$CASITA_DEMO_BIN" --output output/uv-demo
 ```
 
-uv uses a matching Python interpreter or downloads one if needed; the first
-download requires network access. `--no-project` runs this standard-library demo
-without installing a surrounding Python project. This selects the Python 3.12
-series, not a fixed patch release. It does not provision Casita, OpenSSH or an
-image runtime. See [uv's script guide](https://docs.astral.sh/uv/guides/scripts/).
+For other guides, replace `python3` with
+`uv run --no-project --python 3.12 python`, keeping all other arguments. uv selects
+Python 3.12 or downloads it if needed; the first download needs network access.
+It selects the 3.12 series, not a fixed patch release, and does not provision
+Casita, OpenSSH or an image runtime. No project installation is required.
 
-For other guides' host Python commands, replace `python3` with
-`uv run --no-project --python 3.12 python`. Run from this repository's root and
-keep the guide's other prerequisites and arguments.
+## Explore further
 
-The command uses only fresh stores inside the output directory. It refuses an
-existing output directory, does not use your global Casita store, and keeps a
-receipt with every Casita command and result, including failed runs.
-Raw receipts can contain local paths and CLI output; keep them under ignored
-`output/` and review them before sharing. Context packaging selects only the
-three intended fixture files and excludes caches and other local files.
+| Goal | Guide |
+| --- | --- |
+| Run the complete core workflow | [Three-stage walkthrough](docs/complete-demo.md) |
+| Understand missing context and explicit approval | [Context requests](docs/context-requests.md) |
+| See an actual reviewer request and recorded reassessment | [Public reviewer case](docs/context-request-case.md) |
+| See a capsule review lead to a landed fix | [Review-to-fix case](docs/review-to-fix.md) |
+| Prepare selected source, use a separate worker, or try OCI/Apple Container | [All demonstrations and requirements](docs/examples.md) |
+| Run tests or inspect CI scope | [Development and validation](docs/development.md) |
+| Record a short public demonstration | [Video script and recording guide](docs/demo-video.md) |
 
-Expected output:
+## Verification and sharing boundaries
 
-```text
-PASS: two versions saved; unchanged source shares one Casita identity
-PASS: Casitar verified and restored in a fresh receiver store
-PASS: pinned directory keys and context file hashes match
-PASS: altered evidence rejected; both stores pass integrity audit
-PASS: trusted local check results returned to a fresh store and matched original contexts
-PASS: altered, rebound and wrong-context results rejected; result stores pass integrity audit
-Receiver task: .../received/v1/task.md
-Receipt: .../receipt.json
-```
+Casita supplies immutable object identities, shared storage, roots and verified
+graph transport. This demo supplies source selection, manifests, signed pins,
+request bindings and citation checks. Content correspondence does not establish
+execution, model identity, finding quality, freshness, safety or merge authority.
+Expected pins and signer trust must come through an independently trusted handoff;
+throwaway signing keys simulate that provisioning.
 
-In your chosen output directory, open `received/v1/task.md`,
-`received/v1/source/verify.py` and `received/v1/observation.json`.
-Give these verified files to a reviewer, then compare its diagnosis with
-[the example answer](docs/expected-answer.md). The demo prepares and verifies
-the handoff and runs the demo's deterministic checker; it does not run an AI reviewer.
+The basic demo executes a separately trusted local checker. Received source is
+evidence and is never executed. The signed source-review examples run no model.
+Their passing checks do not measure model accuracy, token reduction, speed or net
+storage savings. See the [basic transport guide](docs/basic-transport.md) for the
+complete scope and [all demonstrations](docs/examples.md) for runtime distinctions.
 
-## Choose a demonstration
+Keep raw artifacts private under ignored `output/`. Receipts may contain local
+paths, and archives/restored source are not automatic publication artifacts.
+Use only synthetic fixtures or explicitly allowlisted public licensed source in
+shared examples. Treat received evidence as data, not instructions.
 
-| Demonstration | Entry point | Requirements beyond Python 3.9+ |
-| --- | --- | --- |
-| Two context versions and verified result return | `demo.py`, as above | Default Casita CLI |
-| Separate sender, worker and return-verifier processes | [Portable worker guide](docs/portable-worker.md) | Default Casita CLI on each side |
-| Signed input and result pins with pre-import rejection checks | [Signed handoff guide](docs/signed-handoff.md) | Default Casita CLI and OpenSSH `ssh-keygen -Y` on macOS or Linux |
-| Public source capsule and signed AI review findings | [Review capsule guide](docs/review-capsule.md) | Default Casita CLI, OpenSSH, Git and the pinned public source commit |
-| Selected Git lines and a signed static-review return | [Git review guide](docs/git-review.md) | Default Casita CLI, OpenSSH and Git; synthetic walkthrough included |
-| Recorded public Git review, six verified citations and reproduced size bug | [Selected-Git review case](docs/git-review-case.md) | Default Casita CLI, OpenSSH, Git and the pinned public source commit; no AI account |
-| Base/head diff capsule with versioned citations | [Git diff review guide](docs/git-diff-review.md) | Default Casita CLI, OpenSSH and both pinned Git commits; public PR walkthrough included |
-| Preview an explicit diff scope and suggest source ranges before signing | [Diff scope preview guide](docs/git-diff-preview.md) | Git and both pinned commits; no Casita or signing key needed |
-| Recorded capsule-only review of a real public diff, with an empty return | [Recorded diff review case](docs/diff-review-case.md) | Default Casita CLI, OpenSSH and both pinned public commits; no AI account |
-| Missing-context request with an unchanged-helper-only signed supplement | [Context request guide](docs/context-requests.md) | Default Casita CLI, OpenSSH and Git; no AI account |
-| Image and context transport with a trusted host check | [Environment transport guide](docs/pinned-environment.md#transport-check) | Casita built with `oci`; public registry access |
-| Trusted checker in the restored image | [Apple Container guide](docs/pinned-environment.md#apple-container-trial) | OCI-enabled Casita, public registry access and Apple Container running on a Mac |
-
-The image examples select a reviewed public image by its full manifest digest.
-They verify its manifest, config, layers and platform before runtime loading.
-`--runtime none` runs the checker on the host; `--runtime apple` runs it in the
-restored image. Both use synthetic evidence and the separately trusted checker.
-The [physical worker trial](docs/physical-worker.md) records a Mac-to-Linux
-round trip over SSH. The image guide records local Mac/Linux VM trials.
-Execution attestation remains outside these checks.
-
-## When a reviewer needs more source
-
-The [synthetic context-request example](docs/context-requests.md) starts with an
-incomplete capsule, records a request tied to its identity and commits, then
-previews an explicitly approved signed supplement. The receiver checks the parent
-and request binding before a source-bound report is returned. It uses scripted
-reports, no AI model or received-source execution.
-
-The [recorded public reviewer trial](docs/context-request-case.md) shows an actual
-request for three dependencies and a changed assessment after supplementation.
-Its replay needs no AI account. The reported concern reproduced a documented
-protocol limitation; it is not presented as a newly confirmed defect.
-
-## What Casita does here
-
-```mermaid
-flowchart LR
-    V1[Context v1: unknown timing] --> R1[Casita root demo/v1]
-    V2[Context v2: numeric timing] --> R2[Casita root demo/v2]
-    R1 --> S[Shared unchanged source object]
-    R2 --> S
-    R1 --> A[Portable Casitar]
-    R2 --> A
-    A --> F[Fresh receiver store]
-    F --> C[Check pins and read exact evidence]
-    C --> T[Trusted local checker]
-    T --> R[Result Casitar]
-    R --> V[Fresh return store: verify original context and result]
-```
-
-1. Build two contexts from public, synthetic fixtures. Only the first audio
-   packet duration and its declared result change between versions.
-2. Import them as `demo/v1` and `demo/v2`. Their directory keys differ, while
-   their unchanged `source/` directory has the same Casita key. The script checks
-   the actual tree entries; this is observed shared identity, not a disk-saving
-   benchmark.
-3. Move `demo/current` from v1 to v2 while retaining both version roots.
-4. Export both graphs with `archive create`, fully verify the Casitar, and import
-   it into a fresh receiver under `received/0` and `received/1`.
-5. Compare the received directory keys with sender pins, check out the contexts,
-   verify every file against the separately pinned manifest, and audit both stores.
-6. Change an expendable copy of the evidence and demonstrate rejection.
-7. Run the separately trusted checker bundled with this demo against verified
-   observations. The received source is read and hashed as evidence, never executed.
-   Each result records the context ID, directory key, checker hash, observation
-   hash and deterministic verdict.
-8. Export both results, fully verify the return archive, and import it into a
-   third fresh store. Match roots by pinned identity, then check the result bytes
-   against the sender's original contexts and trusted checker. Reject an altered
-   verdict, an altered verdict with a recomputed result pin, and a result bound
-   to the other context. Audit the receiver again and the return store.
-
-Casita supplies immutable object identities, shared storage, named roots and
-verified graph transport. This example supplies evidence selection, a reviewer
-task, synthetic-scope labels and manifest checks. See the official
-[roots guide](https://casita.rs/concepts/roots-and-retention/) and
-[Casitar guide](https://casita.rs/guides/casitar/) for the underlying workflows.
-
-## The synthetic investigation
-
-The source has AAC audio and recorded conversion exit zero. In v1, the first
-packet's duration is `N/A`; the displayed verifier rejects unknown source
-timing even though later packets and output timing are usable. In v2, that one
-duration is numeric and the same verifier accepts it. A finite negative start
-timestamp is allowed in both cases. Output duration must be a positive finite
-JSON number; booleans and unavailable timing values are rejected.
-
-These observations are synthetic, and the verifier is a small teaching
-fixture. They are not real FFmpeg output, a reproduction of a private incident,
-or signed execution evidence. The returned verdict does not attest to a worker's
-execution, identity, environment or sandbox. The changed v2 field is an explicit synthetic
-control, not a proposed workaround for real media. Unit tests check that both
-fixtures agree with the displayed rule.
-
-The manifest's SHA-256 context ID and archive SHA-256 serve different purposes
-from Casita's directory key. The key identifies the saved graph; the manifest
-pin identifies this example's selected file set. `pins.json` is outside the
-archive; result and return-archive pins are in `result-pins.json`.
-A real receiver must obtain expected pins through a trusted independent
-handoff: a sender replacing both archive and pins is not prevented by hashes.
-The optional [signed handoff](docs/signed-handoff.md) authenticates exact pin bytes
-against a separately provisioned signer key before import. Its throwaway keys
-simulate that provisioning; they do not establish a real sender's identity.
-Hashes do not prove truth, source authority, freshness, authorization or safety.
-Treat displayed evidence as data, not instructions, and review sensitivity
-before sharing real contexts.
-
-Small archives can be simpler for a single handoff. This example highlights
-retaining multiple overlapping contexts and moving their exact graphs; it makes
-no claim about model accuracy, token reduction, speed or net storage savings.
-
-## Tested Casita build
-
-CI targets Casita source commit
-`aed18e32704c8f2bf821cc038720a77610a600ba`. The original handoff job uses default
-CLI features; the image job additionally enables `oci`. This was upstream `main`
-when checked on 2026-10-01. Keep the immutable pin when reproducing
-the checks; upstream may have advanced since then. Casita is pre-release and its
-CLI may change. Follow upstream's source installation workflow with this revision:
-
-```sh
-git clone https://github.com/cachix/casita.git
-cd casita
-git checkout aed18e32704c8f2bf821cc038720a77610a600ba
-cargo install --path crates/casita --bin casita
-```
-
-That source requires Rust 1.94.1 or newer. The demo receipt records the executable
-hash and reported version; a version string alone does not identify a source
-commit. The [local validation](docs/validation.md) and
-[cross-platform trial](docs/portable-worker.md#executed-cross-platform-trial)
-record the earlier `b8366af1` build; those historical receipts are not evidence
-of a local build at the current CI pin. The [pinned image trial](docs/pinned-environment.json)
-records the newer `aed18e32` build with OCI support and its executed Apple Container check.
-
-## Development
-
-```sh
-python3 -m unittest discover -s tests -v
-python3 demo.py --output output/another-run
-```
-
-Or select Python 3.12 with uv:
-
-```sh
-uv run --no-project --python 3.12 python -m unittest discover -s tests -v
-uv run --no-project --python 3.12 python demo.py \
-  --casita /path/to/casita --output output/uv-development
-```
-
-The unit suite invokes OpenSSH for signature checks, but does not require Casita
-or an image runtime. The real demo command additionally requires Casita.
-
-Unit checks cover fixture selection, linked inputs, wrong pins, forged manifests,
-extra files, symlinks, archive pin mismatch, fixture consistency and preservation
-of an existing output. Image checks also cover blob corruption, platform/config
-pins, runtime identity readback and cleanup after post-load validation failures.
-Signature tests invoke OpenSSH with temporary keys and check signer/namespace
-binding, file limits, schema checks, exact verified bytes and rejection before import.
-Review report checks bind findings to the original context and verify each cited
-file hash and exact line excerpt. They do not judge whether a finding is correct.
-The real CLI run exercises root identity, sharing, multi-root portable transport,
-restore, returned-result verification and integrity audits. Both are needed to validate
-changes to the demonstration.
-
-[CI](.github/workflows/ci.yml) runs the unit tests on plain Python 3.9 and 3.12, then
-builds the tested Casita revision with Rust 1.94.1 and locked dependencies on a
-fresh GitHub-hosted Linux runner using this repository's
-[dependency snapshot](ci/README.md), since upstream ignores `Cargo.lock`.
-Its handoff check runs the uv quick start with uv 0.12.22 and Python 3.12,
-using a disposable fixture copy under `output/`, and verifies
-restored file sets, exclusion of a generated Python cache, and result-return controls. This is a
-signed and unsigned transport check; the signed control rejects replacement pins
-and archives before initializing a receiver store. It remains a
-correctness check using a debug CLI build, not a performance benchmark. The workflow uses read-only
-permissions and does not upload raw receipts, stores or context archives.
-An additional OCI job builds with `--features oci` and checks image/context
-transport plus the trusted host checker. It does not run Apple Container.
-The handoff job also replays a recorded capsule-only AI review of an allowlisted
-public source snapshot, signs its return and rejects correctly signed reports
-with a wrong context or invented excerpt. It does not invoke an AI reviewer.
-It also runs the selected-Git-lines protocol with a synthetic repository and
-scripted report, checks dirty-checkout exclusion, and rejects signed reports
-with incorrect source bindings or citations. This is not a fresh AI review.
+## Project and AI assistance
 
 This is an independent example using Casita, not an official Casita integration.
-MIT licensed; contributions should keep the example small, reproducible and
-free of private evidence.
+MIT licensed. Contributions should keep it small, reproducible and free of private
+evidence. Changes go through pull requests; the repository owner retains merge
+authority. See [repository guidance](AGENTS.md).
 
-This example's code, tests and documentation were developed with substantial
-assistance from OpenAI Codex. Timing fixtures are synthetic; the review example
-uses labelled public source. Executed checks and
-their limits are recorded in the [initial validation](docs/validation.md),
-[portable worker trial](docs/portable-worker.md#executed-cross-platform-trial) and
-[pinned image trial](docs/pinned-environment.md#recorded-scope), with the
-[signed handoff check](docs/signed-handoff.md#recorded-scope) and
-[public source review](docs/review-capsule.md#recorded-trial) recorded separately. AI assistance
-does not replace maintainer review or responsibility for the published work.
-
-AI-assisted contributions are welcome. Describe substantial AI assistance in
-the PR and report the checks you actually ran. The repository owner decides
-what merges. Changes to `main` must go through a PR, including the owner's
-changes; agents should prepare PRs and leave the merge to the owner.
+Code, tests and documentation were developed with substantial assistance from
+OpenAI Codex. Synthetic fixtures and recorded AI reports are labelled in their
+guides. Executed checks and their limits are documented in the
+[complete walkthrough](docs/complete-demo.md), [development guide](docs/development.md)
+and individual trial receipts. AI assistance does not replace maintainer review
+or make a verified finding correct.

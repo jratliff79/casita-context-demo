@@ -1,0 +1,30 @@
+{
+  "schema": "casita-context-demo.onboarding-validation.v1",
+  "scope": "Documentation and local video draft; synthetic fixtures and allowlisted public MIT source.",
+  "platform": "macOS arm64",
+  "python": "3.9.6",
+  "rust": "1.98.1",
+  "casita_source_commit": "aed18e32704c8f2bf821cc038720a77610a600ba",
+  "casita_executable_sha256": "053bb4e38c7c725a6bd498764303cedff7ca1fe0f8213fa6bf9e94c3cf296503",
+  "dependency_snapshot": "ci/Cargo.lock",
+  "locked_debug_build_passed": true,
+  "unit_tests_passed": 139,
+  "basic_transport_passed": true,
+  "helpers_only_exchange_passed": true,
+  "recorded_public_request_replay_passed": true,
+  "optional_uv_basic_demo_passed": true,
+  "helper_selected_lines": 12,
+  "helper_final_citations": 1,
+  "helper_rejection_controls_passed": 7,
+  "recorded_rejection_controls_passed": 6,
+  "throwaway_private_keys_removed": true,
+  "fresh_ai_review": false,
+  "received_source_executed": false,
+  "video_duration_seconds": 98.046468,
+  "video_published": false,
+  "notes": [
+    "Local build used a newer compiler than CI Rust 1.94.1, with the same source and dependency snapshot.",
+    "Video renders selected output from executed commands with synthetic narration; it is not a screen capture or live model review.",
+    "Raw artifacts and video remain under ignored output; this receipt includes no local paths or keys."
+  ]
+}

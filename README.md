@@ -12,6 +12,8 @@ citation checks. The runnable examples use synthetic or labelled public source.
 A 67-second overview of the selected-source handoff, missing-helper request,
 approved supplement and checked return.
 
+https://github.com/user-attachments/assets/c2445e44-54e1-4f15-8fec-114dceb7bcbb
+
 Synthetic source, scripted reviewer, edited output from an executed run, and
 synthetic narration. [Read the transcript](docs/demo-video.md#story-and-narration).
 

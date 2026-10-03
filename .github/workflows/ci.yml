@@ -366,6 +366,25 @@ jobs:
           print("PASS: generated spec restores the exact previewed context; throwaway keys removed")
           PY
 
+      - name: Run synthetic missing-context request and signed supplement
+        run: |
+          python context_request_example.py --casita output/casita-build/debug/casita --output output/context-request
+          python - <<'PYCODE'
+          import json
+          from pathlib import Path
+          root = Path("output/context-request")
+          receipt = json.loads((root / "receipt.json").read_text())
+          assert receipt["ok"] and receipt["synthetic_fixture"] and receipt["scripted_report"]
+          assert receipt["fresh_ai_review"] is False and receipt["received_code_executed"] is False
+          assert receipt["input_signatures_verified"] and receipt["returned_reports_verified"]
+          assert receipt["citations_verified"] and receipt["binding"]["request_binding_verified"]
+          assert receipt["initial_finding_count"] == 0 and receipt["final_finding_count"] == 1
+          assert len(receipt["negative_controls"]) == 6 and all(receipt["negative_controls"].values())
+          assert receipt["dirty_checkout_excluded"] and receipt["throwaway_private_keys_removed"]
+          assert not (root / "throwaway-keys").exists()
+          print("PASS: synthetic request, approved supplement and rejected wrong bindings")
+          PYCODE
+
       - name: Replay the recorded empty public diff review
         run: |
           python git_diff_replay.py --casita output/casita-build/debug/casita --source output/diff-review-source --output output/recorded-diff-review

@@ -393,6 +393,28 @@ jobs:
           print("PASS: synthetic request, approved supplement and rejected wrong bindings")
           PYCODE
 
+      - name: Run an unchanged-helper-only signed supplement
+        run: |
+          python context_request_example.py --helpers-only --casita output/casita-build/debug/casita --output output/helpers-only
+          python - <<'PYCODE'
+          import json
+          from pathlib import Path
+          root = Path("output/helpers-only")
+          receipt = json.loads((root / "receipt.json").read_text())
+          assert receipt["ok"] and receipt["helpers_only_supplement"]
+          assert receipt["only_approved_helper_source"] and receipt["supplement_selected_line_count"] == 12
+          assert receipt["input_signatures_verified"] and receipt["returned_reports_verified"]
+          assert receipt["citations_verified"] and receipt["final_citation_count"] == 1
+          assert receipt["binding"]["request_binding_verified"]
+          assert len(receipt["negative_controls"]) == 7 and all(receipt["negative_controls"].values())
+          manifest = json.loads((root / "supplement-receiver/context/manifest.json").read_text())
+          assert manifest["schema"] == "casita-context-demo.git-diff-supplement-context.v1"
+          assert receipt["received_code_executed"] is False and receipt["fresh_ai_review"] is False
+          assert receipt["dirty_checkout_excluded"] and receipt["throwaway_private_keys_removed"]
+          assert not (root / "throwaway-keys").exists()
+          print("PASS: unchanged helper only, bound parent/request and signed false-source rejection")
+          PYCODE
+
       - name: Replay the recorded public context request and reassessment
         run: |
           python context_request_replay.py --source output/context-request-review-source --casita output/casita-build/debug/casita --output output/recorded-context-request

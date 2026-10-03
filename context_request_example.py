@@ -68,8 +68,10 @@ def make_report(context, pins, complete):
     manifest, selections = diff.verify_context(context, pins["content_id"])
     citations = []
     if complete:
-        for version, ident, line in (("base", "gate", 4), ("head", "gate", 6),
-                                     ("head", "numbers-helper", 4)):
+        sites = [("head", "numbers-helper", 4)]
+        if "head:gate" in selections:
+            sites = [("base", "gate", 4), ("head", "gate", 6)] + sites
+        for version, ident, line in sites:
             s = selections[version + ":" + ident]
             citations.append(dict(version=version, selection_id=ident, path=s["path"],
                 blob_sha256=s["blob_sha256"], line_start=line, line_end=line,
@@ -78,8 +80,12 @@ def make_report(context, pins, complete):
                 context_directory_key=pins["directory_key"], base_commit=manifest["base_commit"],
                 head_commit=manifest["head_commit"], reviewer="scripted synthetic reviewer; no AI invoked",
                 scope=review.SCOPE, findings=[] if not complete else [
-                    dict(title="Synthetic refactor admits booleans through the helper", priority="P2",
-                         body="The base gate rejects bool explicitly. The head delegates to a helper whose int/float branch includes bool. This is a scripted static fixture, not a discovered real defect or execution result.",
+                    dict(title="Synthetic refactor admits booleans through the helper" if "head:gate" in selections
+                              else "Synthetic helper numeric branch includes booleans", priority="P2",
+                         body=("The base gate rejects bool explicitly. The head delegates to a helper whose int/float branch includes bool. "
+                               if "head:gate" in selections else
+                               "The supplemental helper's int/float branch includes bool. Gate evidence stays in the parent capsule and is not cited by this report. ")
+                              + "This is a scripted static fixture, not a discovered real defect or execution result.",
                          citations=citations)],
                 limitations=["Scripted synthetic evidence; no AI reviewer or received-source execution.",
                              "Complete only for this teaching fixture." if complete else
@@ -87,6 +93,7 @@ def make_report(context, pins, complete):
 
 
 def run(args):
+    helpers_only = getattr(args, "helpers_only", False)
     output = args.output.resolve()
     output.mkdir(parents=True, mode=0o700, exist_ok=False)
     keys = output / "throwaway-keys"
@@ -94,7 +101,7 @@ def run(args):
     receipt = dict(schema="casita-context-demo.context-request-example.v1", synthetic_fixture=True,
                    scripted_report=True, fresh_ai_review=False, received_code_executed=False,
                    review_quality_verified=False, execution_attested=False, os_sandbox_enforced=False,
-                   publication_performed=False, negative_controls={})
+                   publication_performed=False, helpers_only_supplement=helpers_only, negative_controls={})
     def role(mode, name, **kwargs):
         options = {k: None for k in ("source", "spec", "observation", "signing_key", "archive", "pins",
                                     "signature", "allowed_signers", "signer", "context", "report", "original")}
@@ -127,6 +134,10 @@ def run(args):
         manifest, _ = diff.verify_context(context, parent["pins"]["content_id"])
         request = make_request(manifest, parent["pins"])
         approved = spec(base, head, True)
+        if helpers_only:
+            approved["schema"] = diff.SUPPLEMENT_SPEC_SCHEMA
+            approved["paths"] = ["numbers_helper.py"]
+            approved["selections"] = [s for s in approved["selections"] if s["path"] == "numbers_helper.py"]
         preview = request_api.preview_response(repository, context, parent["pins"], request, approved, output / "preview")
         supplement = role("prepare", "supplement-sender", source=repository, spec=output / "preview/spec.json",
                           observation=output / "preview/observation.json", signing_key=keys / "sender")
@@ -177,6 +188,43 @@ def run(args):
             receipt["negative_controls"]["signed_report_for_other_context"] = True
         else:
             raise ValueError("supplement report accepted for parent context")
+        if helpers_only:
+            # Signed, self-consistent metadata still cannot invent original Git source.
+            forged = output / "invented-source"
+            evidence = forged / "context"
+            shutil.copytree(output / "supplement-sender/context", evidence)
+            changes = review.read_json(evidence / "changes.json", demo.MAX_BYTES)
+            for item in changes["files"]:
+                for version in diff.VERSIONS:
+                    item[version]["blob_sha256"] = "0" * 64
+            (evidence / "changes.json").write_bytes(demo.canonical(changes))
+            for path in (evidence / "source").rglob("*.json"):
+                selected = review.read_json(path)
+                selected["blob_sha256"] = "0" * 64
+                selected["lines"][0] = "invented synthetic source"
+                path.write_bytes(demo.canonical(selected))
+            altered = review.read_json(evidence / "manifest.json")
+            altered["files"] = demo.file_map(evidence)
+            altered["files"].pop("manifest.json")
+            raw = demo.canonical(altered)
+            (evidence / "manifest.json").write_bytes(raw)
+            ident = demo.digest(raw)
+            store = demo.Casita(str(Path(shutil.which(args.casita)).resolve()), forged / "store", [])
+            review.transport.export(store, forged, evidence, ident, "review-input", keys / "sender", {})
+            role("receive", "invented-source-receiver", **transfer(forged, "sender"))
+            try:
+                diff.verify_git_source(repository, output / "invented-source-receiver/context", ident)
+            except ValueError as error:
+                if "original Git blobs" not in str(error):
+                    raise
+                receipt["negative_controls"]["signed_invented_source"] = True
+            else:
+                raise ValueError("signed invented unchanged source accepted")
+            changed = review.read_json(output / "supplement-receiver/context/changes.json", demo.MAX_BYTES)
+            assert [f["path"] for f in changed["files"]] == ["numbers_helper.py"]
+            assert all(f["base"] == f["head"] and not f["diff"] for f in changed["files"])
+            assert all(s["path"] == "numbers_helper.py" for s in approved["selections"])
+            receipt["only_approved_helper_source"] = True
         all_source = b"".join(p.read_bytes() for name in ("initial-receiver", "supplement-receiver")
                              for p in (output / name / "context").rglob("*") if p.is_file())
         assert b"SYNTHETIC_DIRTY_SENTINEL" not in all_source and b"SYNTHETIC_UNSELECTED_SENTINEL" not in all_source
@@ -185,7 +233,9 @@ def run(args):
                        returned_reports_verified=initial["original_git_verified"] and final["original_git_verified"],
                        citations_verified=final["citations_verified"], initial_finding_count=initial["finding_count"],
                        final_finding_count=final["finding_count"], dirty_checkout_excluded=True,
-                       request_sha256=demo.digest(demo.canonical(request)))
+                       request_sha256=demo.digest(demo.canonical(request)),
+                       supplement_selected_line_count=preview["selected_line_count"],
+                       final_citation_count=sum(len(f["citations"]) for f in review.read_json(output / "supplement-report.json")["findings"]))
     except Exception as error:
         receipt.update(ok=False, error=str(error))
         raise
@@ -201,6 +251,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--casita", default="casita")
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--helpers-only", action="store_true",
+                        help="send only the requested unchanged helper in an explicit supplement context")
     try:
         os.umask(0o077)
         run(parser.parse_args())

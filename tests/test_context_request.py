@@ -55,6 +55,84 @@ class ContextRequestChecks(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "original Git diff context"):
             diff.validate_report(report, self.parent, self.pins)
 
+    def helpers_only_spec(self):
+        spec = copy.deepcopy(self.approved)
+        spec["schema"] = diff.SUPPLEMENT_SPEC_SCHEMA
+        spec["paths"] = ["numbers_helper.py"]
+        spec["selections"] = [s for s in spec["selections"] if s["path"] == "numbers_helper.py"]
+        return spec
+
+    def test_unchanged_only_supplement_roundtrip_has_no_parent_source(self):
+        summary = api.preview_response(self.repository, self.parent, self.pins, self.request,
+                                       self.helpers_only_spec(), self.root / "preview")
+        self.assertEqual(summary["paths"], ["numbers_helper.py"])
+        self.assertEqual(summary["selected_line_count"], 12)
+        context, pins = self.supplement(spec=self.helpers_only_spec())
+        manifest, selections = diff.verify_context(context, pins["content_id"])
+        self.assertEqual(manifest["schema"], diff.SUPPLEMENT_CONTEXT_SCHEMA)
+        self.assertEqual({s["path"] for s in selections.values()}, {"numbers_helper.py"})
+        self.assertTrue(api.verify_response(self.parent, self.pins, self.request, context, pins)["request_binding_verified"])
+        self.assertTrue(diff.verify_git_source(self.repository, context, pins["content_id"]))
+        report = example.make_report(context, pins, True)
+        diff.validate_report(report, context, pins)
+        self.assertEqual(len(report["findings"][0]["citations"]), 1)
+        changes = review.read_json(context / "changes.json")
+        self.assertEqual(changes["files"][0]["diff"], "")
+        self.assertEqual(changes["files"][0]["base"], changes["files"][0]["head"])
+        raw = b"".join(p.read_bytes() for p in context.rglob("*") if p.is_file())
+        self.assertNotIn(b'"path":"gate.py"', raw)
+        self.assertNotIn(b"SYNTHETIC_DIRTY_SENTINEL", raw)
+
+    def test_normal_diff_still_rejects_unchanged_only_source(self):
+        spec = self.helpers_only_spec()
+        spec["schema"] = diff.SPEC_SCHEMA
+        with self.assertRaisesRegex(ValueError, "contain no changes"):
+            api.preview_response(self.repository, self.parent, self.pins, self.request,
+                                 spec, self.root / "rejected")
+        self.assertFalse((self.root / "rejected").exists())
+
+    def test_explicit_supplement_requires_well_formed_parent_request_metadata(self):
+        path = self.root / "supplement-spec.json"
+        path.write_bytes(demo.canonical(self.helpers_only_spec()))
+        with self.assertRaisesRegex(ValueError, "requires parent"):
+            diff.create_context(self.root / "missing-observation", self.repository, path)
+        for field, value in (("parent_context_id", True), ("parent_directory_key", "invalid"),
+                             ("request_sha256", "bad"), ("base_commit", self.head), ("extra", True)):
+            observation = api.response_observation(self.request)
+            observation["context_response"][field] = value
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                self.supplement(observation, self.helpers_only_spec())
+            self.assertFalse((self.root / "supplement").exists())
+
+    def test_supplement_type_cannot_replace_caller_parent_association(self):
+        observation = api.response_observation(self.request)
+        observation["context_response"]["parent_context_id"] = "0" * 64
+        context, pins = self.supplement(observation, self.helpers_only_spec())
+        self.assertTrue(diff.verify_git_source(self.repository, context, pins["content_id"]))
+        with self.assertRaisesRegex(ValueError, "exact request and parent"):
+            api.verify_response(self.parent, self.pins, self.request, context, pins)
+
+    def test_unchanged_claim_and_captured_source_are_checked_against_original_git(self):
+        context, pins = self.supplement(spec=self.helpers_only_spec())
+        changes = review.read_json(context / "changes.json")
+        for version in diff.VERSIONS:
+            changes["files"][0][version]["blob_sha256"] = "0" * 64
+        (context / "changes.json").write_bytes(demo.canonical(changes))
+        for path in (context / "source").rglob("*.json"):
+            selected = review.read_json(path)
+            selected["blob_sha256"] = "0" * 64
+            selected["lines"][0] = "invented source"
+            path.write_bytes(demo.canonical(selected))
+        manifest = review.read_json(context / "manifest.json")
+        manifest["files"] = demo.file_map(context)
+        manifest["files"].pop("manifest.json")
+        raw = demo.canonical(manifest)
+        (context / "manifest.json").write_bytes(raw)
+        ident = demo.digest(raw)
+        diff.verify_context(context, ident)
+        with self.assertRaisesRegex(ValueError, "original Git blobs"):
+            diff.verify_git_source(self.repository, context, ident)
+
     def test_request_binding_schema_and_pin_schema(self):
         for field, value in (("context_id", "0" * 64), ("context_directory_key", "wrong"),
                              ("base_commit", "0" * 40), ("head_commit", "0" * 40),

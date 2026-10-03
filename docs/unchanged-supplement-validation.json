@@ -1,0 +1,78 @@
+{
+  "casita_binary_sha256": "4ca1b670d989838bba50708f3ae56c3ac6ff227d4b46f60060ba7f9607007daf",
+  "casita_source_commit": "aed18e32704c8f2bf821cc038720a77610a600ba",
+  "checks": {
+    "legacy_combined_example_passed": true,
+    "legacy_public_review_replay_passed": true,
+    "local_new_ci_step_assertions_passed": true,
+    "private_keys_removed": true,
+    "public_clean_clone": true,
+    "unit_tests": [
+      {
+        "count": 139,
+        "passed": true,
+        "python": "3.9.6"
+      },
+      {
+        "count": 139,
+        "passed": true,
+        "python": "3.12.14"
+      }
+    ],
+    "uv_walkthrough_three_stages_passed": true,
+    "walkthrough_source_matches_current_code": true,
+    "walkthrough_three_stages_passed": true
+  },
+  "helper_only_example": {
+    "base_commit": "35a97aca081bcce32f88417426d25d177779ffd1",
+    "binding": {
+      "parent_context_id": "7ce66c6cdae9a8e2085a926a3c66f840d9feec1f943c4bd0ab38babd5796d44f",
+      "received_code_executed": false,
+      "request_binding_verified": true,
+      "request_sha256": "d1651e14fca04558e08877ee73402475bb72e5bfaf580383e4e0840f609a5590",
+      "supplement_context_id": "bfe508d98cec8619568bac610e293dea886cad6e1d47f793a8c3b43996432766"
+    },
+    "citations_verified": true,
+    "dirty_checkout_excluded": true,
+    "execution_attested": false,
+    "final_citation_count": 1,
+    "final_finding_count": 1,
+    "fresh_ai_review": false,
+    "head_commit": "7156490478b85a12f2b6b945e873827634b771c5",
+    "helpers_only_supplement": true,
+    "initial_finding_count": 0,
+    "input_signatures_verified": true,
+    "negative_controls": {
+      "signed_invented_source": true,
+      "signed_report_for_other_context": true,
+      "signed_wrong_parent": true,
+      "unapproved_source": true,
+      "wrong_context_directory_key": true,
+      "wrong_context_id": true,
+      "wrong_head_commit": true
+    },
+    "ok": true,
+    "only_approved_helper_source": true,
+    "os_sandbox_enforced": false,
+    "publication_performed": false,
+    "received_code_executed": false,
+    "request_sha256": "d1651e14fca04558e08877ee73402475bb72e5bfaf580383e4e0840f609a5590",
+    "returned_reports_verified": true,
+    "review_quality_verified": false,
+    "schema": "casita-context-demo.context-request-example.v1",
+    "scripted_report": true,
+    "supplement_selected_line_count": 12,
+    "synthetic_fixture": true,
+    "throwaway_private_keys_removed": true
+  },
+  "limits": [
+    "The clean clone used existing documented host prerequisites and the tested local Casita build; this is not a clean-machine dependency installation trial.",
+    "Synthetic helper-only example and recorded public review replay; no fresh AI review or received-source execution.",
+    "Local validation, not a GitHub Actions run.",
+    "Identity and signatures do not attest execution, sandbox enforcement or finding quality."
+  ],
+  "platform": "macOS arm64",
+  "recorded_date": "2026-10-03",
+  "schema": "casita-context-demo.unchanged-supplement-validation.v1",
+  "validated_code_commit": "98715b1e16af193172b7a5233b6584db285d0fc1"
+}

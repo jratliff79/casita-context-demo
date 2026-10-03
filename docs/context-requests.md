@@ -156,8 +156,10 @@ review or a performance benchmark. The owner retains merge authority.
 
 ## Recorded validation
 
-The [sanitized local receipt](context-request-validation.json) records the signed
-exchange, six rejection controls, standalone commands, optional uv run and 129
-tests on Python 3.9 and 3.12. It includes only synthetic identities and checks;
-raw output artifacts stay ignored. This receipt records local macOS validation.
-GitHub Actions runs the same synthetic exchange and checks its receipt.
+The [current helper-only validation](unchanged-supplement-validation.json) records
+seven rejection controls, 139 tests on Python 3.9/3.12, compatibility checks, and
+the three-stage walkthrough from a fresh public clone using Python and optional
+uv. It uses existing documented host prerequisites and the tested Casita build.
+The [historical combined-example receipt](context-request-validation.json)
+retains its earlier six-control, 129-test result. Both receipts contain only
+synthetic identities and checks; raw output artifacts remain ignored.

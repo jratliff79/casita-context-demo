@@ -71,3 +71,8 @@ Keep raw `output/` artifacts local. Receipts and logs may contain local paths;
 archives and source restorations are not automatic publication artifacts.
 Additional OCI, physical-worker and source-selection examples in the README are
 optional extensions to this completed core demonstration.
+
+The [sanitized validation receipt](unchanged-supplement-validation.json) records
+all three stages passing from a fresh public clone with baseline Python and
+optional uv, using the documented existing host prerequisites. CI separately
+checks the signed workflows on Linux.

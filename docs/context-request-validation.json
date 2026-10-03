@@ -1,0 +1,74 @@
+{
+  "casita_binary_sha256": "4ca1b670d989838bba50708f3ae56c3ac6ff227d4b46f60060ba7f9607007daf",
+  "casita_source_commit": "aed18e32704c8f2bf821cc038720a77610a600ba",
+  "checks": {
+    "basic_casita_demo_passed": true,
+    "local_ci_adaptations": [
+      "Use python3 instead of python",
+      "Use the tested local Casita executable"
+    ],
+    "local_ci_step_assertions_passed": true,
+    "signed_context_request_example_passed": true,
+    "standalone_plan_and_verify_passed": true,
+    "standalone_preview_byte_match": true,
+    "unit_tests": [
+      {
+        "count": 129,
+        "passed": true,
+        "python": "3.9.6"
+      },
+      {
+        "count": 129,
+        "passed": true,
+        "python": "3.12.14"
+      }
+    ],
+    "uv_python_3_12_15_example_passed": true
+  },
+  "limits": [
+    "Scripted reports; no fresh AI review or model invocation.",
+    "No received source execution, OS sandbox or execution attestation.",
+    "Raw output artifacts and throwaway signing keys are not published.",
+    "This records local validation, not a GitHub Actions run."
+  ],
+  "platform": "macOS arm64",
+  "recorded_date": "2026-10-02",
+  "schema": "casita-context-demo.context-request-validation.v1",
+  "synthetic_example": {
+    "base_commit": "35a97aca081bcce32f88417426d25d177779ffd1",
+    "binding": {
+      "parent_context_id": "7ce66c6cdae9a8e2085a926a3c66f840d9feec1f943c4bd0ab38babd5796d44f",
+      "received_code_executed": false,
+      "request_binding_verified": true,
+      "request_sha256": "d1651e14fca04558e08877ee73402475bb72e5bfaf580383e4e0840f609a5590",
+      "supplement_context_id": "2337bb0823e0ce854527ee12af8bb5dc6ea73bb5c535b5f835f76996b0e85d4f"
+    },
+    "citations_verified": true,
+    "dirty_checkout_excluded": true,
+    "execution_attested": false,
+    "final_finding_count": 1,
+    "fresh_ai_review": false,
+    "head_commit": "7156490478b85a12f2b6b945e873827634b771c5",
+    "initial_finding_count": 0,
+    "input_signatures_verified": true,
+    "negative_controls": {
+      "signed_report_for_other_context": true,
+      "signed_wrong_parent": true,
+      "unapproved_source": true,
+      "wrong_context_directory_key": true,
+      "wrong_context_id": true,
+      "wrong_head_commit": true
+    },
+    "ok": true,
+    "os_sandbox_enforced": false,
+    "publication_performed": false,
+    "received_code_executed": false,
+    "request_sha256": "d1651e14fca04558e08877ee73402475bb72e5bfaf580383e4e0840f609a5590",
+    "returned_reports_verified": true,
+    "review_quality_verified": false,
+    "schema": "casita-context-demo.context-request-example.v1",
+    "scripted_report": true,
+    "synthetic_fixture": true,
+    "throwaway_private_keys_removed": true
+  }
+}

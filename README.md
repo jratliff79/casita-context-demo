@@ -133,6 +133,14 @@ The [physical worker trial](docs/physical-worker.md) records a Mac-to-Linux
 round trip over SSH. The image guide records local Mac/Linux VM trials.
 Execution attestation remains outside these checks.
 
+## When a reviewer needs more source
+
+The [synthetic context-request example](docs/context-requests.md) starts with an
+incomplete capsule, records a request tied to its identity and commits, then
+previews an explicitly approved signed supplement. The receiver checks the parent
+and request binding before a source-bound report is returned. It uses scripted
+reports, no AI model or received-source execution.
+
 ## What Casita does here
 
 ```mermaid

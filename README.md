@@ -1,15 +1,37 @@
 # Casita Context Demo
 
-Share exact source context with a reviewer, request missing lines, and verify the
-returned report against the original evidence. This independent example uses
-Casita to store and move content-addressed graphs; it adds explicit source
-selection, signed pins, context-request binding and citation checks.
+You want a second opinion on private code. You don't want to share the whole repo.
+Send a reviewer the change and only the source you approve, handle requests for
+missing lines, and check the returned report against that exact evidence.
+This independent example uses Casita to store and move content-addressed graphs;
+it adds explicit source selection, signed pins, context-request binding and
+citation checks. The runnable examples use synthetic or labelled public source.
 
 **[Start here: run the complete walkthrough](docs/complete-demo.md).** It covers
 basic transport, a request for an omitted helper, and a recorded public review.
 The examples use synthetic fixtures and labelled public MIT source. No AI
 account, cloud service or Python packages are required. The request example uses
 a scripted reviewer; the public review replays recorded AI reports.
+
+## When would I use this?
+
+Consider a change to a private pricing calculation. An outside reviewer can see
+the selected diff and source without receiving repository access. If a helper is
+missing, they request its exact lines. You approve that selection separately.
+Their returned report stays tied to the source they received, and its citations
+can be checked against the original Git snapshots. This is a possible workflow;
+the demo does not use private pricing code or perform a live outside review.
+
+The same pattern can preserve a fixed set of evidence across agent handoffs or
+let you replay exactly what a reviewer saw after the repository has changed.
+Verification checks source correspondence; you still judge whether the finding
+is correct. Review the selected content before sharing: a capsule is not an
+automatic secret scanner or a sandbox.
+
+If everyone already has repository access and Git meets the need, use Git. A
+small one-off handoff can use an archive plus a manifest. Casita's content-addressed
+store becomes more relevant for repeated snapshots with common source or build
+artifacts. This example does not establish net storage savings or faster reviews.
 
 ## Prerequisites
 

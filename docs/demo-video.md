@@ -1,6 +1,7 @@
 # A short public demo video
 
-Aim for about two minutes. Show one missing-context exchange, using the synthetic
+Aim for about one minute. Lead with the need for a second opinion on private code
+without sharing the whole repository. Show one missing-context exchange, using the synthetic
 helper-only example from the [complete walkthrough](complete-demo.md).
 Use output from an executed run. Label terminal excerpts as edited and the
 reviewer as scripted; this example does not invoke an AI model.
@@ -9,13 +10,19 @@ reviewer as scripted; this example does not invoke an AI model.
 
 | Scene | Screen | Narration |
 | --- | --- | --- |
-| 1. The handoff | Capsule, request, supplement and report flow | A reviewer needs exact source context. This independent Casita demo packages selected evidence, handles a request for missing lines, and verifies the returned report. |
-| 2. Store and restore | Basic demo command and passing output | Casita moves the saved graphs into fresh stores. The basic example checks shared source identity, restored file hashes and returned results from a separately trusted local checker. |
-| 3. Missing helper | Request reason and explicit ranges | In this scripted synthetic review, the first capsule omits a helper. The request names the missing file and ranges, bound to the original context and Git commits. |
-| 4. Explicit approval | Approved helper path, base/head ranges and preview | The example supplies a separate approval spec. Only the unchanged helper is added: six lines from each version. A request alone does not authorize access to more source. |
-| 5. Verified return | Signature, parent/request and citation checks | The signed supplement stays bound to the parent and request. The returned report is checked against the original Git source, including its exact citation. These checks do not judge finding quality. |
-| 6. Reject mismatches | Executed rejection-control results | The controls reject a correctly signed supplement for the wrong parent and correctly signed invented source. A valid signature alone is not enough to accept the evidence. |
-| 7. Try it | Public repo and complete-walkthrough link | Run the three-stage walkthrough with Python or optional uv. It includes a recorded public AI review replay. This video uses synthetic evidence, scripted reports and edited output from real commands. |
+| 1. The need | Selected source flowing to an outside reviewer; the rest stays with the sender | You want a second opinion on private code. You don't want to share the whole repo. |
+| 2. The handoff | Selected change, pinned capsule and fresh receiver store | Send an outside reviewer the change and only the source you approve. This Casita demo stores that selected evidence as a pinned capsule. The receiver restores it in a fresh store and checks that the contents match. |
+| 3. Missing helper | Request reason and explicit ranges | A helper is missing. The reviewer asks for its exact lines. |
+| 4. Explicit approval | Approved helper path and base/head ranges | A separate approval adds only that helper: six lines from each version. |
+| 5. Verified return | Signature, parent/request and citation checks | The supplement is signed and tied to the original capsule and request. The returned report is checked against the original Git source, down to the cited line. |
+| 6. Reject mismatches | Executed rejection controls, followed by the value and limit | Wrong parent? Rejected. Invented source, even with a valid signature? Rejected. Now you can preserve exactly what the reviewer saw and check the evidence they return. You still need to judge the finding. |
+| 7. Try it | Public repo, complete-walkthrough link and disclosure | This example uses synthetic source and a scripted reviewer. Try the complete walkthrough with Python or uv. No AI account required. |
+
+The private-code scenario explains a possible use, not the origin of the displayed
+source. Keep the synthetic label visible throughout. The separate approval is
+the example's supplied spec; it does not depict a live human decision or access
+control enforced by Casita. See [when to use this](../README.md#when-would-i-use-this)
+for the Git/archive comparison and other possible handoffs.
 
 ## Run before recording
 

@@ -30,14 +30,17 @@ Follow the [tested build](../README.md#tested-casita-build) and keep its
 `CASITA_DEMO_BIN` in this shell. From the demo root, run:
 
 ```sh
-python3 demo.py --casita "$CASITA_DEMO_BIN" --output output/video-basic
+BASIC_OUTPUT=output/video-basic
+REQUEST_OUTPUT=output/video-request
+python3 demo.py --casita "$CASITA_DEMO_BIN" --output "$BASIC_OUTPUT"
 python3 context_request_example.py --helpers-only \
-  --casita "$CASITA_DEMO_BIN" --output output/video-request
+  --casita "$CASITA_DEMO_BIN" --output "$REQUEST_OUTPUT"
 ```
 
-Use new output names when rerunning. Inspect only selected fields from
-`output/video-request/preview/request.json`, `preview/spec.json`,
-`preview/preview.json`, `supplement-report.json` and `receipt.json`.
+Set both variables to new output names when rerunning, and keep `REQUEST_OUTPUT`
+in the shell for the summary commands below. Inspect only selected fields from
+`preview/request.json`, `preview/spec.json`, `preview/preview.json`,
+`supplement-report.json` and `receipt.json` under that request run directory.
 The approved paths should contain only `numbers_helper.py`, with base/head ranges
 1–6, twelve selected lines and one final citation. All seven negative controls
 should pass. Verify throwaway private keys were removed before completing the run.
@@ -54,14 +57,18 @@ raw receipts. After the synthetic run, save this script as
 `output/video-summary.py`:
 
 ```python
+import argparse
 import json
 from pathlib import Path
-import sys
-root=Path('output/video-request')
+parser=argparse.ArgumentParser()
+parser.add_argument('request_output',type=Path)
+parser.add_argument('mode',choices=('request','approval','verified','rejections'))
+args=parser.parse_args()
+root=args.request_output
 r=json.loads((root/'receipt.json').read_text())
 assert r['ok'] and r['throwaway_private_keys_removed']
 assert not (root/'throwaway-keys').exists()
-mode=sys.argv[1]
+mode=args.mode
 if mode=='request':
     req=json.loads((root/'preview/request.json').read_text())
     print('reason:',req['reason'])
@@ -87,10 +94,10 @@ else:raise ValueError(mode)
 Run the four views:
 
 ```sh
-python3 output/video-summary.py request
-python3 output/video-summary.py approval
-python3 output/video-summary.py verified
-python3 output/video-summary.py rejections
+python3 output/video-summary.py "$REQUEST_OUTPUT" request
+python3 output/video-summary.py "$REQUEST_OUTPUT" approval
+python3 output/video-summary.py "$REQUEST_OUTPUT" verified
+python3 output/video-summary.py "$REQUEST_OUTPUT" rejections
 ```
 
 In the rejection view, `true` means that invalid input was rejected by the

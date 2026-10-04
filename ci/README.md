@@ -1,6 +1,6 @@
 # Casita dependency snapshot
 
-The pinned upstream Casita revision, `7c11a8076d2ea0991167cd1d3451ae2f7f1beacb`,
+The pinned upstream Casita revision, `6711e0c8741347e9a6f1e78cc0ad2c9d2750dfa4`,
 ignores `Cargo.lock`. A fresh source checkout therefore cannot build with
 `--locked` on its own.
 

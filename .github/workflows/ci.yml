@@ -57,7 +57,7 @@ jobs:
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           repository: cachix/casita
-          ref: 7c11a8076d2ea0991167cd1d3451ae2f7f1beacb
+          ref: 6711e0c8741347e9a6f1e78cc0ad2c9d2750dfa4
           path: output/casita-source
           persist-credentials: false
       - name: Check out immutable public review source
@@ -484,7 +484,7 @@ jobs:
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           repository: cachix/casita
-          ref: 7c11a8076d2ea0991167cd1d3451ae2f7f1beacb
+          ref: 6711e0c8741347e9a6f1e78cc0ad2c9d2750dfa4
           path: output/casita-source
           persist-credentials: false
       - name: Install pinned Rust toolchain and dependency snapshot

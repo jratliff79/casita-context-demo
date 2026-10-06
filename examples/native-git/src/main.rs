@@ -1,7 +1,7 @@
 //! A synthetic, local-only demonstration. Imported source is never executed.
 use std::error::Error;
 use std::io::Write;
-use std::path::Path;
+use std::path::{Component, Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use casita::ObjectKey;
@@ -14,6 +14,40 @@ use futures::TryStreamExt;
 use tokio::io::AsyncReadExt;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
+
+fn create_output_directory(root: &Path, path: &Path) -> Result<PathBuf> {
+    let parts: Vec<_> = path.components().collect();
+    if parts.len() != 2
+        || parts[0] != Component::Normal("output".as_ref())
+        || !matches!(parts[1], Component::Normal(_))
+    {
+        return Err("choose a relative output/<new-directory> path from the demo root".into());
+    }
+    let parent = root.join("output");
+    match std::fs::symlink_metadata(&parent) {
+        Ok(metadata) if metadata.is_dir() && !metadata.file_type().is_symlink() => {}
+        Ok(_) => return Err("output must be a directory, not a symlink".into()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            std::fs::create_dir(&parent)?;
+        }
+        Err(error) => return Err(error.into()),
+    }
+    let destination = root.join(path);
+    // create_dir fails for an existing directory, file or symlink; never overwrite.
+    std::fs::create_dir(&destination)?;
+    Ok(destination)
+}
+
+fn output_directory() -> Result<PathBuf> {
+    let mut args = std::env::args_os().skip(1);
+    let flag = args.next();
+    let destination = args.next();
+    if flag.as_deref() != Some("--output".as_ref()) || args.next().is_some() {
+        return Err("usage: casita-native-git-context --output output/<new-directory>".into());
+    }
+    let destination = destination.ok_or("missing --output directory")?;
+    create_output_directory(&std::env::current_dir()?, Path::new(&destination))
+}
 
 fn git(source: &Path, args: &[&str], input: &[u8]) -> Result<String> {
     // Do not inherit Git directory, object-store, config or alternate overrides.
@@ -51,7 +85,10 @@ fn key(kind: GitObjectKind, oid: &str) -> Result<ObjectKey> {
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<()> {
-    let source = tempfile::tempdir()?;
+    let output = output_directory()?;
+    let source = tempfile::Builder::new()
+        .prefix("synthetic-git-")
+        .tempdir_in(output)?;
     git(
         source.path(),
         &[
@@ -196,4 +233,76 @@ async fn main() -> Result<()> {
     println!("PASS retention: live reader survives collection; exact payload read back");
     println!("Synthetic local example complete. No source execution or artifact transport.");
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn fixture() -> tempfile::TempDir {
+        let output = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../output");
+        std::fs::create_dir_all(&output).unwrap();
+        tempfile::tempdir_in(output).unwrap()
+    }
+
+    #[test]
+    fn fresh_output_is_created_but_existing_evidence_is_preserved() {
+        let root = fixture();
+        let path = Path::new("output/trial");
+        let destination = create_output_directory(root.path(), path).unwrap();
+        let sentinel = destination.join("evidence.txt");
+        std::fs::write(&sentinel, b"synthetic existing evidence").unwrap();
+        assert!(create_output_directory(root.path(), path).is_err());
+        assert_eq!(
+            std::fs::read(sentinel).unwrap(),
+            b"synthetic existing evidence"
+        );
+    }
+
+    #[test]
+    fn outside_and_nested_paths_reject_before_creating_output() {
+        let root = fixture();
+        let absolute = root.path().join("output/absolute");
+        for path in [
+            Path::new("outside"),
+            Path::new("output"),
+            Path::new("output/../outside"),
+            Path::new("output/nested/trial"),
+            absolute.as_path(),
+        ] {
+            assert!(create_output_directory(root.path(), path).is_err());
+        }
+        assert!(!root.path().join("output").exists());
+        assert!(!root.path().join("outside").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlinked_output_parent_cannot_redirect_artifacts() {
+        let root = fixture();
+        let outside = root.path().join("outside");
+        std::fs::create_dir(&outside).unwrap();
+        std::os::unix::fs::symlink(&outside, root.path().join("output")).unwrap();
+        assert!(create_output_directory(root.path(), Path::new("output/trial")).is_err());
+        assert!(!outside.join("trial").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn existing_output_symlink_is_preserved() {
+        let root = fixture();
+        std::fs::create_dir(root.path().join("output")).unwrap();
+        let outside = root.path().join("outside");
+        std::fs::create_dir(&outside).unwrap();
+        let link = root.path().join("output/trial");
+        std::os::unix::fs::symlink(&outside, &link).unwrap();
+        assert!(create_output_directory(root.path(), Path::new("output/trial")).is_err());
+        assert!(
+            std::fs::symlink_metadata(link)
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+        assert_eq!(std::fs::read_dir(outside).unwrap().count(), 0);
+    }
 }

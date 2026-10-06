@@ -22,12 +22,16 @@ From this demo's repository root:
 
 ```sh
 cargo run --locked --manifest-path examples/native-git/Cargo.toml \
-  --target-dir output/native-git-build
+  --target-dir output/native-git-build -- --output output/my-native-git-demo
 ```
 
 No Python, Casita CLI, signing keys, AI account, registry image or container runtime
-is needed. Each run uses a fresh temporary Git repository and in-memory store;
-the temporary source is removed on exit. Build artifacts stay in ignored `output/`.
+is needed. Choose a new `output/<directory>` for every run. The executable refuses
+existing directories, absolute paths, paths outside `output/`, nested destinations,
+and a symlinked `output` parent. Each run uses a temporary Git repository inside
+that fresh ignored directory and an in-memory store. The temporary source is
+removed on normal exit; the caller-selected directory remains. An interrupted
+run can leave its synthetic fixture there. Build artifacts also stay in ignored `output/`.
 The manifest enables Casita's `git` and `experimental` features explicitly, with
 default CLI features disabled. It pins the same immutable Casita revision as the
 [tested CLI build](../../README.md#tested-casita-build):

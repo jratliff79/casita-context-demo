@@ -58,16 +58,26 @@ pin and lockfile. Run it from the repository root:
 
 ```sh
 cargo run --locked --manifest-path examples/native-git/Cargo.toml \
-  --target-dir output/native-git-build
+  --target-dir output/native-git-build -- --output output/native-git-development
 ```
 
 A separate CI job uses Rust 1.94.1 and the same locked command on Linux. The
 executable asserts subtree and sibling selection, warm import without its source,
 delta reuse with the original helper removed, wrong-type rejection and retained
-reader survival through collection. It uses only a synthetic bare Git repository
-and in-memory Casita. It does not run the Python handoff protocols, transport an
-archive, publish durable roots or execute source. Its `experimental` backend APIs
-remain tied to the pinned upstream revision.
+reader survival through collection. That CI job also runs Rust tests for
+existing-output preservation and rejection of paths or symlinks that could
+redirect artifacts.
+Run those tests locally:
+
+```sh
+cargo test --locked --manifest-path examples/native-git/Cargo.toml \
+  --target-dir output/native-git-build
+```
+
+The executable uses only a synthetic bare Git repository under a fresh ignored
+`output/<directory>` and an in-memory store. It does not run the Python handoff
+protocols, transport an archive, publish durable roots or execute source.
+Its `experimental` backend APIs remain tied to the pinned upstream revision.
 
 
 ## Historical validation

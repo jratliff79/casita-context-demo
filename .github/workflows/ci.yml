@@ -47,11 +47,17 @@ jobs:
           persist-credentials: false
       - name: Install pinned Rust toolchain
         run: rustup toolchain install 1.94.1 --profile minimal
+      - name: Test native Git artifact controls
+        run: >-
+          cargo +1.94.1 test --locked
+          --manifest-path examples/native-git/Cargo.toml
+          --target-dir output/native-git-build
       - name: Run synthetic native Git checks
         run: >-
           cargo +1.94.1 run --locked
           --manifest-path examples/native-git/Cargo.toml
           --target-dir output/native-git-build
+          -- --output output/native-git-demo
 
   handoff:
     name: Casita handoff

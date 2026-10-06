@@ -36,6 +36,6 @@ application with its own `Cargo.lock`. It enables `git` and `experimental`, disa
 default CLI features and pins the same Casita revision in its `Cargo.toml`. The
 standalone lockfile was seeded from this snapshot, then resolved for that
 application with Cargo 1.94.1. It is not a replacement for the workspace snapshot
-used by CLI builds. When updating Casita, update both manifests' source pins and
-review both lockfiles, then validate the standalone `cargo run --locked` as well
+used by CLI builds. When updating Casita, update the standalone manifest and CLI
+workflow source pins, review both lockfiles, and validate `cargo run --locked` as well
 as the CLI jobs. CI does not enable native Git features in the default CLI build.

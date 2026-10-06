@@ -72,7 +72,7 @@ From the demo root, build the default CLI with CI's source and dependency pins:
 
 ```sh
 git clone https://github.com/cachix/casita.git output/casita-source
-git -C output/casita-source checkout 6711e0c8741347e9a6f1e78cc0ad2c9d2750dfa4
+git -C output/casita-source checkout 84ec2920791276cd4ad8c029cd60529810e15705
 cp ci/Cargo.lock output/casita-source/Cargo.lock
 cargo build --locked --package casita --bin casita \
   --manifest-path output/casita-source/Cargo.toml \
@@ -86,8 +86,8 @@ uses the same locked dependency snapshot but is not an identical build. See the
 [dependency snapshot](ci/README.md) for details. The optional image demo needs an
 OCI-enabled build, documented in its own guide.
 
-Casita source `6711e0c8741347e9a6f1e78cc0ad2c9d2750dfa4` was upstream `main` when
-checked on 2026-10-04. It is an immutable tested snapshot, not a claim of current
+Casita source `84ec2920791276cd4ad8c029cd60529810e15705` was upstream `main` when
+checked on 2026-10-05. It is an immutable tested snapshot, not a claim of current
 latest upstream. Casita is pre-release and its CLI may change. Keep this pin when
 reproducing these examples. If you already have that build, set
 `CASITA_DEMO_BIN` to its executable path instead.

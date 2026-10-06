@@ -23,31 +23,51 @@
   },
   "builds": {
     "default": {
-      "binary_sha256": "a7f0ba2939a52c810348fbcba46f973108e60e4de65428490c8b8f2308e45a19",
+      "binary_sha256": "1da17c78c1771674769c14470cefe98993043821f0c933fe0d2127ebff45f045",
       "casita_version": "casita 0.1.0",
       "locked": true
     },
     "oci": {
-      "binary_sha256": "7e970e8daff79b4b44832036c5b5fc8ab547b001e686d225f71e8624984d2a36",
+      "binary_sha256": "304e29f6d365b1403592c69fccb2726af14783c4bdf9452bf6e3f67db95d34eb",
       "casita_version": "casita 0.1.0",
       "locked": true
     }
   },
-  "casita_commit": "6711e0c8741347e9a6f1e78cc0ad2c9d2750dfa4",
+  "casita_commit": "84ec2920791276cd4ad8c029cd60529810e15705",
   "casita_repository": "https://github.com/cachix/casita",
-  "checked_on": "2026-10-04",
-  "demo_base_commit": "1b9fda58dc8b657b55542956154a0598bfb4f708",
+  "checked_on": "2026-10-05",
+  "demo_base_commit": "34d1e71d3cb565b126fc115bc9ab1b9728087c23",
   "dependency_refresh": {
     "dependency_sources_changed": false,
     "generated_with": "Cargo 1.98.1",
     "version_changes": {
-      "auto_impl": {
-        "from": "1.3.0",
-        "to": "1.4.0"
+      "ctutils": {
+        "from": "0.4.2",
+        "to": "0.4.3"
       },
-      "twox-hash": {
-        "from": "2.1.4",
-        "to": "2.1.5"
+      "objc2": {
+        "from": "0.6.4",
+        "to": "0.6.5"
+      },
+      "powerfmt": {
+        "from": "0.2.0",
+        "to": "0.2.1"
+      },
+      "unicase": {
+        "from": "2.9.0",
+        "to": "2.10.0"
+      },
+      "want": {
+        "from": "0.3.1",
+        "to": "0.3.2"
+      },
+      "zerocopy": {
+        "from": "0.8.59",
+        "to": "0.8.60"
+      },
+      "zerocopy-derive": {
+        "from": "0.8.59",
+        "to": "0.8.60"
       }
     }
   },
@@ -76,7 +96,7 @@
     "python": "3.12.14",
     "system": "Darwin"
   },
-  "lockfile_sha256": "bee4b7720627d7fbd8d7038626b2e618e2561b4b9032aec65a0af3066f4e9b00",
+  "lockfile_sha256": "6d53fd6e7d4836f70c740024695f3d11a106e71f074157b442da08194e2673f3",
   "oci_environment": {
     "execution_attested": false,
     "image": {

@@ -64,7 +64,12 @@ cargo run --locked --manifest-path examples/native-git/Cargo.toml \
 A separate CI job uses Rust 1.94.1 and the same locked command on Linux. The
 executable asserts subtree and sibling selection, warm import without its source,
 delta reuse with the original helper removed, wrong-type rejection and retained
-reader survival through collection. That CI job also runs Rust tests for
+reader survival through collection. It then imports the selected tree into a
+fresh disk store, commits a named root before releasing the reader, closes and
+reopens the store, and collects before opening any new retained reader. The
+unrooted control must be removed while the named closure remains complete, and
+exact payload readback must succeed after deleting the original Git source.
+That CI job also runs Rust tests for
 existing-output preservation and rejection of paths or symlinks that could
 redirect artifacts.
 Run those tests locally:
@@ -75,8 +80,9 @@ cargo test --locked --manifest-path examples/native-git/Cargo.toml \
 ```
 
 The executable uses only a synthetic bare Git repository under a fresh ignored
-`output/<directory>` and an in-memory store. It does not run the Python handoff
-protocols, transport an archive, publish durable roots or execute source.
+`output/<directory>`, an in-memory store and a local persistent store. It does not
+run the Python handoff protocols, transport an archive or execute source. Disk
+reopening happens within the same process; crash recovery is outside these checks.
 Its `experimental` backend APIs remain tied to the pinned upstream revision.
 
 

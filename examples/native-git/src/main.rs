@@ -4,12 +4,12 @@ use std::io::Write;
 use std::path::{Component, Path, PathBuf};
 use std::process::{Command, Stdio};
 
-use casita::ObjectKey;
 use casita::experimental::{
     ClosureStatus, GitClosureImportError, GitObjectFormat, GitObjectKind, MemoryBlobStore,
     MemoryMetadataStore, MetadataStore, Repository, git_object_key,
 };
 use casita::import::GitClosureImport;
+use casita::{ObjectKey, RootName};
 use futures::TryStreamExt;
 use tokio::io::AsyncReadExt;
 
@@ -88,7 +88,7 @@ async fn main() -> Result<()> {
     let output = output_directory()?;
     let source = tempfile::Builder::new()
         .prefix("synthetic-git-")
-        .tempdir_in(output)?;
+        .tempdir_in(&output)?;
     git(
         source.path(),
         &[
@@ -231,6 +231,104 @@ async fn main() -> Result<()> {
     payload.read_to_end(&mut bytes).await?;
     assert_eq!(bytes, second_bytes);
     println!("PASS retention: live reader survives collection; exact payload read back");
+
+    drop(payload);
+    drop(second);
+    drop(repository);
+    casita::experimental::flush_repository_leases().await?;
+
+    // Restore only our synthetic helper so a fresh disk store can import the tree.
+    // This is a separate import, not a transfer from the earlier memory store.
+    assert_eq!(write_blob(b"# synthetic shared helper\n")?, helper);
+    let store = output.join("durable-store");
+    let name = RootName::try_from("synthetic/context-v2")?;
+    let garbage_key;
+    {
+        let local = Repository::local(&store).await?;
+        let imported = local
+            .import(GitClosureImport::new(
+                source.path().join("objects"),
+                [second_root.clone()],
+            ))
+            .await?;
+        assert_eq!(imported.report.imported_objects, 3);
+        let session = local.mutation_session().await?;
+        // The import reader stays alive until the named application root commits.
+        session
+            .publish_rooted(Vec::new(), name.clone(), second_root.clone())
+            .await?;
+        drop(session);
+        drop(imported);
+
+        let session = local.mutation_session().await?;
+        let garbage = session
+            .stage_blob(b"synthetic unrooted GC control\n")
+            .await?;
+        garbage_key = garbage.record().key().clone();
+        session.publish_unrooted(vec![garbage]).await?;
+        drop(session);
+        local.flush().await?;
+        println!("PASS durable publish: named root committed before releasing import reader");
+    }
+    casita::experimental::flush_repository_leases().await?;
+    source.close()?;
+
+    // Reopen with no import reader, session, source repository or payload stream.
+    let reopened = Repository::local(&store).await?;
+    assert_eq!(
+        reopened.metadata().snapshot().await?.root(&name).await?,
+        Some(second_root.clone())
+    );
+    assert!(
+        reopened
+            .metadata()
+            .snapshot()
+            .await?
+            .object(&garbage_key)
+            .await?
+            .is_some()
+    );
+    println!("PASS durable reopen: named root and unrooted control survive closing handles");
+
+    // Collect before opening any reader that could protect the selected closure.
+    let collected = reopened.collect().await?;
+    assert_eq!(collected.removed.logical_objects, 1);
+    assert!(
+        reopened
+            .metadata()
+            .snapshot()
+            .await?
+            .object(&garbage_key)
+            .await?
+            .is_none()
+    );
+    assert!(matches!(
+        reopened.verify_closure(&second_root).await?,
+        ClosureStatus::Complete { objects: 3 }
+    ));
+    println!("PASS durable collection: unrooted control removed; named tree remains complete");
+
+    let retained = reopened
+        .import(GitClosureImport::new(
+            output.join("removed-git-source"),
+            [second_root],
+        ))
+        .await?;
+    assert_eq!(retained.report.imported_objects, 0);
+    assert_eq!(retained.report.reused_objects, 1);
+    assert_eq!(retained.report.source_bytes, 0);
+    let (_, mut payload) = retained
+        .reader
+        .open_payload(&key(GitObjectKind::Blob, &second_context)?)
+        .await?
+        .ok_or("missing durable context payload")?;
+    let mut restored = Vec::new();
+    payload.read_to_end(&mut restored).await?;
+    assert_eq!(restored, second_bytes);
+    println!("PASS durable readback: exact context restored with original Git source removed");
+    drop(payload);
+    drop(retained);
+    reopened.flush().await?;
     println!("Synthetic local example complete. No source execution or artifact transport.");
     Ok(())
 }

@@ -16,7 +16,7 @@ All host Python commands use the [shared prerequisites](../README.md#prerequisit
 | Preview an explicit diff scope and suggest source ranges before signing | [Diff scope preview guide](git-diff-preview.md) | Git and both pinned commits; no Casita or signing key needed |
 | Recorded capsule-only review of a real public diff, with an empty return | [Recorded diff review case](diff-review-case.md) | Default Casita CLI, OpenSSH and both pinned public commits; no AI account |
 | Missing-context request with an unchanged-helper-only signed supplement | [Context request guide](context-requests.md) | Default Casita CLI, OpenSSH and Git; no AI account |
-| Native Git subtree selection, reuse and retained-reader lifetime | [Runnable Rust API example](../examples/native-git/README.md) | Git 2.29+, Rust/Cargo 1.94.1+, macOS or Linux; no Python or CLI required |
+| Native Git subtree selection, reuse, retained readers and durable named roots | [Runnable Rust API example](../examples/native-git/README.md) | Git 2.29+, Rust/Cargo 1.94.1+, macOS or Linux; no Python or CLI required |
 | Image and context transport with a trusted host check | [Environment transport guide](pinned-environment.md#transport-check) | Casita built with `oci`; public registry access |
 | Trusted checker in the restored image | [Apple Container guide](pinned-environment.md#apple-container-trial) | OCI-enabled Casita, public registry access and Apple Container running on a Mac |
 

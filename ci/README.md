@@ -30,3 +30,12 @@ build and handoff on the hosted Linux runner before merging. Update the source
 pin, toolchain and README together. The
 [README build](../README.md#tested-casita-build) uses the same snapshot and source pin. It accepts Rust/Cargo 1.94.1 or newer; CI pins the compiler to 1.94.1.
 The command is a local debug build and does not install or replace a global CLI.
+
+The [native Git Rust example](../examples/native-git/README.md) is a separate
+application with its own `Cargo.lock`. It enables `git` and `experimental`, disables
+default CLI features and pins the same Casita revision in its `Cargo.toml`. The
+standalone lockfile was seeded from this snapshot, then resolved for that
+application with Cargo 1.94.1. It is not a replacement for the workspace snapshot
+used by CLI builds. When updating Casita, update the standalone manifest and CLI
+workflow source pins, review both lockfiles, and validate `cargo run --locked` as well
+as the CLI jobs. CI does not enable native Git features in the default CLI build.

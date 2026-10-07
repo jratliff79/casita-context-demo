@@ -1,0 +1,14 @@
+[package]
+name = "casita-native-git-context"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.94.1"
+publish = false
+license = "MIT"
+
+[dependencies]
+casita = { git = "https://github.com/cachix/casita", rev = "84ec2920791276cd4ad8c029cd60529810e15705", default-features = false, features = ["git", "experimental"] }
+data-encoding = "2"
+futures = "0.3"
+tempfile = "3"
+tokio = { version = "1", features = ["rt", "macros", "io-util"] }

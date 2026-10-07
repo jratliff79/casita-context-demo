@@ -51,6 +51,21 @@ It also runs the selected-Git-lines protocol with a synthetic repository and
 scripted report, checks dirty-checkout exclusion, and rejects signed reports
 with incorrect source bindings or citations. This is not a fresh AI review.
 
+## Synthetic build-artifact handoff
+
+```sh
+python3 artifacts.py --casita "$CASITA_DEMO_BIN" --output output/artifact-development
+```
+
+The [artifact guide](artifact-handoff.md) demonstrates a different use case: restore
+two exact static-site output bundles after deleting their generated source and
+build directories, then select the older version without rebuilding. The handoff
+CI job runs this against the same locked default CLI. Unit tests cover manifest
+and build-input binding, altered or extra output, source changes during capture,
+symlinks, deterministic synthetic rendering and existing-output preservation.
+Source, recipe and toolchain metadata are declared and pinned; build provenance
+and execution are not attested. No received code or HTML is executed.
+
 ## Optional native Git API example
 
 The [standalone Rust example](../examples/native-git/README.md) has its own source

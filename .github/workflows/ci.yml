@@ -204,6 +204,30 @@ jobs:
           print(f"PASS: {len(commands)} commands, context/result roots, exact files, cache exclusion and negative controls")
           print(f"Observed reversed import order: {reversed_order}")
           PY
+      - name: Restore synthetic build artifacts without rebuilding
+        run: |
+          uv run --no-project --python 3.12 python artifacts.py --casita output/casita-build/debug/casita --output output/build-artifacts
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from demo import file_map
+
+          root = Path("output/build-artifacts")
+          receipt = json.loads((root / "receipt.json").read_bytes())
+          assert receipt["ok"] and receipt["synthetic"]
+          assert receipt["local_build_count"] == 2 and not receipt["receiver_rebuilt"]
+          assert not receipt["received_code_executed"]
+          assert not receipt["execution_attested"] and not receipt["build_provenance_attested"]
+          assert receipt["original_sources_and_builds_removed"]
+          assert not (root / "sources").exists() and not (root / "builds").exists()
+          assert receipt["rollback_verified"] and receipt["integrity_audits_passed"]
+          assert len(receipt["negative_controls"]) == 5 and all(receipt["negative_controls"].values())
+          assert all(command["exit_code"] == 0 for command in receipt["commands"])
+          for version in ("v1", "v2"):
+              assert file_map(root / "received" / version) == receipt["original_file_hashes"][version]
+          assert file_map(root / "received/rollback") == receipt["original_file_hashes"]["v1"]
+          print("PASS: exact artifact versions and rollback without received-code execution or rebuilding")
+          PY
       - name: Run separate sender, worker and return-verifier processes
         run: |
           python output/ci-worktree/handoff.py prepare --casita output/casita-build/debug/casita --output output/portable-sender

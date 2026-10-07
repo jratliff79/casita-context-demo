@@ -142,7 +142,7 @@ Casita, OpenSSH or an image runtime. No project installation is required.
 | Understand missing context and explicit approval | [Context requests](docs/context-requests.md) |
 | See an actual reviewer request and recorded reassessment | [Public reviewer case](docs/context-request-case.md) |
 | See a capsule review lead to a landed fix | [Review-to-fix case](docs/review-to-fix.md) |
-| Import repeated Git subtrees and retain them in a disk store | [Runnable Rust API example](examples/native-git/README.md) |
+| Import repeated Git subtrees and retain them across a process restart | [Runnable Rust API example](examples/native-git/README.md) |
 | Prepare selected source, use a separate worker, or try OCI/Apple Container | [All demonstrations and requirements](docs/examples.md) |
 | Run tests or inspect CI scope | [Development and validation](docs/development.md) |
 | Record a short public demonstration | [Video script and recording guide](docs/demo-video.md) |

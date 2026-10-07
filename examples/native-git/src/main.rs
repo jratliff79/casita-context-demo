@@ -1,6 +1,6 @@
 //! A synthetic, local-only demonstration. Imported source is never executed.
 use std::error::Error;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::{Component, Path, PathBuf};
 use std::process::{Command, Stdio};
 
@@ -15,7 +15,35 @@ use tokio::io::AsyncReadExt;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
-fn create_output_directory(root: &Path, path: &Path) -> Result<PathBuf> {
+const ROOT_NAME: &str = "synthetic/context-v2";
+const CONTEXT_BYTES: &[u8] = b"synthetic context revision two\n";
+
+// Internal workers receive only the coordinator's fresh relative output path.
+// They are this trusted executable, never a program from the imported evidence.
+fn worker_output() -> Result<PathBuf> {
+    let mut input = String::new();
+    std::io::stdin().take(4096).read_to_string(&mut input)?;
+    let path = Path::new(
+        input
+            .strip_suffix('\n')
+            .ok_or("missing worker path terminator")?,
+    );
+    validate_output_path(path)?;
+    let root = std::env::current_dir()?;
+    for directory in [root.join("output"), root.join(path)] {
+        let metadata = std::fs::symlink_metadata(directory)?;
+        if !metadata.is_dir() || metadata.file_type().is_symlink() {
+            return Err("worker output must be an existing directory, not a symlink".into());
+        }
+    }
+    Ok(root.join(path))
+}
+
+fn validate_output_path(path: &Path) -> Result<()> {
+    let text = path.to_str().ok_or("output path must be UTF-8")?;
+    if text.contains(['\n', '\r']) {
+        return Err("output path cannot contain line breaks".into());
+    }
     let parts: Vec<_> = path.components().collect();
     if parts.len() != 2
         || parts[0] != Component::Normal("output".as_ref())
@@ -23,6 +51,11 @@ fn create_output_directory(root: &Path, path: &Path) -> Result<PathBuf> {
     {
         return Err("choose a relative output/<new-directory> path from the demo root".into());
     }
+    Ok(())
+}
+
+fn create_output_directory(root: &Path, path: &Path) -> Result<PathBuf> {
+    validate_output_path(path)?;
     let parent = root.join("output");
     match std::fs::symlink_metadata(&parent) {
         Ok(metadata) if metadata.is_dir() && !metadata.file_type().is_symlink() => {}
@@ -83,9 +116,51 @@ fn key(kind: GitObjectKind, oid: &str) -> Result<ObjectKey> {
     )?)
 }
 
+fn run_worker(mode: &str, output: &Path) -> Result<()> {
+    // Validate everything needed for stdin before starting a child to reap.
+    let root = std::env::current_dir()?;
+    let path = output.strip_prefix(&root)?;
+    let text = path.to_str().ok_or("output path must be UTF-8")?;
+    let mut child = Command::new(std::env::current_exe()?)
+        .arg(mode)
+        .stdin(Stdio::piped())
+        .spawn()?;
+    // The public command only accepts fresh output/<directory> destinations.
+    let mut input = child.stdin.take().ok_or("missing worker stdin")?;
+    let written = writeln!(&mut input, "{text}");
+    drop(input);
+    let status = child.wait()?;
+    written?;
+    if !status.success() {
+        return Err(format!("{mode} worker failed: {status}").into());
+    }
+    Ok(())
+}
+
+fn main() -> Result<()> {
+    let args: Vec<_> = std::env::args_os().skip(1).collect();
+    match args.as_slice() {
+        [mode] if mode == "--internal-publish" => publish(worker_output()?),
+        [mode] if mode == "--internal-verify" => verify(worker_output()?),
+        _ => {
+            let output = output_directory()?;
+            run_worker("--internal-publish", &output)?;
+            // wait() above reaps the publisher before this process starts.
+            println!("PASS process exit: publisher succeeded and exited before verifier starts");
+            run_worker("--internal-verify", &output)?;
+            println!(
+                "Synthetic local example complete. No source execution or artifact transport."
+            );
+            Ok(())
+        }
+    }
+}
+
 #[tokio::main(flavor = "current_thread")]
-async fn main() -> Result<()> {
-    let output = output_directory()?;
+async fn publish(output: PathBuf) -> Result<()> {
+    if std::fs::read_dir(&output)?.next().is_some() {
+        return Err("publisher requires the coordinator's empty fresh directory".into());
+    }
     let source = tempfile::Builder::new()
         .prefix("synthetic-git-")
         .tempdir_in(&output)?;
@@ -163,7 +238,7 @@ async fn main() -> Result<()> {
     assert_eq!(warm.report.source_bytes, 0);
     println!("PASS warm: imported 0 objects; reused 1 root; read 0 source bytes");
 
-    let second_bytes = b"synthetic context revision two\n";
+    let second_bytes = CONTEXT_BYTES;
     let second_context = write_blob(second_bytes)?;
     let second_root = key(GitObjectKind::Tree, &make_tree(&second_context)?)?;
     // Remove the source helper to prove the importer uses its verified stored copy.
@@ -241,7 +316,7 @@ async fn main() -> Result<()> {
     // This is a separate import, not a transfer from the earlier memory store.
     assert_eq!(write_blob(b"# synthetic shared helper\n")?, helper);
     let store = output.join("durable-store");
-    let name = RootName::try_from("synthetic/context-v2")?;
+    let name = RootName::try_from(ROOT_NAME)?;
     let garbage_key;
     {
         let local = Repository::local(&store).await?;
@@ -273,7 +348,41 @@ async fn main() -> Result<()> {
     casita::experimental::flush_repository_leases().await?;
     source.close()?;
 
-    // Reopen with no import reader, session, source repository or payload stream.
+    // A local synthetic receipt records the expected identities for the next
+    // process. It is not an authenticated handoff or an execution attestation.
+    let mut receipt = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(output.join("restart-state.txt"))?;
+    writeln!(
+        receipt,
+        "{}\n{}\n{}",
+        second_root,
+        key(GitObjectKind::Blob, &second_context)?,
+        garbage_key
+    )?;
+    Ok(())
+}
+
+#[tokio::main(flavor = "current_thread")]
+async fn verify(output: PathBuf) -> Result<()> {
+    let receipt = std::fs::read_to_string(output.join("restart-state.txt"))?;
+    let keys = receipt
+        .lines()
+        .map(str::parse::<ObjectKey>)
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    let [second_root, context_key, garbage_key] = keys.as_slice() else {
+        return Err("expected three synthetic object identities in restart state".into());
+    };
+    let store = output.join("durable-store");
+    let metadata = std::fs::symlink_metadata(&store)?;
+    if !metadata.is_dir() || metadata.file_type().is_symlink() {
+        return Err("durable store must be a directory, not a symlink".into());
+    }
+    let name = RootName::try_from(ROOT_NAME)?;
+
+    // The producer process has exited, so no reader, session, runtime or backend
+    // handle from it can protect this tree in the verifier process.
     let reopened = Repository::local(&store).await?;
     assert_eq!(
         reopened.metadata().snapshot().await?.root(&name).await?,
@@ -284,11 +393,11 @@ async fn main() -> Result<()> {
             .metadata()
             .snapshot()
             .await?
-            .object(&garbage_key)
+            .object(garbage_key)
             .await?
             .is_some()
     );
-    println!("PASS durable reopen: named root and unrooted control survive closing handles");
+    println!("PASS durable reopen: named root and unrooted control survive publisher exit");
 
     // Collect before opening any reader that could protect the selected closure.
     let collected = reopened.collect().await?;
@@ -298,7 +407,7 @@ async fn main() -> Result<()> {
             .metadata()
             .snapshot()
             .await?
-            .object(&garbage_key)
+            .object(garbage_key)
             .await?
             .is_none()
     );
@@ -311,7 +420,7 @@ async fn main() -> Result<()> {
     let retained = reopened
         .import(GitClosureImport::new(
             output.join("removed-git-source"),
-            [second_root],
+            [second_root.clone()],
         ))
         .await?;
     assert_eq!(retained.report.imported_objects, 0);
@@ -319,17 +428,16 @@ async fn main() -> Result<()> {
     assert_eq!(retained.report.source_bytes, 0);
     let (_, mut payload) = retained
         .reader
-        .open_payload(&key(GitObjectKind::Blob, &second_context)?)
+        .open_payload(context_key)
         .await?
         .ok_or("missing durable context payload")?;
     let mut restored = Vec::new();
     payload.read_to_end(&mut restored).await?;
-    assert_eq!(restored, second_bytes);
+    assert_eq!(restored, CONTEXT_BYTES);
     println!("PASS durable readback: exact context restored with original Git source removed");
     drop(payload);
     drop(retained);
     reopened.flush().await?;
-    println!("Synthetic local example complete. No source execution or artifact transport.");
     Ok(())
 }
 
@@ -366,6 +474,8 @@ mod tests {
             Path::new("output"),
             Path::new("output/../outside"),
             Path::new("output/nested/trial"),
+            Path::new("output/trial\nother"),
+            Path::new("output/trial\rother"),
             absolute.as_path(),
         ] {
             assert!(create_output_directory(root.path(), path).is_err());

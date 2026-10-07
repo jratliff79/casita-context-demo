@@ -4,8 +4,9 @@ Use this when a local tool repeatedly captures approved source subtrees and want
 to reuse unchanged Git objects without creating a checkout. The executable creates
 its own synthetic bare Git repository, selects a tree, imports two revisions into
 an in-memory Casita repository, and checks the retained reader through collection.
-It then imports the selected tree into a disk store, publishes a named root,
-closes and reopens the store, and checks collection and exact payload readback.
+Its publisher process then imports the selected tree into a disk store, publishes
+a named root, deletes the original Git source and exits. A separate verifier
+process opens that store and checks collection and exact payload readback.
 It accepts no input Git repository and executes no imported source.
 
 This is an optional API example, separate from the
@@ -33,7 +34,10 @@ existing directories, absolute paths, paths outside `output/`, nested destinatio
 and a symlinked `output` parent. Each run uses a temporary Git repository inside
 that fresh ignored directory, an in-memory store, and a persistent Casita store
 under `<directory>/durable-store`. The temporary source is explicitly removed
-before the disk readback; the caller-selected directory and disk store remain.
+before the publisher exits; the caller-selected directory and disk store remain.
+The coordinator waits for successful publisher exit before starting the verifier.
+It runs two copies of this locally built executable, not imported source. A failed
+worker makes the command fail and prevents the final completion line.
 An interrupted run can leave its synthetic fixture there. Build artifacts also
 stay in ignored `output/`.
 The manifest enables Casita's `git` and `experimental` features explicitly, with
@@ -53,7 +57,8 @@ PASS delta: imported 2 objects; reused the unchanged helper
 PASS controls: wrong root type rejected; no named roots published
 PASS retention: live reader survives collection; exact payload read back
 PASS durable publish: named root committed before releasing import reader
-PASS durable reopen: named root and unrooted control survive closing handles
+PASS process exit: publisher succeeded and exited before verifier starts
+PASS durable reopen: named root and unrooted control survive publisher exit
 PASS durable collection: unrooted control removed; named tree remains complete
 PASS durable readback: exact context restored with original Git source removed
 Synthetic local example complete. No source execution or artifact transport.
@@ -105,9 +110,15 @@ named root `synthetic/context-v2` while the import reader is still alive. Only
 after that commit does the example release the reader. It also publishes a
 separate unrooted synthetic blob as a collection control, releases its session,
 flushes the store, closes all its handles, and removes the original Git source.
+It writes a small local `restart-state.txt` receipt containing the selected tree,
+context blob and unrooted control identities, then exits normally. This generated
+synthetic receipt is not a signed handoff or execution attestation.
 
-On reopening, the example checks that the durable name still points to the exact
-selected tree and that the unrooted control exists. Collection runs before
+Only after that process exits successfully does the coordinator start a separate
+verifier process. No repository handles, retained readers, leases or runtime state
+from the publisher can keep objects alive in the verifier. Using the local receipt,
+it checks that the durable name still points to the exact selected tree and that
+the unrooted control exists. Collection runs before
 opening any new retained reader. It must remove that control while the named
 tree's three-object closure remains complete. A warm import using a nonexistent
 source directory reads zero source bytes, then reads back the exact context
@@ -121,7 +132,12 @@ it is not a publication artifact.
 
 These are functional correctness checks, not measurements of review quality,
 speed or net storage savings. They establish selected object identity, reuse and
-retention through reopening and collecting a disk store within the same process. They do not
-test a separate-process handoff, crash or power-loss recovery, Casitar transport,
+retention through a normal process exit, reopening and collecting the disk store
+in a separate process on the same host. They do not test crash or power-loss
+recovery, cross-host handoff, Casitar transport,
 source execution, execution attestation or merge authority.
 Git plumbing runs only over generated synthetic data. Source files remain data.
+
+The `--internal-publish` and `--internal-verify` worker modes are implementation
+details of the coordinator. They receive its fresh output path through stdin;
+use the documented `--output` command rather than targeting an existing store.

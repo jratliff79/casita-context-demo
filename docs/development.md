@@ -65,13 +65,16 @@ A separate CI job uses Rust 1.94.1 and the same locked command on Linux. The
 executable asserts subtree and sibling selection, warm import without its source,
 delta reuse with the original helper removed, wrong-type rejection and retained
 reader survival through collection. It then imports the selected tree into a
-fresh disk store, commits a named root before releasing the reader, closes and
-reopens the store, and collects before opening any new retained reader. The
+fresh disk store and commits a named root before releasing the reader. Its
+publisher process removes the original Git source and exits successfully before
+a separate verifier process reopens the store and collects without a new retained reader. The
 unrooted control must be removed while the named closure remains complete, and
 exact payload readback must succeed after deleting the original Git source.
 That CI job also runs Rust tests for
 existing-output preservation and rejection of paths or symlinks that could
-redirect artifacts.
+redirect artifacts. Real-process integration tests check that publisher failure
+prevents verifier startup and that a mismatched expected root rejects before
+garbage collection.
 Run those tests locally:
 
 ```sh
@@ -82,7 +85,10 @@ cargo test --locked --manifest-path examples/native-git/Cargo.toml \
 The executable uses only a synthetic bare Git repository under a fresh ignored
 `output/<directory>`, an in-memory store and a local persistent store. It does not
 run the Python handoff protocols, transport an archive or execute source. Disk
-reopening happens within the same process; crash recovery is outside these checks.
+reopening happens in a separate process on the same host after a normal publisher
+exit; crash and power-loss recovery are outside these checks. The coordinator
+propagates worker failures, and the generated local identity receipt is not a
+signed handoff or execution attestation.
 Its `experimental` backend APIs remain tied to the pinned upstream revision.
 
 

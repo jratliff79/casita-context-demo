@@ -39,5 +39,7 @@ application with Cargo 1.94.1. It is not a replacement for the workspace snapsho
 used by CLI builds. When updating Casita, update the standalone manifest and CLI
 workflow source pins, review both lockfiles, and validate `cargo run --locked` as well
 as the CLI jobs. CI does not enable native Git features in the default CLI build.
-The Rust job also checks named-root publication, reopening a disk store and
-collection of an unrooted control while the selected tree remains retained.
+The Rust job also checks named-root publication, successful publisher process
+exit, reopening the disk store in a separate verifier process and collection of
+an unrooted control while the selected tree remains retained. This covers a normal
+restart on one host, not crash recovery or a signed transport protocol.

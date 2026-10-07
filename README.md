@@ -140,6 +140,7 @@ Casita, OpenSSH or an image runtime. No project installation is required.
 | --- | --- |
 | Run the complete core workflow | [Three-stage walkthrough](docs/complete-demo.md) |
 | Restore a previous build output without rebuilding | [Synthetic artifact handoff](docs/artifact-handoff.md) |
+| Freeze a rundown and assets, sync a cue update, and use the venue store | [Synthetic offline event kit](docs/offline-event-kit.md) |
 | Understand missing context and explicit approval | [Context requests](docs/context-requests.md) |
 | See an actual reviewer request and recorded reassessment | [Public reviewer case](docs/context-request-case.md) |
 | See a capsule review lead to a landed fix | [Review-to-fix case](docs/review-to-fix.md) |

@@ -228,6 +228,36 @@ jobs:
           assert file_map(root / "received/rollback") == receipt["original_file_hashes"]["v1"]
           print("PASS: exact artifact versions and rollback without received-code execution or rebuilding")
           PY
+      - name: Sync and select a synthetic offline event kit
+        run: |
+          uv run --no-project --python 3.12 python event_kit.py --casita output/casita-build/debug/casita --output output/event-kit
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from demo import file_map
+
+          root = Path("output/event-kit")
+          receipt = json.loads((root / "receipt.json").read_bytes())
+          assert receipt["ok"] and receipt["synthetic"] and receipt["scripted_selection"]
+          assert not receipt["eventools_integration"] and not receipt["network_isolation_enforced"]
+          assert not receipt["received_code_executed"] and not receipt["media_played"]
+          assert not receipt["execution_attested"]
+          assert receipt["sender_path_unavailable"] and not (root / "sender-store").exists()
+          assert not (root / "kits").exists() and (root / "sender-store-unavailable").is_dir()
+          assert receipt["old_selection_preserved_until_verified_update"]
+          assert not (root / "rejected-stale").exists()
+          assert receipt["venue_only_restoration_verified"] and receipt["venue_integrity_audit_passed"]
+          assert receipt["welcome_time"] == "18:15"
+          assert receipt["selected_directory_key"] == receipt["pins"]["v2"]["directory_key"]
+          assert 0 < receipt["sync_payloads_sent"]["v2"] < receipt["sync_payloads_sent"]["v1"]
+          assert len(receipt["negative_controls"]) == 5 and all(receipt["negative_controls"].values())
+          assert file_map(root / "venue-only-v2") == receipt["original_file_hashes"]["v2"]
+          assert all(command["exit_code"] == 0 for command in receipt["commands"])
+          for command in receipt["commands"][receipt["venue_only_command_start"]:]:
+              assert command["argv"][1:3] == ["--repository", str(root.resolve() / "venue-store")]
+              assert "sync" not in command["argv"] and "--from" not in command["argv"]
+          print("PASS: incremental kit update, verified selection and venue-only restoration; no network-isolation claim")
+          PY
       - name: Run separate sender, worker and return-verifier processes
         run: |
           python output/ci-worktree/handoff.py prepare --casita output/casita-build/debug/casita --output output/portable-sender

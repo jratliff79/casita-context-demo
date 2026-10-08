@@ -258,6 +258,46 @@ jobs:
               assert "sync" not in command["argv"] and "--from" not in command["argv"]
           print("PASS: incremental kit update, verified selection and venue-only restoration; no network-isolation claim")
           PY
+      - name: Restore visible task state and verify two scripted continuations
+        run: |
+          uv run --no-project --python 3.12 python checkpoint.py --casita output/casita-build/debug/casita --output output/checkpoint
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from demo import file_map
+          from checkpoint import BRANCHES, verify_checkpoint, verify_continuation
+
+          root = Path("output/checkpoint")
+          receipt = json.loads((root / "receipt.json").read_bytes())
+          assert receipt["ok"] and receipt["synthetic"] and receipt["scripted_continuations"]
+          assert not receipt["fresh_ai_run"] and not receipt["model_internal_state_restored"]
+          assert not receipt["received_instructions_executed"] and not receipt["execution_attested"]
+          assert not receipt["network_isolation_enforced"]
+          assert receipt["sender_path_unavailable"] and not (root / "sender-store").exists()
+          assert receipt["original_checkpoints_removed"] and not (root / "checkpoints").exists()
+          assert (root / "sender-store-unavailable").is_dir()
+          assert receipt["visible_checkpoint_restored"] and receipt["returned_parent_and_results_verified"]
+          assert receipt["integrity_audits_passed"]
+          assert receipt["branch_choices"] == {"economy": "park", "full-day": "museum"}
+          assert len(receipt["negative_controls"]) == 9 and all(receipt["negative_controls"].values())
+          assert all(command["exit_code"] == 0 for command in receipt["commands"])
+          for revision in ("v1", "v2"):
+              assert file_map(root / "restored" / revision) == receipt["original_file_hashes"][revision]
+          parent_pin = receipt["pins"]["v2"]
+          assert file_map(root / "verified-parent") == receipt["original_file_hashes"]["v2"]
+          verify_checkpoint(root / "verified-parent", parent_pin)
+          for branch in BRANCHES:
+              folder = root / "verified" / branch
+              verify_continuation(folder, receipt["result_pins"][branch], root / "verified-parent", parent_pin, branch)
+              result = json.loads((folder / "result.json").read_bytes())
+              assert result["pending"] == ["compare-options"]
+              assert result["parent_checkpoint_id"] == parent_pin["checkpoint_id"]
+              assert result["parent_directory_key"] == parent_pin["directory_key"]
+          for command in receipt["commands"][receipt["worker_command_start"]:]:
+              assert command["argv"][1] == "--repository"
+              assert command["argv"][2] in {str(root.resolve() / store) for store in ("worker-store", "returned-store")}
+          print("PASS: exact visible checkpoint and two parent-bound returns; no live model or received instructions executed")
+          PY
       - name: Run separate sender, worker and return-verifier processes
         run: |
           python output/ci-worktree/handoff.py prepare --casita output/casita-build/debug/casita --output output/portable-sender

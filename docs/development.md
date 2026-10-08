@@ -66,6 +66,20 @@ symlinks, deterministic synthetic rendering and existing-output preservation.
 Source, recipe and toolchain metadata are declared and pinned; build provenance
 and execution are not attested. No received code or HTML is executed.
 
+## Synthetic offline event kit
+
+```sh
+python3 event_kit.py --casita "$CASITA_DEMO_BIN" --output output/event-kit-development
+```
+
+The [event-kit guide](offline-event-kit.md) exercises local repository sync and an
+incremental cue update. Transfer leaves the prior kit selected until the new
+snapshot's pinned root and restored contents verify. The final checkout uses only
+the venue store after the sender path is moved aside. Unit tests cover stale
+selection, corrupt restored assets, mixed versions, event binding and cue schema.
+The handoff CI job runs the example and verifies exact venue-only files and
+command ordering. Network isolation and Eventools integration are not exercised.
+
 ## Optional native Git API example
 
 The [standalone Rust example](../examples/native-git/README.md) has its own source

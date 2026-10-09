@@ -1,5 +1,12 @@
 # A short public demo video
 
+The current 67-second clip covers the core selected-source review. Keep it as
+that introduction. The artifact, event-kit and checkpoint examples have different
+uses; they are not shown in this clip. A separate
+[checkpoint storyboard](checkpoint-video.md) plans a focused follow-up using the
+[recorded public docs pilot](docs-checkpoint-case.md). It is a script, not a new
+published video.
+
 Aim for about one minute. Lead with the need for a second opinion on private code
 without sharing the whole repository. Show one missing-context exchange, using the synthetic
 helper-only example from the [complete walkthrough](complete-demo.md).

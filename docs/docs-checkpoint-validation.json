@@ -1,0 +1,70 @@
+{
+  "schema": "casita-context-demo.public-docs-checkpoint-validation.v1",
+  "checked_on": "2026-10-08",
+  "source_repository": "https://github.com/jratliff79/casita-context-demo",
+  "source_commit": "50b6820203f431026cd25385e6bd2a0cd6a59cea",
+  "source_license": "MIT",
+  "public_source_snapshot": true,
+  "synthetic_fixture": false,
+  "fresh_ai_review": true,
+  "reviewer_read_scope": "instruction-limited verified capsule only; not an OS sandbox",
+  "selected_file_count": 5,
+  "selected_line_count": 503,
+  "context_file_count": 8,
+  "finding_count": 2,
+  "citation_count": 13,
+  "context_pins": {
+    "archive_sha256": "1e510b579e38fc48544a057f09d823a5bdcdc67b14abb02b658aa3d113b259c3",
+    "content_id": "67c518952be0208dc9d1e5b26ccddb3c734559fb16de2d495f74d6da8e5c2982",
+    "directory_key": "casita.directory.v1:JBECzZdwl4ao0XZcSSqws_fYJjBXsZ0vmFdMbPK-EIA",
+    "schema": "casita-context-demo.review-input-pins.v1"
+  },
+  "result_pins": {
+    "schema": "casita-context-demo.review-result-pins.v1",
+    "archive_sha256": "59db09f1f92138582cd29940d3b95c433a132166223292c24cbde699b3ca1fe8",
+    "content_id": "67e67228264c0b3cb4c9df515d282d6ba2f0a186f8a80878819c267ebcb35a16",
+    "directory_key": "casita.directory.v1:cjZSC23M09sKFDZf8E7Mtz3S11zvQPmbQEZW6MAL0_Y"
+  },
+  "input_signature_verified": true,
+  "result_signature_verified": true,
+  "original_git_verified": true,
+  "citations_verified": true,
+  "casita_sha256": "0263005cde1c7bb6a7a7c340381987dfe765e5a272403c6e458d10dab4df3a2a",
+  "casita_source_commit": "1407672f4b235609ae7fff0f87a30e06183f941f",
+  "return_signer_role": "local controller; not independently attested model identity",
+  "received_code_executed": false,
+  "execution_attested": false,
+  "review_quality_verified": false,
+  "os_sandbox_enforced": false,
+  "model_internal_state_restored": false,
+  "performance_measured": false,
+  "video_published": false,
+  "throwaway_private_keys_removed": true,
+  "replay_validation": {
+    "fresh_ai_review": false,
+    "ok": true,
+    "negative_controls": {
+      "invented_excerpt": true,
+      "rehashed_mixed_progress": true,
+      "uncaptured_lines": true,
+      "wrong_blob": true,
+      "wrong_commit": true,
+      "wrong_context": true,
+      "wrong_directory_key": true
+    },
+    "context_pins_match_original": true,
+    "result_pins_match_original": true,
+    "throwaway_private_keys_removed": true
+  },
+  "local_validation": {
+    "python": "3.12.14",
+    "unit_tests": 176,
+    "basic_transport_passed": true,
+    "original_git_review_replay_passed": true,
+    "markdown_files_checked": 32,
+    "local_links_and_anchors_checked": 177,
+    "uv": "0.12.22",
+    "documented_uv_python_series": "3.12",
+    "documented_uv_replay_passed": true
+  }
+}

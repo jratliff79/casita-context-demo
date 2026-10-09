@@ -17,6 +17,10 @@ replay. Outgoing restored files and Casitar archives must each fit the receiver'
 1,000,000-byte budget. Canonical JSON escaping and archive framing count toward
 those limits; oversized output fails before pins are signed.
 
+The [public docs checkpoint pilot](docs-checkpoint-case.md) uses the same roles
+to carry selected documentation plus visible task state to a fresh reviewer.
+Its replay is available with `git_review_replay.py --case docs-checkpoint`.
+
 The existing [public review example](review-capsule.md) remains pinned to its
 allowlisted snapshot. This command accepts a caller-selected repository and
 specification; it does not automatically discover files, repository URLs, logs,

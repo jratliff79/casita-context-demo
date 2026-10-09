@@ -1,0 +1,84 @@
+{
+  "schema": "casita-context-demo.public-git-review-source.v1",
+  "repository": "https://github.com/jratliff79/casita-context-demo",
+  "commit": "50b6820203f431026cd25385e6bd2a0cd6a59cea",
+  "license": "MIT",
+  "files": {
+    "README.md": "eb7250c318ca598e305eac4c59f9a94b85b8f7bb2d76eed06df2b1623428453c",
+    "docs/demo-video.md": "9a3412e16ce4ff637f4ad027aed55d07b03e76a94a2c719129004a771165d6ba",
+    "docs/ai-workflow-checkpoint.md": "f14df1873e44208d1a87ff84be6878a046a175a8aed432d8af9e2c0cbe8a8484",
+    "docs/examples.md": "fbf9844e9af3af410c77ff86fd42f18014ede32578308f0474ff7289838c4dec",
+    "LICENSE": "b13e1d0ce5c2b67d711e935f670df74b6d899616f9f5630c498b3f8679ab5f6c"
+  },
+  "spec": {
+    "commit": "50b6820203f431026cd25385e6bd2a0cd6a59cea",
+    "purpose": "Continue the paused documentation task: assess README onboarding for the artifact, offline-event and checkpoint use cases; decide whether the existing core video needs replacing or a separate focused clip; propose a small accurate update and state missing context. No code execution or new media generation.",
+    "schema": "casita-context-demo.git-review-spec.v1",
+    "selections": [
+      {
+        "end": 188,
+        "id": "readme",
+        "path": "README.md",
+        "start": 1
+      },
+      {
+        "end": 134,
+        "id": "video-guide",
+        "path": "docs/demo-video.md",
+        "start": 1
+      },
+      {
+        "end": 109,
+        "id": "checkpoint-guide",
+        "path": "docs/ai-workflow-checkpoint.md",
+        "start": 1
+      },
+      {
+        "end": 51,
+        "id": "examples",
+        "path": "docs/examples.md",
+        "start": 1
+      },
+      {
+        "end": 21,
+        "id": "license",
+        "path": "LICENSE",
+        "start": 1
+      }
+    ],
+    "sensitivity": "restricted",
+    "source_label": "Public MIT docs: jratliff79/casita-context-demo"
+  },
+  "observation": {
+    "boundary": "Public docs only. State and tool summary are sender-recorded observations, not Git or execution attestations. Fresh reviewer is instruction-limited to this capsule; no OS sandbox claim. No private conversations, credentials, hidden model state or project exports are included.",
+    "license": "MIT",
+    "public_source": true,
+    "recorded_tool_response": {
+      "response": {
+        "conclusion": "",
+        "headSha": "50b6820203f431026cd25385e6bd2a0cd6a59cea",
+        "status": "in_progress",
+        "url": "https://github.com/jratliff79/casita-context-demo/actions/runs/37873211359"
+      },
+      "tool": "GitHub CLI"
+    },
+    "schema": "casita-context-demo.public-docs-checkpoint.v1",
+    "source_commit": "50b6820203f431026cd25385e6bd2a0cd6a59cea",
+    "source_repository": "https://github.com/jratliff79/casita-context-demo",
+    "user_request": "Continue the real checkpoint pilot and assess README updates and new videos.",
+    "visible_task_state": {
+      "branch": "docs-and-video-plan",
+      "completed": [
+        "synthetic-checkpoint-example-merged",
+        "upstream-pin-upgrade-merged"
+      ],
+      "notes": "The existing video covers the selected-source missing-helper workflow. README now links three additional uses. Determine what remains useful to improve from this bounded snapshot.",
+      "pending": [
+        "assess-readme-use-case-routing",
+        "recommend-video-scope",
+        "identify-missing-context"
+      ],
+      "task_id": "public-docs-onboarding-20261008"
+    }
+  }
+}

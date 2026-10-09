@@ -103,6 +103,13 @@ jobs:
           persist-credentials: false
       - name: Install CI dependency snapshot
         run: cp ci/Cargo.lock output/casita-source/Cargo.lock
+      - name: Check out immutable public docs checkpoint source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          repository: jratliff79/casita-context-demo
+          ref: 50b6820203f431026cd25385e6bd2a0cd6a59cea
+          path: output/docs-checkpoint-source
+          persist-credentials: false
       - name: Check out immutable public diff source and its history
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
@@ -410,6 +417,34 @@ jobs:
               role = json.loads((folder / name / "receipt.json").read_text())
               assert role["ok"] and all(c["exit_code"] == 0 for c in role["commands"])
           print("PASS: recorded public Git review, signed return, original Git citations and rejection controls")
+          PY
+
+      - name: Replay the public docs checkpoint handoff
+        run: |
+          uv run --no-project --python 3.12 python git_review_replay.py --case docs-checkpoint --source output/docs-checkpoint-source --casita output/casita-build/debug/casita --output output/docs-checkpoint-replay
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root = Path("output/docs-checkpoint-replay")
+          receipt = json.loads((root / "receipt.json").read_text())
+          report = json.loads(Path("docs/docs-checkpoint-report.json").read_text())
+          assert receipt["ok"] and receipt["recorded_case"] == "docs-checkpoint"
+          assert receipt["public_source_snapshot"] and not receipt["synthetic_fixture"]
+          assert not receipt["fresh_ai_review"] and not receipt["received_code_executed"]
+          assert not receipt["execution_attested"] and not receipt["os_sandbox_enforced"]
+          assert not receipt["review_quality_verified"]
+          assert receipt["input_signature_verified"] and receipt["result_signature_verified"]
+          assert receipt["original_git_verified"] and receipt["citations_verified"]
+          assert receipt["context_pins"]["content_id"] == report["context_id"]
+          assert receipt["context_pins"]["directory_key"] == report["context_directory_key"]
+          assert receipt["finding_count"] == len(report["findings"])
+          assert len(receipt["negative_controls"]) == 7 and all(receipt["negative_controls"].values())
+          assert receipt["throwaway_private_keys_removed"] and not (root / "throwaway-keys").exists()
+          assert json.loads((root / "verified-return/result/report.json").read_text()) == report
+          for name in ("sender", "receiver", "reviewer-return", "verified-return"):
+              role = json.loads((root / name / "receipt.json").read_text())
+              assert role["ok"] and all(command["exit_code"] == 0 for command in role["commands"])
+          print("PASS: unchanged recorded docs report, original task-state pins, citations and seven controls")
           PY
 
       - name: Run the public base/head diff review handoff

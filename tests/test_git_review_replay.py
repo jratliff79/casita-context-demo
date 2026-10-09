@@ -39,6 +39,22 @@ class PublicGitReplayChecks(unittest.TestCase):
                 replay.run(argparse.Namespace(source=Path(name), output=output))
             self.assertEqual((output / "sentinel").read_text(), "preserve")
 
+    def test_docs_case_rejects_wrong_source_before_creating_artifacts(self):
+        with tempfile.TemporaryDirectory() as name:
+            output = Path(name) / "output"
+            args = argparse.Namespace(case="docs-checkpoint", source=Path(name), output=output)
+            with patch.object(replay.review, "git_blob", return_value=b"not the public docs"), self.assertRaisesRegex(ValueError, "allowlisted public Git blob"):
+                replay.run(args)
+            self.assertFalse(output.exists())
+
+    def test_unknown_case_rejected_before_reading_source_or_creating_artifacts(self):
+        with tempfile.TemporaryDirectory() as name:
+            output = Path(name) / "output"
+            with patch.object(replay.review, "git_blob") as read_source, self.assertRaisesRegex(ValueError, "unknown recorded public case"):
+                replay.run(argparse.Namespace(case="untrusted-case", source=Path(name), output=output))
+            read_source.assert_not_called()
+            self.assertFalse(output.exists())
+
     def test_failed_replay_removes_throwaway_private_keys(self):
         with tempfile.TemporaryDirectory() as name:
             output = Path(name) / "run"

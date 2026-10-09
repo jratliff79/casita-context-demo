@@ -7,6 +7,12 @@ This example packages that visible state in Casita and binds returned work to
 its parent checkpoint. It uses a synthetic task and fixed local Python policy;
 it does not call an AI model or restore a model's internal memory.
 
+For a bounded use with a fresh AI worker, see the
+[public documentation checkpoint pilot](docs-checkpoint-case.md). That case uses
+the existing signed Git-review protocol to carry public docs and visible task
+state, and checks the returned citations. Its replay uses the recorded report;
+it does not turn this synthetic day-plan script into a live agent adapter.
+
 ## Prerequisites and run
 
 Use the [shared prerequisites](../README.md#prerequisites) and

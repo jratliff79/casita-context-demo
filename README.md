@@ -173,7 +173,7 @@ Casita, OpenSSH or an image runtime. No project installation is required.
 | Freeze a rundown and assets, sync a cue update, and use the venue store | [Synthetic offline event kit](docs/offline-event-kit.md) |
 | Freeze visible task state and verify two scripted continuations against their parent | [Synthetic workflow checkpoint](docs/ai-workflow-checkpoint.md) |
 | See a fresh reviewer continue a public docs task from selected evidence | [Recorded docs checkpoint pilot](docs/docs-checkpoint-case.md) |
-| Share task context and review proposed team knowledge | [Synthetic teammate handoff](docs/teammate-handoff.md) |
+| Share task context, review proposed team knowledge and inspect the selected result | [Synthetic teammate handoff](docs/teammate-handoff.md) |
 | Understand missing context and explicit approval | [Context requests](docs/context-requests.md) |
 | See an actual reviewer request and recorded reassessment | [Public reviewer case](docs/context-request-case.md) |
 | See a capsule review lead to a landed fix | [Review-to-fix case](docs/review-to-fix.md) |

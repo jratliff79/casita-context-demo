@@ -114,6 +114,15 @@ knowledge text as data and preservation of an existing output. Roles are
 scripted and sequential; signatures, access control and simultaneous writes
 are outside this example.
 
+`python3 team_handoff_summary.py --run output/teammate-development` displays
+selected knowledge, retained proposals and pending work after checking the
+snapshot/proposal/decision bindings. CI checks both selections through this
+read-only view. Unit tests reject tampered proposals, invented citations,
+rehashed inconsistent knowledge or lineage, linked inputs and misleading
+success flags; they also check that verified task bytes are not reopened.
+Its expected pins come from the local unsigned receipt, not an authenticated
+teammate or approval service.
+
 ## Recorded public docs checkpoint
 
 The [public docs checkpoint pilot](docs-checkpoint-case.md) has a separate

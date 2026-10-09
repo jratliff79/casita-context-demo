@@ -113,9 +113,11 @@ def verify_snapshot(folder, pin):
     if decision is not None:
         expected_task["completed"].append("choose-retry-guidance")
         expected_task["pending"].remove("choose-retry-guidance")
-    if json.loads(captured["task.json"]) != expected_task:
+    task = json.loads(captured["task.json"])
+    if task != expected_task:
         raise ValueError("task progress mismatch")
-    return {"knowledge": knowledge, "knowledge_sha256": digest(captured["knowledge.json"])}
+    return {"knowledge": knowledge, "knowledge_sha256": digest(captured["knowledge.json"]),
+            "task": task, "manifest": manifest}
 
 
 def parent_binding(folder, pin):

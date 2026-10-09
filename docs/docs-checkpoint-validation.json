@@ -58,13 +58,17 @@
   },
   "local_validation": {
     "python": "3.12.14",
-    "unit_tests": 176,
+    "unit_tests": 177,
     "basic_transport_passed": true,
     "original_git_review_replay_passed": true,
     "markdown_files_checked": 32,
     "local_links_and_anchors_checked": 177,
     "uv": "0.12.22",
     "documented_uv_python_series": "3.12",
-    "documented_uv_replay_passed": true
-  }
+    "documented_uv_replay_passed": true,
+    "substituted_recommendations_rejected_before_artifacts": true,
+    "empty_replacement_rejected_before_artifacts": true,
+    "changed_caller_report_after_validation_ignored": true
+  },
+  "recorded_report_sha256": "67ad5461df1f925b65317ef144876a1e722d9e3bef303e19dc88e6f46b21151e"
 }

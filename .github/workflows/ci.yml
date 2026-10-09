@@ -441,6 +441,7 @@ jobs:
           assert len(receipt["negative_controls"]) == 7 and all(receipt["negative_controls"].values())
           assert receipt["throwaway_private_keys_removed"] and not (root / "throwaway-keys").exists()
           assert json.loads((root / "verified-return/result/report.json").read_text()) == report
+          assert (root / "recorded-report.json").read_bytes() == Path("docs/docs-checkpoint-report.json").read_bytes()
           for name in ("sender", "receiver", "reviewer-return", "verified-return"):
               role = json.loads((root / name / "receipt.json").read_text())
               assert role["ok"] and all(command["exit_code"] == 0 for command in role["commands"])

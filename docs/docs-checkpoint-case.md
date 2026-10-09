@@ -78,8 +78,12 @@ the public snapshot:
 git fetch origin 50b6820203f431026cd25385e6bd2a0cd6a59cea
 ```
 
-The replay checks every full-blob hash against the allowlist before creating
-output. It prepares and receives the same source and observation, returns the
+The replay checks every full-blob hash and the recorded report's byte digest
+against the allowlist before creating output. A `--report` override must contain
+those exact recorded bytes; altered recommendations or an empty replacement
+are rejected. The checked bytes are copied once into the run directory so a
+later change to the caller's report file cannot substitute another report.
+It prepares and receives the same source and observation, returns the
 recorded report and verifies it against the original Git objects. It does not
 call a model, continue today's task or recreate the historical reviewer session.
 Its receipt records `fresh_ai_review: false`.

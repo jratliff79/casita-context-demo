@@ -111,7 +111,8 @@ and saved task state at the original commit. CI uses an immutable source checkou
 and uv, checks signatures and citations, rejects six newly signed invalid returns
 and rejects locally rehashed progress against the original pin. It does not invoke
 a fresh reviewer or verify the quality of its recommendations. Unit tests reject
-an unknown case and wrong source bytes before creating artifacts.
+an unknown case, wrong source bytes and substituted recorded reports before
+creating artifacts or signing keys.
 
 ## Optional native Git API example
 

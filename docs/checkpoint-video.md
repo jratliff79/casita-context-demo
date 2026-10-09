@@ -11,7 +11,7 @@ draft, not a generated or published video.
 
 | Scene | Screen | Narration |
 | --- | --- | --- |
-| 1. Pause | A documentation task with two pending items: README routes and video scope | You pause a task. A fresh reviewer needs the evidence and the work still left to do. |
+| 1. Pause | A documentation task with three pending items: README routes, video scope and missing-context assessment | You pause a task. A fresh reviewer needs the evidence and the work still left to do. |
 | 2. Pack | Five public files, saved task state, pinned commit | Here, we froze five public files and a short progress note. Casita carries the snapshot. This demo adds signed pins and source checks. |
 | 3. Continue | Recorded report with its two recommendation titles | One fresh reviewer read only that snapshot within its assigned scope. It suggested clearer use-case links and keeping the core video. This is its recorded report. |
 | 4. Check | Context match, original Git source, 13 exact citations | The returned report was signed and checked against the original Git files, including all thirteen citations. That checks the evidence. We still judge the advice. |
@@ -30,7 +30,10 @@ Run the [documented replay](docs-checkpoint-case.md#replay-without-an-ai-account
 in a fresh output directory. Review the report and filtered pilot receipt before
 selecting text for the screen. Use only these fields:
 
-- The public source commit, five-file selection and two pending task labels.
+- The public source commit, five-file selection and all three pending task labels:
+  README routes, video scope and missing-context assessment. These readable labels
+  summarize `assess-readme-use-case-routing`, `recommend-video-scope` and
+  `identify-missing-context`; do not imply any item was omitted from the snapshot.
 - Two recommendation titles and P3 ratings, labelled as a recorded AI report.
 - Successful context, signature, original-Git and citation checks from the replay.
 - The `wrong_context` and `rehashed_mixed_progress` rejection booleans, with

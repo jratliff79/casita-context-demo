@@ -1,5 +1,6 @@
 import argparse
 import copy
+import json
 from pathlib import Path
 import tempfile
 import unittest
@@ -54,6 +55,25 @@ class PublicGitReplayChecks(unittest.TestCase):
                 replay.run(argparse.Namespace(case="untrusted-case", source=Path(name), output=output))
             read_source.assert_not_called()
             self.assertFalse(output.exists())
+
+    def test_substituted_recorded_docs_reports_rejected_before_artifacts_or_keys(self):
+        original = json.loads((Path(replay.__file__).parent / "docs/docs-checkpoint-report.json").read_bytes())
+        for name in ("altered_recommendation", "empty_findings"):
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as name_dir:
+                root = Path(name_dir)
+                changed = copy.deepcopy(original)
+                if name == "empty_findings":
+                    changed["findings"] = []
+                else:
+                    changed["findings"][0]["body"] = "A substituted recommendation."
+                report = root / "substitute.json"
+                report.write_text(json.dumps(changed, indent=2) + "\n")
+                output = root / "run"
+                args = argparse.Namespace(case="docs-checkpoint", source=root, report=report, output=output)
+                with patch.object(replay, "verify_public_source"), patch.object(replay.auth, "make_demo_key") as make_key, self.assertRaisesRegex(ValueError, "recorded public docs review bytes"):
+                    replay.run(args)
+                make_key.assert_not_called()
+                self.assertFalse(output.exists())
 
     def test_failed_replay_removes_throwaway_private_keys(self):
         with tempfile.TemporaryDirectory() as name:

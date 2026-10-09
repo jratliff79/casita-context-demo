@@ -36,6 +36,11 @@ def run(args):
         Path(__file__).parent / "fixtures/docs-checkpoint-source.json")
     # Fail before preparing any artifact from a caller-selected source.
     verify_public_source(args.source, source)
+    recorded_bytes = None
+    if case == "docs-checkpoint":
+        recorded_bytes = auth.read_regular(args.report, demo.MAX_BYTES)
+        if demo.digest(recorded_bytes) != source["report_sha256"]:
+            raise ValueError("report differs from recorded public docs review bytes")
     output = args.output.resolve()
     output.mkdir(parents=True, mode=0o700, exist_ok=False)
     keys = output / "throwaway-keys"
@@ -62,14 +67,19 @@ def run(args):
             auth.make_demo_key(keys / identity)
             auth.provision_demo_signer(keys / identity, output / (identity + "-allowed-signers"),
                                        "public-git-review-" + identity, namespace)
+        report_path = args.report
+        if recorded_bytes is not None:
+            # Freeze the already checked bytes; never reread a caller's report path.
+            report_path = output / "recorded-report.json"
+            report_path.write_bytes(recorded_bytes)
         prepared = role("prepare", "sender", source=args.source, spec=output / "spec.json",
                         observation=output / "observation.json", signing_key=keys / "sender")
         received = role("receive", "receiver", **transfer(output / "sender", "sender"))
-        returned = role("return", "reviewer-return", context=output / "receiver", report=args.report,
+        returned = role("return", "reviewer-return", context=output / "receiver", report=report_path,
                         signing_key=keys / "return-controller")
         verified = role("verify", "verified-return", source=args.source, original=output / "sender",
                         **transfer(output / "reviewer-return", "return-controller"))
-        report = review.read_json(args.report, demo.MAX_BYTES)
+        report = review.read_json(report_path, demo.MAX_BYTES)
         _, selections = review.verify_context(output / "receiver/context", prepared["pins"]["content_id"])
         # These are deliberately invalid synthetic controls, not reviewer findings.
         controls = ["wrong_context", "wrong_commit", "invented_excerpt", "wrong_blob", "uncaptured_lines"]

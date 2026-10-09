@@ -7,7 +7,7 @@ publish = false
 license = "MIT"
 
 [dependencies]
-casita = { git = "https://github.com/cachix/casita", rev = "84ec2920791276cd4ad8c029cd60529810e15705", default-features = false, features = ["git", "experimental"] }
+casita = { git = "https://github.com/cachix/casita", rev = "1407672f4b235609ae7fff0f87a30e06183f941f", default-features = false, features = ["git", "experimental"] }
 data-encoding = "2"
 futures = "0.3"
 tempfile = "3"

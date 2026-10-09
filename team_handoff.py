@@ -210,13 +210,15 @@ def export(store, root, archive):
     return digest(archive.read_bytes())
 
 
-def restore(store, archive, archive_sha, key, folder, prefix):
+def restore(store, archive, archive_sha, key, folder, prefix, extra_keys=()):
     checked_archive(archive, archive_sha)
     store.run("archive", "verify", archive, "--json")
     before = store.roots()
     store.run("archive", "import", archive, "--root-prefix", prefix, "--json")
     after = store.roots()
-    if (len(after) != len(before) + 1 or set(after.values()) != set(before.values()) | {key}
+    expected_keys = {key, *extra_keys}
+    if (len(after) != len(before) + len(expected_keys)
+            or set(after.values()) != set(before.values()) | expected_keys
             or any(after.get(name) != value for name, value in before.items())):
         raise ValueError("imported roots differ from expected pinned graph")
     folder.parent.mkdir(parents=True, exist_ok=True)
@@ -292,15 +294,25 @@ def run_demo(binary, destination, selection):
         publish(owner, next_snapshot, "team/v2", next_pin, "directory_key")
         verify_snapshot(next_snapshot, next_pin)
         selected_archive = output / "selected-knowledge.casitar"
-        selected_archive_sha = export(owner, "team/v2", selected_archive)
+        owner.run("root", "set", "team/selected-proposal", selected_pin["directory_key"])
+        owner.run("archive", "create", "--root", "team/v2", "--root", "team/selected-proposal",
+                  "--output", selected_archive, "--json")
+        selected_archive_sha = digest(selected_archive.read_bytes())
         next_hashes = file_map(next_snapshot)
         for name in PEOPLE:
             shared = output / name / "selected-context"
             restore(stores[name], selected_archive, selected_archive_sha,
-                    next_pin["directory_key"], shared, "selected")
+                    next_pin["directory_key"], shared, "selected", (selected_pin["directory_key"],))
             verify_snapshot(shared, next_pin)
             if file_map(shared) != next_hashes:
                 raise ValueError("selected knowledge differs at teammate")
+            shared_proposal = output / name / "accepted-proposal"
+            stores[name].run("checkout", selected_pin["directory_key"], shared_proposal, "--no-root")
+            verified_proposal = verify_proposal(shared_proposal, selected_pin,
+                                               output / name / "context", parent_pin)
+            if (verify_snapshot(shared, next_pin)["knowledge"]["entries"]
+                    != [verified_proposal["replacement"]]):
+                raise ValueError("shared knowledge differs from the accepted proposal")
         for name in PEOPLE:
             controls[f"stale_{name}_return"] = rejected(lambda name=name: verify_proposal(
                 output / "owner/proposals" / name, proposal_pins[name], next_snapshot, next_pin))
@@ -334,6 +346,7 @@ def run_demo(binary, destination, selection):
                        next_pin=next_pin, next_file_hashes=next_hashes,
                        selected_archive_sha256=selected_archive_sha,
                        selected_snapshot_shared_back=True,
+                       accepted_proposal_shared_back=True,
                        proposals_changed_current_knowledge=False, competing_proposals_retained=True,
                        original_snapshot_removed=not original.exists(),
                        sender_path_unavailable=not stores["alice"].repository.exists(),
@@ -347,7 +360,7 @@ def run_demo(binary, destination, selection):
     print("PASS: Bob and Carol restored the same task, source and knowledge in separate stores")
     print("PASS: both source-cited proposals verified; receiving advice changed no knowledge")
     print(f"PASS: explicit synthetic owner selection accepted {selection}; both proposals retained")
-    print("PASS: selected snapshot records its parent and reviewed proposal; both teammates restored it")
+    print("PASS: both teammates restored selected knowledge and its exact accepted proposal")
     print("PASS: stale returns, missing selection, wrong bindings and invented citations rejected")
     print("PASS: receiver stores pass integrity audits; no model or received code executed")
     print(f"Selected knowledge: {next_snapshot / 'knowledge.json'}")

@@ -106,7 +106,8 @@ python3 team_handoff.py --casita "$CASITA_DEMO_BIN" \
 The [teammate guide](teammate-handoff.md) separates task context, proposed advice
 and selected knowledge. CI runs both explicit selections with fresh stores,
 checks exact restored snapshots, retained competing proposals and recorded
-parent/decision identities, and checks eleven rejection controls. Unit tests
+parent/decision identities, redistributes the exact accepted proposal with the
+selected snapshot, and checks eleven rejection controls. Unit tests
 cover source citations, stale returns, an absent or mismatched owner decision,
 repinned task/team/owner changes, linked input, changed bytes during reads,
 knowledge text as data and preservation of an existing output. Roles are

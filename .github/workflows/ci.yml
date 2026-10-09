@@ -308,7 +308,7 @@ jobs:
       - name: Exchange teammate proposals and explicitly select shared knowledge
         run: |
           for teammate in bob carol; do
-            uv run --no-project --python 3.12 python team_handoff.py --casita output/casita-build/debug/casita --output "output/team-$teammate" --accept "$teammate"
+            uv run --no-project --python 3.12 python team_handoff.py --casita output/casita-build/debug/casita --output "output/teammate-$teammate" --accept "$teammate"
           done
           python - <<'PY'
           import json
@@ -317,7 +317,7 @@ jobs:
           from team_handoff import STATEMENTS, entry, verify_proposal, verify_snapshot
 
           for selected in ("bob", "carol"):
-              root = Path(f"output/team-{selected}")
+              root = Path(f"output/teammate-{selected}")
               receipt = json.loads((root / "receipt.json").read_bytes())
               assert receipt["ok"] and receipt["synthetic"] and receipt["scripted_teammates"]
               assert receipt["selected_proposer"] == selected
@@ -325,6 +325,7 @@ jobs:
               assert not (root / "alice-store").exists() and not (root / "original").exists()
               assert receipt["integrity_audits_passed"] and receipt["competing_proposals_retained"]
               assert receipt["selected_snapshot_shared_back"]
+              assert receipt["accepted_proposal_shared_back"]
               assert not receipt["proposals_changed_current_knowledge"]
               for field in ("fresh_ai_run", "model_internal_state_restored", "received_instructions_executed",
                             "identity_authenticated", "access_control_tested", "execution_attested",
@@ -344,6 +345,10 @@ jobs:
                   path = root / person / "selected-context"
                   assert file_map(path) == receipt["next_file_hashes"]
                   verify_snapshot(path, receipt["next_pin"])
+                  proposal = verify_proposal(root / person / "accepted-proposal",
+                                             receipt["proposal_pins"][selected], root / person / "context",
+                                             receipt["input_pin"])
+                  assert verified["knowledge"]["entries"] == [proposal["replacement"]]
               manifest = json.loads((root / "owner/context-v2/manifest.json").read_bytes())
               assert manifest["parent_snapshot_id"] == receipt["input_pin"]["snapshot_id"]
               assert manifest["decision"] == receipt["decision"]

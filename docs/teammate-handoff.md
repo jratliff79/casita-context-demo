@@ -69,7 +69,9 @@ proposal the team should adopt.
    proposal hash. The selected revision records that decision and its parent,
    changes the knowledge entry, and leaves the real-workflow test pending. The
    old snapshot and both proposals remain available.
-   The selected snapshot is exported and restored back into both teammate stores;
+   The selected snapshot and exact accepted proposal are exported together and
+   restored back into both teammate stores. Each checks that the selected entry
+   matches the accepted proposal and verifies its original source citations;
    receiving it retains their original context and proposals.
 6. Both old proposals reject when checked against the new selected snapshot.
    The unselected proposal needs a new review against current context before a
@@ -81,6 +83,7 @@ Inspect the example's result:
 python3 -m json.tool output/my-teammate-handoff/owner/context-v2/knowledge.json
 python3 -m json.tool output/my-teammate-handoff/owner/context-v2/manifest.json
 python3 -m json.tool output/my-teammate-handoff/owner/proposals/carol/proposal.json
+python3 -m json.tool output/my-teammate-handoff/carol/accepted-proposal/proposal.json
 python3 -m json.tool output/my-teammate-handoff/receipt.json
 ```
 

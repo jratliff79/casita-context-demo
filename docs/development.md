@@ -96,6 +96,23 @@ results, malformed inputs, inconsistent progress/responses, links and preserving
 prompts as data. No model runs, received instructions are not executed, and model
 internal state, tool truth and execution are not attested.
 
+## Synthetic teammate context and knowledge
+
+```sh
+python3 team_handoff.py --casita "$CASITA_DEMO_BIN" \
+  --output output/teammate-development --accept bob
+```
+
+The [teammate guide](teammate-handoff.md) separates task context, proposed advice
+and selected knowledge. CI runs both explicit selections with fresh stores,
+checks exact restored snapshots, retained competing proposals and recorded
+parent/decision identities, and checks eleven rejection controls. Unit tests
+cover source citations, stale returns, an absent or mismatched owner decision,
+repinned task/team/owner changes, linked input, changed bytes during reads,
+knowledge text as data and preservation of an existing output. Roles are
+scripted and sequential; signatures, access control and simultaneous writes
+are outside this example.
+
 ## Recorded public docs checkpoint
 
 The [public docs checkpoint pilot](docs-checkpoint-case.md) has a separate

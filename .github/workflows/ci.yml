@@ -305,6 +305,51 @@ jobs:
               assert command["argv"][2] in {str(root.resolve() / store) for store in ("worker-store", "returned-store")}
           print("PASS: exact visible checkpoint and two parent-bound returns; no live model or received instructions executed")
           PY
+      - name: Exchange teammate proposals and explicitly select shared knowledge
+        run: |
+          for teammate in bob carol; do
+            uv run --no-project --python 3.12 python team_handoff.py --casita output/casita-build/debug/casita --output "output/team-$teammate" --accept "$teammate"
+          done
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from demo import file_map
+          from team_handoff import STATEMENTS, entry, verify_proposal, verify_snapshot
+
+          for selected in ("bob", "carol"):
+              root = Path(f"output/team-{selected}")
+              receipt = json.loads((root / "receipt.json").read_bytes())
+              assert receipt["ok"] and receipt["synthetic"] and receipt["scripted_teammates"]
+              assert receipt["selected_proposer"] == selected
+              assert receipt["sender_path_unavailable"] and receipt["original_snapshot_removed"]
+              assert not (root / "alice-store").exists() and not (root / "original").exists()
+              assert receipt["integrity_audits_passed"] and receipt["competing_proposals_retained"]
+              assert receipt["selected_snapshot_shared_back"]
+              assert not receipt["proposals_changed_current_knowledge"]
+              for field in ("fresh_ai_run", "model_internal_state_restored", "received_instructions_executed",
+                            "identity_authenticated", "access_control_tested", "execution_attested",
+                            "network_isolation_enforced", "concurrent_writes_tested"):
+                  assert receipt[field] is False
+              assert len(receipt["negative_controls"]) == 11 and all(receipt["negative_controls"].values())
+              assert all(command["exit_code"] == 0 for command in receipt["commands"])
+              for path in (root / "bob/context", root / "carol/context", root / "owner/context-v1"):
+                  assert file_map(path) == receipt["original_file_hashes"]
+              for person in ("bob", "carol"):
+                  verify_proposal(root / f"owner/proposals/{person}", receipt["proposal_pins"][person],
+                                  root / "owner/context-v1", receipt["input_pin"])
+              verified = verify_snapshot(root / "owner/context-v2", receipt["next_pin"])
+              assert verified["knowledge"]["entries"] == [entry(STATEMENTS[selected])]
+              assert file_map(root / "owner/context-v2") == receipt["next_file_hashes"]
+              for person in ("bob", "carol"):
+                  path = root / person / "selected-context"
+                  assert file_map(path) == receipt["next_file_hashes"]
+                  verify_snapshot(path, receipt["next_pin"])
+              manifest = json.loads((root / "owner/context-v2/manifest.json").read_bytes())
+              assert manifest["parent_snapshot_id"] == receipt["input_pin"]["snapshot_id"]
+              assert manifest["decision"] == receipt["decision"]
+              assert manifest["decision"]["proposal_id"] == receipt["proposal_pins"][selected]["proposal_id"]
+          print("PASS: both explicit owner selections, retained competing advice and exact source/parent bindings")
+          PY
       - name: Run separate sender, worker and return-verifier processes
         run: |
           python output/ci-worktree/handoff.py prepare --casita output/casita-build/debug/casita --output output/portable-sender

@@ -50,6 +50,7 @@ Choose the example closest to your task:
 | Recover a previous build output | [Artifact handoff](docs/artifact-handoff.md) | Two synthetic static-site builds restored without rebuilding |
 | Carry a fixed rundown and assets to a venue | [Offline event kit](docs/offline-event-kit.md) | A synthetic kit, local incremental sync and verified snapshot selection |
 | Continue a task from its saved visible state | [Public docs checkpoint pilot](docs/docs-checkpoint-case.md) | One recorded AI review from a pinned public snapshot; replay needs no AI account |
+| Hand a task to a teammate and review a shared knowledge update | [Teammate handoff](docs/teammate-handoff.md) | Separate stores, competing scripted proposals and explicit owner selection |
 
 Consider a change to a private pricing calculation. An outside reviewer can see
 the selected diff and source without receiving repository access. If a helper is
@@ -172,6 +173,7 @@ Casita, OpenSSH or an image runtime. No project installation is required.
 | Freeze a rundown and assets, sync a cue update, and use the venue store | [Synthetic offline event kit](docs/offline-event-kit.md) |
 | Freeze visible task state and verify two scripted continuations against their parent | [Synthetic workflow checkpoint](docs/ai-workflow-checkpoint.md) |
 | See a fresh reviewer continue a public docs task from selected evidence | [Recorded docs checkpoint pilot](docs/docs-checkpoint-case.md) |
+| Share task context and review proposed team knowledge | [Synthetic teammate handoff](docs/teammate-handoff.md) |
 | Understand missing context and explicit approval | [Context requests](docs/context-requests.md) |
 | See an actual reviewer request and recorded reassessment | [Public reviewer case](docs/context-request-case.md) |
 | See a capsule review lead to a landed fix | [Review-to-fix case](docs/review-to-fix.md) |

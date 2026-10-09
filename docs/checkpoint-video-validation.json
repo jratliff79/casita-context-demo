@@ -1,0 +1,81 @@
+{
+  "schema": "casita-context-demo.video-publication.v1",
+  "title": "Checkpoint handoff",
+  "published_at": "2026-10-09T04:24:27Z",
+  "publication": {
+    "video_url": "https://github.com/user-attachments/assets/17d5742d-156d-4c4b-a456-2bbdeb9a078f",
+    "comment_url": "https://github.com/jratliff79/casita-context-demo/pull/34#issuecomment-6074229179",
+    "anonymous_browser_player_verified": true,
+    "anonymous_player_duration_seconds": 56,
+    "anonymous_player_dimensions": [
+      1920,
+      1080
+    ]
+  },
+  "reviewed_media": {
+    "sha256": "0c2f5cbeeb63f639013875d5d877c27919dbd590d052c15e1c5ebcbea219b6f7",
+    "sha256_scope": "Reviewed local MP4 selected for the GitHub upload; not an independent digest of the hosted bytes.",
+    "size_bytes": 2642364,
+    "duration_seconds": 56,
+    "fps": 30,
+    "frames": 1680,
+    "dimensions": [
+      1920,
+      1080
+    ],
+    "video_codec": "h264",
+    "pixel_format": "yuv420p",
+    "audio_codec": "aac",
+    "audio_sample_rate_hz": 48000,
+    "voice": "Achird",
+    "speech_model": "Gemini 3.1 Flash TTS"
+  },
+  "evidence": {
+    "repository": "https://github.com/jratliff79/casita-context-demo",
+    "commit": "50b6820203f431026cd25385e6bd2a0cd6a59cea",
+    "license": "MIT",
+    "selected_source_files": {
+      "README.md": "eb7250c318ca598e305eac4c59f9a94b85b8f7bb2d76eed06df2b1623428453c",
+      "docs/demo-video.md": "9a3412e16ce4ff637f4ad027aed55d07b03e76a94a2c719129004a771165d6ba",
+      "docs/ai-workflow-checkpoint.md": "f14df1873e44208d1a87ff84be6878a046a175a8aed432d8af9e2c0cbe8a8484",
+      "docs/examples.md": "fbf9844e9af3af410c77ff86fd42f18014ede32578308f0474ff7289838c4dec",
+      "LICENSE": "b13e1d0ce5c2b67d711e935f670df74b6d899616f9f5630c498b3f8679ab5f6c"
+    },
+    "context_pins": {
+      "archive_sha256": "1e510b579e38fc48544a057f09d823a5bdcdc67b14abb02b658aa3d113b259c3",
+      "content_id": "67c518952be0208dc9d1e5b26ccddb3c734559fb16de2d495f74d6da8e5c2982",
+      "directory_key": "casita.directory.v1:JBECzZdwl4ao0XZcSSqws_fYJjBXsZ0vmFdMbPK-EIA",
+      "schema": "casita-context-demo.review-input-pins.v1"
+    },
+    "recorded_report_sha256": "67ad5461df1f925b65317ef144876a1e722d9e3bef303e19dc88e6f46b21151e",
+    "recorded_recommendations": 2,
+    "exact_source_citations": 13
+  },
+  "checks": {
+    "full_media_decode": true,
+    "caption_fit": true,
+    "sentence_timing_from_generated_narration": true,
+    "sampled_encoded_frames_reviewed": true,
+    "public_visible_text_and_metadata_reviewed": true,
+    "audio_integrated_loudness_lufs": -17.95,
+    "audio_true_peak_db": -1.41,
+    "owner_reviewed_full_clip_before_publication": true
+  },
+  "disclosures": {
+    "public_mit_snapshot": true,
+    "recorded_ai_review": true,
+    "edited_replay_graphics": true,
+    "synthetic_narration": true,
+    "substantial_openai_codex_assistance": true
+  },
+  "scope": {
+    "live_reviewer_in_video": false,
+    "example_commands_render_video": false,
+    "execution_attested": false,
+    "model_identity_attested": false,
+    "os_sandbox_enforced": false,
+    "internal_model_memory_restored": false,
+    "finding_quality_verified": false,
+    "performance_measured": false
+  }
+}

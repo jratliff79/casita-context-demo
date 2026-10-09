@@ -7,7 +7,9 @@ This independent example uses Casita to store and move content-addressed graphs;
 it adds explicit source selection, signed pins, context-request binding and
 citation checks. The runnable examples use synthetic or labelled public source.
 
-## Watch the demo
+## Videos
+
+### Selected-source review · 67 seconds
 
 A 67-second overview of the selected-source handoff, missing-helper request,
 approved supplement and checked return.
@@ -15,7 +17,22 @@ approved supplement and checked return.
 https://github.com/user-attachments/assets/c2445e44-54e1-4f15-8fec-114dceb7bcbb
 
 Synthetic source, scripted reviewer, edited output from an executed run, and
-synthetic narration. [Read the transcript](docs/demo-video.md#story-and-narration).
+synthetic narration.
+
+[Read the transcript](docs/demo-video.md#story-and-narration) ·
+[Run this example](docs/complete-demo.md)
+
+### Checkpoint handoff · 56 seconds
+
+Pause a task, preserve its visible state, and give a fresh reviewer the evidence.
+
+https://github.com/user-attachments/assets/17d5742d-156d-4c4b-a456-2bbdeb9a078f
+
+Public MIT source, recorded AI review, edited replay graphics, and synthetic
+narration. The replay runs without an AI account.
+
+[Read the transcript](docs/checkpoint-video.md#story-and-narration) ·
+[Run this example](docs/docs-checkpoint-case.md#replay-without-an-ai-account)
 
 **[Start here: run the complete walkthrough](docs/complete-demo.md).** It covers
 basic transport, a request for an omitted helper, and a recorded public review.
@@ -162,7 +179,7 @@ Casita, OpenSSH or an image runtime. No project installation is required.
 | Prepare selected source, use a separate worker, or try OCI/Apple Container | [All demonstrations and requirements](docs/examples.md) |
 | Run tests or inspect CI scope | [Development and validation](docs/development.md) |
 | Record a short public demonstration | [Video script and recording guide](docs/demo-video.md) |
-| Plan a focused checkpoint clip | [Checkpoint video storyboard](docs/checkpoint-video.md) |
+| Watch or reproduce the checkpoint clip | [Checkpoint video and transcript](docs/checkpoint-video.md) |
 
 ## Verification and sharing boundaries
 

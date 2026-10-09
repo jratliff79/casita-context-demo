@@ -33,10 +33,11 @@ documentation recommendations and 13 exact source citations:
 The controller judged these recommendations separately from the citation checks.
 The README now has a use-case table and clearer synthetic checkpoint wording.
 The existing video remains the core introduction; the
-[new storyboard](checkpoint-video.md) plans a separate clip about this public
+[56-second checkpoint video](checkpoint-video.md) shows this public
 docs pilot. That differs from the report's proposed synthetic day-plan clip:
 it shows an actual recorded reviewer handoff and labels its replay explicitly.
-No replacement or new published video is claimed.
+The video uses the recorded report and edited replay graphics. It does not
+invoke another reviewer or replace the core introduction.
 
 The controller signed the return with a local throwaway key, restored it into
 a fresh verifier store, and checked the context ID, directory key, immutable Git

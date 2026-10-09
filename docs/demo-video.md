@@ -2,10 +2,10 @@
 
 The current 67-second clip covers the core selected-source review. Keep it as
 that introduction. The artifact, event-kit and checkpoint examples have different
-uses; they are not shown in this clip. A separate
-[checkpoint storyboard](checkpoint-video.md) plans a focused follow-up using the
-[recorded public docs pilot](docs-checkpoint-case.md). It is a script, not a new
-published video.
+uses; they are not shown in this clip. The separate
+[56-second checkpoint video](checkpoint-video.md) shows a fixed handoff for an
+unfinished task using the [recorded public docs pilot](docs-checkpoint-case.md).
+Both clips are in the README's [Videos section](../README.md#videos).
 
 Aim for about one minute. Lead with the need for a second opinion on private code
 without sharing the whole repository. Show one missing-context exchange, using the synthetic

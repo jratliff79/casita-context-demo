@@ -6,6 +6,9 @@ return a signed static report, and let the sender verify each citation against
 the original Git objects. It uses the existing Casita transport and OpenSSH pin
 signatures. It does not invoke a model or execute received source.
 
+The optional [Halo adapter](halo-handoff.md) prepares numbered source requests,
+requires explicit inference opt-in and retains checked or rejected responses.
+
 To review an explicitly selected change across two commits, use the
 [Git diff review guide](git-diff-review.md). It adds a derived unified diff and
 base/head citation labels to the same signed handoff roles.

@@ -9,6 +9,7 @@ All host Python commands use the [shared prerequisites](../README.md#prerequisit
 | Two context versions and verified result return | [Basic quick start](../README.md#run-it) | Default Casita CLI |
 | Restore two static-site builds and roll back without rebuilding | [Artifact handoff](artifact-handoff.md) | Default Casita CLI; synthetic local builder, no signing or runtime |
 | Freeze a synthetic event kit, incrementally sync a cue update and select its verified snapshot | [Offline event kit](offline-event-kit.md) | Default Casita CLI; local sync, no Eventools account or real event data |
+| Freeze visible task state and return two parent-bound scripted continuations | [AI workflow checkpoint](ai-workflow-checkpoint.md) | Default Casita CLI; synthetic task, no AI account or live model |
 | Separate sender, worker and return-verifier processes | [Portable worker guide](portable-worker.md) | Default Casita CLI on each side |
 | Signed input and result pins with pre-import rejection checks | [Signed handoff guide](signed-handoff.md) | Default Casita CLI and OpenSSH `ssh-keygen -Y` on macOS or Linux |
 | Public source capsule and signed AI review findings | [Review capsule guide](review-capsule.md) | Default Casita CLI, OpenSSH, Git and the pinned public source commit |

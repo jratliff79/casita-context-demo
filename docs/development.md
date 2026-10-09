@@ -80,6 +80,22 @@ selection, corrupt restored assets, mixed versions, event binding and cue schema
 The handoff CI job runs the example and verifies exact venue-only files and
 command ordering. Network isolation and Eventools integration are not exercised.
 
+## Synthetic visible workflow checkpoints
+
+```sh
+python3 checkpoint.py --casita "$CASITA_DEMO_BIN" --output output/checkpoint-development
+```
+
+The [checkpoint guide](ai-workflow-checkpoint.md) freezes visible inputs, prompts,
+recorded responses, notes and pending tasks, then restores them into a fresh store.
+Two fixed local policies continue the same parent; returned results and their
+parent are restored and verified in another fresh store. The handoff CI job runs
+the example through uv and checks exact checkpoint bytes, branch choices and nine
+negative controls. Unit tests cover stale parents, swapped branches, repinned
+results, malformed inputs, inconsistent progress/responses, links and preserving
+prompts as data. No model runs, received instructions are not executed, and model
+internal state, tool truth and execution are not attested.
+
 ## Optional native Git API example
 
 The [standalone Rust example](../examples/native-git/README.md) has its own source

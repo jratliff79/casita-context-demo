@@ -1,0 +1,137 @@
+{
+  "schema": "casita-context-demo.git-review-report.v1",
+  "context_id": "67c518952be0208dc9d1e5b26ccddb3c734559fb16de2d495f74d6da8e5c2982",
+  "context_directory_key": "casita.directory.v1:JBECzZdwl4ao0XZcSSqws_fYJjBXsZ0vmFdMbPK-EIA",
+  "source_commit": "50b6820203f431026cd25385e6bd2a0cd6a59cea",
+  "reviewer": "Codex capsule-only public docs reviewer",
+  "scope": "static review; no received code executed",
+  "findings": [
+    {
+      "title": "Surface the existing use-case routes earlier and label checkpoint continuations as scripted",
+      "body": "The README already routes to artifact, offline-event and checkpoint guides in Explore further, while the initial Start here link and use-case explanation focus on source review. This is an onboarding improvement, not a missing-guide defect. Add one paragraph after When would I use this?: \"For other synthetic workflows, try the [artifact handoff](docs/artifact-handoff.md) to restore a previous build output, the [offline event kit](docs/offline-event-kit.md) to freeze a rundown and sync a cue update, or the [visible workflow checkpoint](docs/ai-workflow-checkpoint.md) to preserve task state and check two scripted continuations against their parent.\" Keep the complete walkthrough as the primary source-review entry point. Change the checkpoint table goal to \"Freeze visible task state and verify two scripted continuations against their parent\" and its link label to \"Synthetic workflow checkpoint\". The examples table and checkpoint introduction already give the synthetic/no-live-model qualification; bringing it into the README route helps readers choose the example without inferring an AI continuation or internal-memory restoration.",
+      "priority": "P3",
+      "citations": [
+        {
+          "selection_id": "readme",
+          "path": "README.md",
+          "blob_sha256": "eb7250c318ca598e305eac4c59f9a94b85b8f7bb2d76eed06df2b1623428453c",
+          "line_start": 20,
+          "line_end": 24,
+          "excerpt": "**[Start here: run the complete walkthrough](docs/complete-demo.md).** It covers\nbasic transport, a request for an omitted helper, and a recorded public review.\nThe examples use synthetic fixtures and labelled public MIT source. No AI\naccount, cloud service or Python packages are required. The request example uses\na scripted reviewer; the public review replays recorded AI reports."
+        },
+        {
+          "selection_id": "readme",
+          "path": "README.md",
+          "blob_sha256": "eb7250c318ca598e305eac4c59f9a94b85b8f7bb2d76eed06df2b1623428453c",
+          "line_start": 35,
+          "line_end": 44,
+          "excerpt": "The same pattern can preserve a fixed set of evidence across agent handoffs or\nlet you replay exactly what a reviewer saw after the repository has changed.\nVerification checks source correspondence; you still judge whether the finding\nis correct. Review the selected content before sharing: a capsule is not an\nautomatic secret scanner or a sandbox.\n\nIf everyone already has repository access and Git meets the need, use Git. A\nsmall one-off handoff can use an archive plus a manifest. Casita's content-addressed\nstore becomes more relevant for repeated snapshots with common source or build\nartifacts. This example does not establish net storage savings or faster reviews."
+        },
+        {
+          "selection_id": "readme",
+          "path": "README.md",
+          "blob_sha256": "eb7250c318ca598e305eac4c59f9a94b85b8f7bb2d76eed06df2b1623428453c",
+          "line_start": 140,
+          "line_end": 147,
+          "excerpt": "## Explore further\n\n| Goal | Guide |\n| --- | --- |\n| Run the complete core workflow | [Three-stage walkthrough](docs/complete-demo.md) |\n| Restore a previous build output without rebuilding | [Synthetic artifact handoff](docs/artifact-handoff.md) |\n| Freeze a rundown and assets, sync a cue update, and use the venue store | [Synthetic offline event kit](docs/offline-event-kit.md) |\n| Freeze visible task state and verify two continuations against their parent | [AI workflow checkpoint](docs/ai-workflow-checkpoint.md) |"
+        },
+        {
+          "selection_id": "examples",
+          "path": "docs/examples.md",
+          "blob_sha256": "fbf9844e9af3af410c77ff86fd42f18014ede32578308f0474ff7289838c4dec",
+          "line_start": 9,
+          "line_end": 12,
+          "excerpt": "| Two context versions and verified result return | [Basic quick start](../README.md#run-it) | Default Casita CLI |\n| Restore two static-site builds and roll back without rebuilding | [Artifact handoff](artifact-handoff.md) | Default Casita CLI; synthetic local builder, no signing or runtime |\n| Freeze a synthetic event kit, incrementally sync a cue update and select its verified snapshot | [Offline event kit](offline-event-kit.md) | Default Casita CLI; local sync, no Eventools account or real event data |\n| Freeze visible task state and return two parent-bound scripted continuations | [AI workflow checkpoint](ai-workflow-checkpoint.md) | Default Casita CLI; synthetic task, no AI account or live model |"
+        },
+        {
+          "selection_id": "checkpoint-guide",
+          "path": "docs/ai-workflow-checkpoint.md",
+          "blob_sha256": "f14df1873e44208d1a87ff84be6878a046a175a8aed432d8af9e2c0cbe8a8484",
+          "line_start": 3,
+          "line_end": 8,
+          "excerpt": "An agent task outlives its chat, moves to a different machine, or needs two\npossible continuations. You want the next worker to see exactly which inputs,\nprompt, recorded responses, notes and unfinished tasks were handed over.\nThis example packages that visible state in Casita and binds returned work to\nits parent checkpoint. It uses a synthetic task and fixed local Python policy;\nit does not call an AI model or restore a model's internal memory."
+        }
+      ]
+    },
+    {
+      "title": "Keep the core video and plan a separate focused checkpoint clip",
+      "body": "Based on the supplied description and recording script, there is no demonstrated reason to replace the core video: the README promises a selected-source handoff, missing-helper request, approved supplement and checked return, and the script covers that sequence with synthetic/scripted disclosures. Plan a separate checkpoint clip. A small storyboard can show (1) the synthetic task budget changing from 90 to 75 and the visible state files, (2) restoring the v2 checkpoint against trusted pins and hashes, (3) the fixed local policy choosing park for economy and museum for full-day, and (4) parent-bound returns plus rejection of the stale v1 studio result. Label the clip \"Synthetic task; scripted continuations; one Python process; separate Casita stores\" and explain that prompts and notes are preserved as evidence and no AI model is called. This is a proposed recording plan, not evidence those checks were executed in this review. Add its README link only after a reviewed clip exists. If a later clip presents the actual fresh public-docs reviewer pilot, give it a separate account of that static review and independently checked return. Do not describe the scripted checkpoint example as a live reviewer, or this review as internal-memory restoration, execution attestation, or a performance/quality result.",
+      "priority": "P3",
+      "citations": [
+        {
+          "selection_id": "readme",
+          "path": "README.md",
+          "blob_sha256": "eb7250c318ca598e305eac4c59f9a94b85b8f7bb2d76eed06df2b1623428453c",
+          "line_start": 12,
+          "line_end": 18,
+          "excerpt": "A 67-second overview of the selected-source handoff, missing-helper request,\napproved supplement and checked return.\n\nhttps://github.com/user-attachments/assets/c2445e44-54e1-4f15-8fec-114dceb7bcbb\n\nSynthetic source, scripted reviewer, edited output from an executed run, and\nsynthetic narration. [Read the transcript](docs/demo-video.md#story-and-narration)."
+        },
+        {
+          "selection_id": "video-guide",
+          "path": "docs/demo-video.md",
+          "blob_sha256": "9a3412e16ce4ff637f4ad027aed55d07b03e76a94a2c719129004a771165d6ba",
+          "line_start": 3,
+          "line_end": 7,
+          "excerpt": "Aim for about one minute. Lead with the need for a second opinion on private code\nwithout sharing the whole repository. Show one missing-context exchange, using the synthetic\nhelper-only example from the [complete walkthrough](complete-demo.md).\nUse output from an executed run. Label terminal excerpts as edited and the\nreviewer as scripted; this example does not invoke an AI model."
+        },
+        {
+          "selection_id": "video-guide",
+          "path": "docs/demo-video.md",
+          "blob_sha256": "9a3412e16ce4ff637f4ad027aed55d07b03e76a94a2c719129004a771165d6ba",
+          "line_start": 13,
+          "line_end": 19,
+          "excerpt": "| 1. The need | Selected source flowing to an outside reviewer; the rest stays with the sender | You want a second opinion on private code. You don't want to share the whole repo. |\n| 2. The handoff | Selected change, pinned capsule and fresh receiver store | Send an outside reviewer the change and only the source you approve. This Casita demo stores that selected evidence as a pinned capsule. The receiver restores it in a fresh store and checks that the contents match. |\n| 3. Missing helper | Request reason and explicit ranges | A helper is missing. The reviewer asks for its exact lines. |\n| 4. Explicit approval | Approved helper path and base/head ranges | A separate approval adds only that helper: six lines from each version. |\n| 5. Verified return | Signature, parent/request and citation checks | The supplement is signed and tied to the original capsule and request. The returned report is checked against the original Git source, down to the cited line. |\n| 6. Reject mismatches | Executed rejection controls, followed by the value and limit | Wrong parent? Rejected. Invented source, even with a valid signature? Rejected. Now you can preserve exactly what the reviewer saw and check the evidence they return. You still need to judge the finding. |\n| 7. Try it | Public repo, complete-walkthrough link and disclosure | This example uses synthetic source and a scripted reviewer. Try the complete walkthrough with Python or uv. No AI account required. |"
+        },
+        {
+          "selection_id": "checkpoint-guide",
+          "path": "docs/ai-workflow-checkpoint.md",
+          "blob_sha256": "f14df1873e44208d1a87ff84be6878a046a175a8aed432d8af9e2c0cbe8a8484",
+          "line_start": 35,
+          "line_end": 44,
+          "excerpt": "from 90 to 75; three choices cost 40, 70 and 85. These values are invented and\nare not real travel advice or prices.\n\n| File | Visible state |\n| --- | --- |\n| `inputs.json` | Synthetic budget and candidate costs and durations |\n| `prompt.txt` | Recorded request to draft two options |\n| `tool-responses.json` | Labelled synthetic response from a fixed local budget filter |\n| `notes.txt` | Recorded progress note |\n| `progress.json` | Task/revision identity, completed inspection and pending drafting/comparison |"
+        },
+        {
+          "selection_id": "checkpoint-guide",
+          "path": "docs/ai-workflow-checkpoint.md",
+          "blob_sha256": "f14df1873e44208d1a87ff84be6878a046a175a8aed432d8af9e2c0cbe8a8484",
+          "line_start": 62,
+          "line_end": 70,
+          "excerpt": "4. Apply the trusted local policy to the restored v2 inputs. The `economy` branch\n   chooses the least expensive eligible option, park. The `full-day` branch\n   chooses the longest eligible option, museum. On v1 it would choose studio,\n   which exceeds v2's budget.\n5. Record both results with parent manifest ID, parent directory key, input hash\n   and branch identity. Mark drafting complete and leave comparison pending.\n6. Export the parent and both branches together. Restore them into a third fresh\n   store and check each result against the independently expected parent and\n   trusted local policy. Both stores pass a dry-run integrity audit."
+        },
+        {
+          "selection_id": "checkpoint-guide",
+          "path": "docs/ai-workflow-checkpoint.md",
+          "blob_sha256": "f14df1873e44208d1a87ff84be6878a046a175a8aed432d8af9e2c0cbe8a8484",
+          "line_start": 72,
+          "line_end": 76,
+          "excerpt": "The worker and verifier are roles within one Python process, using separate\nCasita stores. This is a scripted transport/checkpoint demonstration, not a\nlive agent integration or a separate-process restart test. Prompts and notes\nare preserved as data; they do not direct the script's execution. No received\ntool name, instruction or source code is executed."
+        },
+        {
+          "selection_id": "checkpoint-guide",
+          "path": "docs/ai-workflow-checkpoint.md",
+          "blob_sha256": "f14df1873e44208d1a87ff84be6878a046a175a8aed432d8af9e2c0cbe8a8484",
+          "line_start": 78,
+          "line_end": 82,
+          "excerpt": "Nine negative controls reject a wrong archive hash, mixed progress, altered\nprompt, missing response, a valid result from the stale v1 parent, a swapped\nbranch, and results with newly hashed but incorrect parent ID, parent directory\nkey or selected choice. Rehashing a changed result cannot satisfy the separate\nexpected parent and fixed continuation policy."
+        },
+        {
+          "selection_id": "checkpoint-guide",
+          "path": "docs/ai-workflow-checkpoint.md",
+          "blob_sha256": "f14df1873e44208d1a87ff84be6878a046a175a8aed432d8af9e2c0cbe8a8484",
+          "line_start": 97,
+          "line_end": 105,
+          "excerpt": "This verifies correspondence to a visible checkpoint and a deterministic local\nfixture policy. It does not establish prompt completeness, model identity,\nexternal tool truth, execution attestation, deterministic AI replay, continuation\nquality, current task authority, or token/time/storage savings. The sender path\nis unavailable after export; host network isolation is not enforced. Both stores\nand archives are local to one host.\n\nA real agent adapter would need an explicitly reviewed export of visible state,\ntrusted pin delivery, a worker that treats received content as evidence, and"
+        }
+      ]
+    }
+  ],
+  "limitations": [
+    "Read scope was limited by instruction to the supplied context directory. I inspected its manifest, task, observation and selected source JSON files. This is not a claim of OS sandbox enforcement.",
+    "This report is a fresh static review of the packaged public-documentation selections, separate from the synthetic checkpoint.py demonstration described in the guide. No received code, packaged commands, or media tools were executed; no network or repository lookup was performed.",
+    "The core video pixels and audio were not inspected. Retaining the core video is a recommendation about its supplied description and script; visual accuracy, audio accuracy and whether the published asset matches the script remain unverified.",
+    "The linked artifact-handoff and offline-event-kit guides, complete walkthrough, validation receipts and other linked material were not supplied as selections and were not inspected. Their README routing descriptions agree with the supplied examples table, but underlying implementations and execution results remain unverified.",
+    "The observation is sender-supplied task state, not independent Git, CI or execution evidence. Its recorded in-progress Actions response does not establish successful checks, current branch state or a completed pilot.",
+    "The source commit, context identity, directory key and archive hash were supplied as trusted pins. I copied the source blob hashes from the selection JSON and generated citations from its original line numbers; I did not independently inspect Git blobs, an archive or Casita stores.",
+    "A publishable account of the actual reviewer pilot would additionally need independently checked transport/return evidence, source provenance, an approved disclosure of the visible export and reviewed recording material. None is established by this static report. The recommendations make no claim about internal model memory, execution attestation, model identity, continuation quality, timing, tokens, performance or storage savings."
+  ]
+}

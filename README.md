@@ -1,13 +1,15 @@
 # Casita Context Demo
 
-You want a second opinion on private code. You don't want to share the whole repo.
-Send a reviewer the change and only the source you approve, handle requests for
-missing lines, and check the returned report against that exact evidence.
+Keep exactly the evidence a worker received, then check what comes back.
+For a second opinion on private code, send only the change and source you approve,
+handle requests for missing lines, and verify the report against that evidence.
 This independent example uses Casita to store and move content-addressed graphs;
 it adds explicit source selection, signed pins, context-request binding and
 citation checks. The runnable examples use synthetic or labelled public source.
 
-## Watch the demo
+## Videos
+
+### Selected-source review · 67 seconds
 
 A 67-second overview of the selected-source handoff, missing-helper request,
 approved supplement and checked return.
@@ -15,7 +17,22 @@ approved supplement and checked return.
 https://github.com/user-attachments/assets/c2445e44-54e1-4f15-8fec-114dceb7bcbb
 
 Synthetic source, scripted reviewer, edited output from an executed run, and
-synthetic narration. [Read the transcript](docs/demo-video.md#story-and-narration).
+synthetic narration.
+
+[Read the transcript](docs/demo-video.md#story-and-narration) ·
+[Run this example](docs/complete-demo.md)
+
+### Checkpoint handoff · 56 seconds
+
+Pause a task, preserve its visible state, and give a fresh reviewer the evidence.
+
+https://github.com/user-attachments/assets/17d5742d-156d-4c4b-a456-2bbdeb9a078f
+
+Public MIT source, recorded AI review, edited replay graphics, and synthetic
+narration. The replay runs without an AI account.
+
+[Read the transcript](docs/checkpoint-video.md#story-and-narration) ·
+[Run this example](docs/docs-checkpoint-case.md#replay-without-an-ai-account)
 
 **[Start here: run the complete walkthrough](docs/complete-demo.md).** It covers
 basic transport, a request for an omitted helper, and a recorded public review.
@@ -24,6 +41,15 @@ account, cloud service or Python packages are required. The request example uses
 a scripted reviewer; the public review replays recorded AI reports.
 
 ## When would I use this?
+
+Choose the example closest to your task:
+
+| Your need | Start with | What it demonstrates |
+| --- | --- | --- |
+| Get a review without sharing the whole repository | [Complete walkthrough](docs/complete-demo.md) | Selected source, an explicit missing-context request and checked citations |
+| Recover a previous build output | [Artifact handoff](docs/artifact-handoff.md) | Two synthetic static-site builds restored without rebuilding |
+| Carry a fixed rundown and assets to a venue | [Offline event kit](docs/offline-event-kit.md) | A synthetic kit, local incremental sync and verified snapshot selection |
+| Continue a task from its saved visible state | [Public docs checkpoint pilot](docs/docs-checkpoint-case.md) | One recorded AI review from a pinned public snapshot; replay needs no AI account |
 
 Consider a change to a private pricing calculation. An outside reviewer can see
 the selected diff and source without receiving repository access. If a helper is
@@ -144,7 +170,8 @@ Casita, OpenSSH or an image runtime. No project installation is required.
 | Run the complete core workflow | [Three-stage walkthrough](docs/complete-demo.md) |
 | Restore a previous build output without rebuilding | [Synthetic artifact handoff](docs/artifact-handoff.md) |
 | Freeze a rundown and assets, sync a cue update, and use the venue store | [Synthetic offline event kit](docs/offline-event-kit.md) |
-| Freeze visible task state and verify two continuations against their parent | [AI workflow checkpoint](docs/ai-workflow-checkpoint.md) |
+| Freeze visible task state and verify two scripted continuations against their parent | [Synthetic workflow checkpoint](docs/ai-workflow-checkpoint.md) |
+| See a fresh reviewer continue a public docs task from selected evidence | [Recorded docs checkpoint pilot](docs/docs-checkpoint-case.md) |
 | Understand missing context and explicit approval | [Context requests](docs/context-requests.md) |
 | See an actual reviewer request and recorded reassessment | [Public reviewer case](docs/context-request-case.md) |
 | See a capsule review lead to a landed fix | [Review-to-fix case](docs/review-to-fix.md) |
@@ -152,6 +179,7 @@ Casita, OpenSSH or an image runtime. No project installation is required.
 | Prepare selected source, use a separate worker, or try OCI/Apple Container | [All demonstrations and requirements](docs/examples.md) |
 | Run tests or inspect CI scope | [Development and validation](docs/development.md) |
 | Record a short public demonstration | [Video script and recording guide](docs/demo-video.md) |
+| Watch or reproduce the checkpoint clip | [Checkpoint video and transcript](docs/checkpoint-video.md) |
 
 ## Verification and sharing boundaries
 

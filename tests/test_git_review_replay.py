@@ -1,5 +1,6 @@
 import argparse
 import copy
+import json
 from pathlib import Path
 import tempfile
 import unittest
@@ -38,6 +39,41 @@ class PublicGitReplayChecks(unittest.TestCase):
             with patch.object(replay, "verify_public_source"), self.assertRaises(FileExistsError):
                 replay.run(argparse.Namespace(source=Path(name), output=output))
             self.assertEqual((output / "sentinel").read_text(), "preserve")
+
+    def test_docs_case_rejects_wrong_source_before_creating_artifacts(self):
+        with tempfile.TemporaryDirectory() as name:
+            output = Path(name) / "output"
+            args = argparse.Namespace(case="docs-checkpoint", source=Path(name), output=output)
+            with patch.object(replay.review, "git_blob", return_value=b"not the public docs"), self.assertRaisesRegex(ValueError, "allowlisted public Git blob"):
+                replay.run(args)
+            self.assertFalse(output.exists())
+
+    def test_unknown_case_rejected_before_reading_source_or_creating_artifacts(self):
+        with tempfile.TemporaryDirectory() as name:
+            output = Path(name) / "output"
+            with patch.object(replay.review, "git_blob") as read_source, self.assertRaisesRegex(ValueError, "unknown recorded public case"):
+                replay.run(argparse.Namespace(case="untrusted-case", source=Path(name), output=output))
+            read_source.assert_not_called()
+            self.assertFalse(output.exists())
+
+    def test_substituted_recorded_docs_reports_rejected_before_artifacts_or_keys(self):
+        original = json.loads((Path(replay.__file__).parent / "docs/docs-checkpoint-report.json").read_bytes())
+        for name in ("altered_recommendation", "empty_findings"):
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as name_dir:
+                root = Path(name_dir)
+                changed = copy.deepcopy(original)
+                if name == "empty_findings":
+                    changed["findings"] = []
+                else:
+                    changed["findings"][0]["body"] = "A substituted recommendation."
+                report = root / "substitute.json"
+                report.write_text(json.dumps(changed, indent=2) + "\n")
+                output = root / "run"
+                args = argparse.Namespace(case="docs-checkpoint", source=root, report=report, output=output)
+                with patch.object(replay, "verify_public_source"), patch.object(replay.auth, "make_demo_key") as make_key, self.assertRaisesRegex(ValueError, "recorded public docs review bytes"):
+                    replay.run(args)
+                make_key.assert_not_called()
+                self.assertFalse(output.exists())
 
     def test_failed_replay_removes_throwaway_private_keys(self):
         with tempfile.TemporaryDirectory() as name:

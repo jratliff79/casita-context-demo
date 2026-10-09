@@ -96,6 +96,24 @@ results, malformed inputs, inconsistent progress/responses, links and preserving
 prompts as data. No model runs, received instructions are not executed, and model
 internal state, tool truth and execution are not attested.
 
+## Recorded public docs checkpoint
+
+The [public docs checkpoint pilot](docs-checkpoint-case.md) has a separate
+model-free replay:
+
+```sh
+python3 git_review_replay.py --case docs-checkpoint --source . \
+  --casita "$CASITA_DEMO_BIN" --output output/docs-checkpoint-development
+```
+
+It checks the unchanged recorded AI report against five allowlisted public files
+and saved task state at the original commit. CI uses an immutable source checkout
+and uv, checks signatures and citations, rejects six newly signed invalid returns
+and rejects locally rehashed progress against the original pin. It does not invoke
+a fresh reviewer or verify the quality of its recommendations. Unit tests reject
+an unknown case, wrong source bytes and substituted recorded reports before
+creating artifacts or signing keys.
+
 ## Optional native Git API example
 
 The [standalone Rust example](../examples/native-git/README.md) has its own source

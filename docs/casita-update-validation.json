@@ -1,4 +1,23 @@
 {
+  "artifacts": {
+    "build_provenance_attested": false,
+    "execution_attested": false,
+    "integrity_audits_passed": true,
+    "local_build_count": 2,
+    "negative_controls": {
+      "altered_output": true,
+      "extra_file": true,
+      "rebound_build_inputs": true,
+      "wrong_archive_pin_before_import": true,
+      "wrong_version": true
+    },
+    "ok": true,
+    "original_sources_and_builds_removed": true,
+    "received_code_executed": false,
+    "receiver_rebuilt": false,
+    "rollback_verified": true,
+    "synthetic": true
+  },
   "basic": {
     "negative_controls": {
       "altered_result_rejected": true,
@@ -23,53 +42,178 @@
   },
   "builds": {
     "default": {
-      "binary_sha256": "1da17c78c1771674769c14470cefe98993043821f0c933fe0d2127ebff45f045",
+      "binary_sha256": "0263005cde1c7bb6a7a7c340381987dfe765e5a272403c6e458d10dab4df3a2a",
       "casita_version": "casita 0.1.0",
-      "locked": true
+      "features": "default",
+      "locked": true,
+      "profile": "dev"
     },
     "oci": {
-      "binary_sha256": "304e29f6d365b1403592c69fccb2726af14783c4bdf9452bf6e3f67db95d34eb",
+      "binary_sha256": "984d7a06372202e2994d77f11d487f73980c741e2c1c0157ed33e1326f092dce",
       "casita_version": "casita 0.1.0",
-      "locked": true
+      "features": "default,oci",
+      "locked": true,
+      "profile": "dev"
     }
   },
-  "casita_commit": "84ec2920791276cd4ad8c029cd60529810e15705",
+  "casita_commit": "1407672f4b235609ae7fff0f87a30e06183f941f",
   "casita_repository": "https://github.com/cachix/casita",
-  "checked_on": "2026-10-05",
-  "demo_base_commit": "34d1e71d3cb565b126fc115bc9ab1b9728087c23",
+  "checked_on": "2026-10-08",
+  "checkpoint": {
+    "branch_choices": {
+      "economy": "park",
+      "full-day": "museum"
+    },
+    "execution_attested": false,
+    "fresh_ai_run": false,
+    "integrity_audits_passed": true,
+    "model_internal_state_restored": false,
+    "negative_controls": {
+      "altered_prompt": true,
+      "missing_tool_response": true,
+      "mixed_progress": true,
+      "rebound_choice": true,
+      "rebound_parent_checkpoint_id": true,
+      "rebound_parent_directory_key": true,
+      "stale_parent_result": true,
+      "swapped_branch": true,
+      "wrong_archive_pin": true
+    },
+    "network_isolation_enforced": false,
+    "ok": true,
+    "original_checkpoints_removed": true,
+    "received_instructions_executed": false,
+    "returned_parent_and_results_verified": true,
+    "scripted_continuations": true,
+    "sender_path_unavailable": true,
+    "synthetic": true,
+    "visible_checkpoint_restored": true
+  },
+  "demo_base_commit": "415ee719c022f50e315706b1f16867f4aec7bf12",
   "dependency_refresh": {
     "dependency_sources_changed": false,
     "generated_with": "Cargo 1.98.1",
+    "new_sources": [],
+    "removed_sources": [],
     "version_changes": {
-      "ctutils": {
-        "from": "0.4.2",
-        "to": "0.4.3"
+      "either": {
+        "from": [
+          "1.18.0"
+        ],
+        "to": [
+          "1.19.0"
+        ]
       },
-      "objc2": {
-        "from": "0.6.4",
-        "to": "0.6.5"
+      "h2": {
+        "from": [
+          "0.3.27",
+          "0.4.19"
+        ],
+        "to": [
+          "0.3.27",
+          "0.4.20"
+        ]
       },
-      "powerfmt": {
-        "from": "0.2.0",
-        "to": "0.2.1"
+      "hyper": {
+        "from": [
+          "0.14.32",
+          "1.11.1"
+        ],
+        "to": [
+          "0.14.32",
+          "1.12.0"
+        ]
       },
-      "unicase": {
-        "from": "2.9.0",
-        "to": "2.10.0"
+      "jiff": {
+        "from": [
+          "0.2.37"
+        ],
+        "to": [
+          "0.2.38"
+        ]
       },
-      "want": {
-        "from": "0.3.1",
-        "to": "0.3.2"
+      "jiff-static": {
+        "from": [
+          "0.2.37"
+        ],
+        "to": [
+          "0.2.38"
+        ]
+      },
+      "jiff-tzdb": {
+        "from": [
+          "0.1.8"
+        ],
+        "to": [
+          "0.1.9"
+        ]
+      },
+      "serde_spanned": {
+        "from": [
+          "1.1.1"
+        ],
+        "to": [
+          "1.1.2"
+        ]
+      },
+      "toml_parser": {
+        "from": [
+          "1.1.3+spec-1.1.0"
+        ],
+        "to": [
+          "1.1.4+spec-1.1.0"
+        ]
       },
       "zerocopy": {
-        "from": "0.8.59",
-        "to": "0.8.60"
+        "from": [
+          "0.8.60"
+        ],
+        "to": [
+          "0.8.62"
+        ]
       },
       "zerocopy-derive": {
-        "from": "0.8.59",
-        "to": "0.8.60"
+        "from": [
+          "0.8.60"
+        ],
+        "to": [
+          "0.8.62"
+        ]
+      },
+      "zeroize": {
+        "from": [
+          "1.9.0"
+        ],
+        "to": [
+          "1.9.1"
+        ]
       }
     }
+  },
+  "event_kit": {
+    "eventools_integration": false,
+    "execution_attested": false,
+    "media_played": false,
+    "negative_controls": {
+      "altered_asset": true,
+      "missing_asset": true,
+      "mixed_rundown": true,
+      "rebound_event_metadata": true,
+      "stale_snapshot_before_selection": true
+    },
+    "network_isolation_enforced": false,
+    "ok": true,
+    "old_selection_preserved_until_verified_update": true,
+    "received_code_executed": false,
+    "sender_path_unavailable": true,
+    "sync_payloads_sent": {
+      "v1": 6,
+      "v2": 3
+    },
+    "synthetic": true,
+    "venue_integrity_audit_passed": true,
+    "venue_only_restoration_verified": true,
+    "welcome_time": "18:15"
   },
   "helper_request": {
     "citations_verified": true,
@@ -96,7 +240,17 @@
     "python": "3.12.14",
     "system": "Darwin"
   },
-  "lockfile_sha256": "6d53fd6e7d4836f70c740024695f3d11a106e71f074157b442da08194e2673f3",
+  "lockfile_sha256": "7d9a1ca9c55b9db83d244bbb92c66bca306f8a45f28c6733988b1d46868ca53b",
+  "native_git": {
+    "casita_commit": "1407672f4b235609ae7fff0f87a30e06183f941f",
+    "checks_passed": 10,
+    "named_tree_retained": true,
+    "publisher_process_exit": true,
+    "source_removed_before_readback": true,
+    "unit_tests_passed": 6,
+    "unrooted_control_collected": true
+  },
+  "native_git_lockfile_sha256": "d90ac9181cc0e46d60b28379e9c014ed79f8a989200c6855652d3196c889dfc8",
   "oci_environment": {
     "execution_attested": false,
     "image": {
@@ -118,6 +272,7 @@
     "worker_executed_in_container": false,
     "wrong_image_pin_rejected_before_runtime": true
   },
+  "previous_validation": "casita-20261005-validation.json",
   "recorded_request": {
     "base_commit": "23bae1883cfa6cbaa696e4408f15ef268fff503c",
     "citations_verified": true,
@@ -142,9 +297,15 @@
   },
   "rust_toolchain": "1.94.1",
   "schema": "casita-context-demo.casita-update-validation.v1",
-  "scope": "Local locked builds, synthetic context/result and signed helper-request transport, recorded MIT public-source report replay, and pinned public OCI layout transport with a trusted host checker. Historical Apple Container and AI review receipts remain separate.",
+  "scope": "Local locked default and OCI builds; synthetic transport, signed helper-request and recorded MIT source replay; artifact rollback, offline event kit and visible checkpoints; native Git restart/retention and upstream bounded metadata tests. OCI transport uses a trusted host checker; historical Apple Container execution and fresh AI reviews remain separate. No performance benchmark.",
   "unit_tests": {
-    "passed": 139,
+    "passed": 174,
     "python": "3.12.14"
+  },
+  "upstream_metadata_tests": {
+    "features": "default,experimental",
+    "passed": 4,
+    "performance_measured": false,
+    "test_target": "metadata_buffers"
   }
 }

@@ -74,7 +74,7 @@ From the demo root, build the default CLI with CI's source and dependency pins:
 
 ```sh
 git clone https://github.com/cachix/casita.git output/casita-source
-git -C output/casita-source checkout 84ec2920791276cd4ad8c029cd60529810e15705
+git -C output/casita-source checkout 1407672f4b235609ae7fff0f87a30e06183f941f
 cp ci/Cargo.lock output/casita-source/Cargo.lock
 cargo build --locked --package casita --bin casita \
   --manifest-path output/casita-source/Cargo.toml \
@@ -88,17 +88,20 @@ uses the same locked dependency snapshot but is not an identical build. See the
 [dependency snapshot](ci/README.md) for details. The optional image demo needs an
 OCI-enabled build, documented in its own guide.
 
-Casita source `84ec2920791276cd4ad8c029cd60529810e15705` was upstream `main` when
-checked on 2026-10-05. It is an immutable tested snapshot, not a claim of current
+Casita source `1407672f4b235609ae7fff0f87a30e06183f941f` was upstream `main` when
+checked on 2026-10-08. It is an immutable tested snapshot, not a claim of current
 latest upstream. Casita is pre-release and its CLI may change. Keep this pin when
 reproducing these examples. If you already have that build, set
 `CASITA_DEMO_BIN` to its executable path instead.
 
 The [current-pin validation](docs/casita-update-validation.json) records locked
-default and OCI builds with Rust 1.94.1, core handoff and request replays, and
-OCI transport with a trusted host checker. It does not repeat the historical
-Apple Container trial or perform a fresh AI review. Older receipts keep their
-original source pins.
+default and OCI builds with Rust 1.94.1, core handoff and request replays,
+artifact/event-kit/checkpoint demos, native Git checks, bounded metadata tests,
+and OCI transport with a trusted host checker. It does not repeat the historical
+Apple Container trial or perform a fresh AI review of the transported evidence.
+The [previous pin receipt](docs/casita-20261005-validation.json) and older receipts
+keep their original source pins. These correctness checks do not measure the
+performance improvement reported upstream.
 
 ## Run it
 

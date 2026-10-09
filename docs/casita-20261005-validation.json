@@ -1,0 +1,150 @@
+{
+  "basic": {
+    "negative_controls": {
+      "altered_result_rejected": true,
+      "rebound_result_rejected": true,
+      "result_for_other_context_rejected": true
+    },
+    "ok": true,
+    "synthetic_fixture": true,
+    "tampered_context_rejected": true,
+    "verdicts": {
+      "v1": "rejected: source or output audio timing unavailable",
+      "v2": "accepted"
+    }
+  },
+  "boundaries": {
+    "container_execution": false,
+    "execution_attested": false,
+    "fresh_ai_review": false,
+    "performance_measured": false,
+    "received_code_executed": false,
+    "review_quality_verified": false
+  },
+  "builds": {
+    "default": {
+      "binary_sha256": "1da17c78c1771674769c14470cefe98993043821f0c933fe0d2127ebff45f045",
+      "casita_version": "casita 0.1.0",
+      "locked": true
+    },
+    "oci": {
+      "binary_sha256": "304e29f6d365b1403592c69fccb2726af14783c4bdf9452bf6e3f67db95d34eb",
+      "casita_version": "casita 0.1.0",
+      "locked": true
+    }
+  },
+  "casita_commit": "84ec2920791276cd4ad8c029cd60529810e15705",
+  "casita_repository": "https://github.com/cachix/casita",
+  "checked_on": "2026-10-05",
+  "demo_base_commit": "34d1e71d3cb565b126fc115bc9ab1b9728087c23",
+  "dependency_refresh": {
+    "dependency_sources_changed": false,
+    "generated_with": "Cargo 1.98.1",
+    "version_changes": {
+      "ctutils": {
+        "from": "0.4.2",
+        "to": "0.4.3"
+      },
+      "objc2": {
+        "from": "0.6.4",
+        "to": "0.6.5"
+      },
+      "powerfmt": {
+        "from": "0.2.0",
+        "to": "0.2.1"
+      },
+      "unicase": {
+        "from": "2.9.0",
+        "to": "2.10.0"
+      },
+      "want": {
+        "from": "0.3.1",
+        "to": "0.3.2"
+      },
+      "zerocopy": {
+        "from": "0.8.59",
+        "to": "0.8.60"
+      },
+      "zerocopy-derive": {
+        "from": "0.8.59",
+        "to": "0.8.60"
+      }
+    }
+  },
+  "helper_request": {
+    "citations_verified": true,
+    "helpers_only_supplement": true,
+    "input_signatures_verified": true,
+    "negative_controls": {
+      "signed_invented_source": true,
+      "signed_report_for_other_context": true,
+      "signed_wrong_parent": true,
+      "unapproved_source": true,
+      "wrong_context_directory_key": true,
+      "wrong_context_id": true,
+      "wrong_head_commit": true
+    },
+    "ok": true,
+    "only_approved_helper_source": true,
+    "returned_reports_verified": true,
+    "supplement_selected_line_count": 12,
+    "synthetic_fixture": true,
+    "throwaway_private_keys_removed": true
+  },
+  "host": {
+    "machine": "arm64",
+    "python": "3.12.14",
+    "system": "Darwin"
+  },
+  "lockfile_sha256": "6d53fd6e7d4836f70c740024695f3d11a106e71f074157b442da08194e2673f3",
+  "oci_environment": {
+    "execution_attested": false,
+    "image": {
+      "config_digest": "sha256:8614a50e05881ad79bcf2d4f82028b65a463c03d2d666d255a4332e3d2a0c0ba",
+      "manifest_digest": "sha256:9b8dad7f66b5c7751df6cb7a64a07812e86bed85d0116efe82b3a11209f1440d",
+      "platform": "linux/amd64",
+      "reference": "docker.io/library/python@sha256:9b8dad7f66b5c7751df6cb7a64a07812e86bed85d0116efe82b3a11209f1440d"
+    },
+    "image_layout_verified": true,
+    "ok": true,
+    "original_contexts_verified": true,
+    "received_checker_executed": false,
+    "runtime": "none",
+    "runtime_commands": [],
+    "verdicts": {
+      "v1": "rejected: source or output audio timing unavailable",
+      "v2": "accepted"
+    },
+    "worker_executed_in_container": false,
+    "wrong_image_pin_rejected_before_runtime": true
+  },
+  "recorded_request": {
+    "base_commit": "23bae1883cfa6cbaa696e4408f15ef268fff503c",
+    "citations_verified": true,
+    "head_commit": "133459e56fce11e93358a6f1b9b1b9cff9985a5b",
+    "input_signatures_verified": true,
+    "negative_controls": {
+      "signed_report_for_other_context": true,
+      "unapproved_source": true,
+      "wrong_base_commit": true,
+      "wrong_context_directory_key": true,
+      "wrong_context_id": true,
+      "wrong_head_commit": true
+    },
+    "ok": true,
+    "original_git_verified": true,
+    "public_source_snapshot": true,
+    "recorded_ai_reports": true,
+    "returned_signatures_verified": true,
+    "source_license": "MIT",
+    "source_repository": "https://github.com/jratliff79/casita-context-demo",
+    "throwaway_private_keys_removed": true
+  },
+  "rust_toolchain": "1.94.1",
+  "schema": "casita-context-demo.casita-update-validation.v1",
+  "scope": "Local locked builds, synthetic context/result and signed helper-request transport, recorded MIT public-source report replay, and pinned public OCI layout transport with a trusted host checker. Historical Apple Container and AI review receipts remain separate.",
+  "unit_tests": {
+    "passed": 139,
+    "python": "3.12.14"
+  }
+}

@@ -43,7 +43,7 @@ stay in ignored `output/`.
 The manifest enables Casita's `git` and `experimental` features explicitly, with
 default CLI features disabled. It pins the same immutable Casita revision as the
 [tested CLI build](../../README.md#tested-casita-build):
-`84ec2920791276cd4ad8c029cd60529810e15705`. Its own committed `Cargo.lock` freezes
+`1407672f4b235609ae7fff0f87a30e06183f941f`. Its own committed `Cargo.lock` freezes
 the standalone application's dependency graph. The backend APIs under
 `casita::experimental` can change; this sample is tied to that revision.
 

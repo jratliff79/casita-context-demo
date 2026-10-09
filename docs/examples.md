@@ -11,6 +11,7 @@ All host Python commands use the [shared prerequisites](../README.md#prerequisit
 | Freeze a synthetic event kit, incrementally sync a cue update and select its verified snapshot | [Offline event kit](offline-event-kit.md) | Default Casita CLI; local sync, no Eventools account or real event data |
 | Freeze visible task state and return two parent-bound scripted continuations | [AI workflow checkpoint](ai-workflow-checkpoint.md) | Default Casita CLI; synthetic task, no AI account or live model |
 | Replay a fresh public-docs reviewer handoff with saved task state | [Docs checkpoint pilot](docs-checkpoint-case.md) | Default Casita CLI, OpenSSH and Git with the pinned public commit; recorded report, no AI account |
+| Share a task and select one of two proposed team knowledge updates | [Teammate handoff](teammate-handoff.md) | Default Casita CLI; scripted teammates, explicit selection, no AI account |
 | Separate sender, worker and return-verifier processes | [Portable worker guide](portable-worker.md) | Default Casita CLI on each side |
 | Signed input and result pins with pre-import rejection checks | [Signed handoff guide](signed-handoff.md) | Default Casita CLI and OpenSSH `ssh-keygen -Y` on macOS or Linux |
 | Public source capsule and signed AI review findings | [Review capsule guide](review-capsule.md) | Default Casita CLI, OpenSSH, Git and the pinned public source commit |

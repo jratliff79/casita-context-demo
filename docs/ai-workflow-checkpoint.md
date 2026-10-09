@@ -7,6 +7,10 @@ This example packages that visible state in Casita and binds returned work to
 its parent checkpoint. It uses a synthetic task and fixed local Python policy;
 it does not call an AI model or restore a model's internal memory.
 
+For shared project knowledge, the [teammate handoff](teammate-handoff.md) keeps
+returned advice as competing proposals until an explicit owner selection creates
+a new snapshot. Each teammate uses a separate local store.
+
 For a bounded use with a fresh AI worker, see the
 [public documentation checkpoint pilot](docs-checkpoint-case.md). That case uses
 the existing signed Git-review protocol to carry public docs and visible task

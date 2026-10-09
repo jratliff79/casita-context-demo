@@ -315,6 +315,7 @@ jobs:
           from pathlib import Path
           from demo import file_map
           from team_handoff import STATEMENTS, entry, verify_proposal, verify_snapshot
+          from team_handoff_summary import summarize
 
           for selected in ("bob", "carol"):
               root = Path(f"output/teammate-{selected}")
@@ -353,6 +354,13 @@ jobs:
               assert manifest["parent_snapshot_id"] == receipt["input_pin"]["snapshot_id"]
               assert manifest["decision"] == receipt["decision"]
               assert manifest["decision"]["proposal_id"] == receipt["proposal_pins"][selected]["proposal_id"]
+              summary = summarize(root)
+              assert summary["knowledge"] == [entry(STATEMENTS[selected])]
+              assert summary["selected_proposer"] == selected
+              assert summary["selected_proposal_id"] == receipt["proposal_pins"][selected]["proposal_id"]
+              assert summary["pending"] == ["test-in-a-real-workflow"]
+              assert len(summary["proposals"]) == 2
+              assert [p["proposer"] for p in summary["proposals"] if p["status"] == "selected"] == [selected]
           print("PASS: both explicit owner selections, retained competing advice and exact source/parent bindings")
           PY
       - name: Run separate sender, worker and return-verifier processes

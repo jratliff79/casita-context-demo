@@ -77,7 +77,26 @@ proposal the team should adopt.
    The unselected proposal needs a new review against current context before a
    future update; it cannot silently overwrite the selected knowledge.
 
-Inspect the example's result:
+See the selected knowledge, both retained proposals and unfinished work in one
+view:
+
+```sh
+python3 team_handoff_summary.py --run output/my-teammate-handoff | python3 -m json.tool
+```
+
+This read-only command needs Python 3.9+ and the demo scripts, with no Casita
+process or AI account. It validates the original and selected snapshots, both
+source-cited proposals and the recorded decision before printing. The selected
+entry must match the exact proposal named by that decision. It refuses altered
+evidence or links, writes no files and does not execute received text. The
+unselected proposal remains advice that needs a fresh review.
+
+Expected pins come from the trusted local run's `receipt.json`. The summary does
+not authenticate that unsigned receipt or the scripted owner choice. Replacing
+the entire run and its pins is outside these integrity checks; use the signed
+protocol and independent signer trust when sharing real evidence.
+
+Inspect the underlying files when needed:
 
 ```sh
 python3 -m json.tool output/my-teammate-handoff/owner/context-v2/knowledge.json

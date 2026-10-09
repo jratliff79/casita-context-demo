@@ -29,6 +29,9 @@ blobs and freezes a context copy. Each line gets its original number and exact
 text, including whitespace. Unselected files and dirty checkout changes are
 excluded. Observations remain sender-supplied data. No inference is invoked.
 Preview the entire request and retain its SHA256 independently before sending.
+Signature and hash checks verify integrity, not whether content is safe to share.
+Review selected source, the task, source label and optional observations for
+secrets or private information; this adapter does not redact them automatically.
 
 ## Opt in to inference
 
@@ -37,8 +40,13 @@ Set `HALO_SSH_HOST` and `HALO_RUNTIME_PORT` to your verified SSH alias and port,
 then run this in a separate terminal:
 
 ```sh
-ssh -N -L "18080:127.0.0.1:$HALO_RUNTIME_PORT" "$HALO_SSH_HOST"
+ssh -N -o ExitOnForwardFailure=yes \
+  -L "127.0.0.1:18080:127.0.0.1:$HALO_RUNTIME_PORT" "$HALO_SSH_HOST"
 ```
+
+The explicit local bind keeps this forward on loopback even when SSH's
+`GatewayPorts` setting permits other interfaces. It does not create a public
+listener; other processes on the Mac can still reach the local port.
 
 Check the runtime's actual chat path: the example uses Lemonade's
 `/api/v1/chat/completions`; a directly forwarded backend may use

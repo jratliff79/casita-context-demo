@@ -2,6 +2,7 @@
 """Exchange bounded planning proposals from a fixed synthetic capsule, as data."""
 import argparse
 import copy
+import os
 from pathlib import Path
 import re
 import shutil
@@ -317,6 +318,7 @@ def main():
     request.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     try:
+        os.umask(0o077)
         if args.mode != "request":
             binary = shutil.which(args.casita)
             if not binary:

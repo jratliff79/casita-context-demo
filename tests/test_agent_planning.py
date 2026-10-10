@@ -1,4 +1,7 @@
 import copy
+import stat
+import subprocess
+import sys
 from pathlib import Path
 import tempfile
 from types import SimpleNamespace
@@ -19,6 +22,44 @@ class PlanningChecks(unittest.TestCase):
 
     def reply(self, kind="propose", plan=None):
         return planning.scripted_reply(self.state, kind, plan or self.plan, "Synthetic planning rationale")
+
+    def cli(self, *args):
+        # Only Casita transport is stubbed; main, parsing and artifact writes are real.
+        launcher = ("import os, sys; os.umask(0o022); script=sys.argv.pop(1); "
+                    "sys.path.insert(0, os.path.dirname(script)); import agent_planning as p; "
+                    "p.transport=lambda *args: None; sys.exit(p.main())")
+        return subprocess.run([sys.executable, "-c", launcher, str(Path(planning.__file__).resolve()),
+                               *map(str, args)], cwd=self.root, capture_output=True, text=True, timeout=15)
+
+    def assert_private(self, folder):
+        for path in [folder, *folder.rglob("*")]:
+            self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o700 if path.is_dir() else 0o600, str(path))
+
+    def test_cli_artifacts_and_rejected_replies_are_private_under_umask_0022(self):
+        result = self.cli("start", "--casita", sys.executable, "--output", "output/private-start")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        start = self.root / "output/private-start"
+        self.assert_private(start)
+        result = self.cli("request", "--bundle", start / "bundle", "--state-sha256", planning.state_id(self.state),
+                          "--model", "synthetic-no-inference", "--output", "output/private-request")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        request = self.root / "output/private-request"
+        self.assert_private(request)
+        expected = (request / "request-sha256.txt").read_text().strip()
+        for name, valid in (("valid", True), ("rejected", False)):
+            response = self.root / f"{name}.json"
+            reply = self.reply()
+            if not valid:
+                reply["parent_state_id"] = "0" * 64
+            response.write_bytes(canonical(reply))
+            result = self.cli("reply", "--casita", sys.executable, "--request", request,
+                              "--request-sha256", expected, "--response", response,
+                              "--output", f"output/private-{name}")
+            self.assertEqual(result.returncode, 0 if valid else 1, result.stderr)
+            folder = self.root / f"output/private-{name}"
+            self.assert_private(folder)
+            self.assertEqual((folder / "raw-response.json").read_bytes(), response.read_bytes())
+            self.assertEqual((folder / "bundle").exists(), valid)
 
     def agree(self):
         self.state = planning.advance(self.state, self.reply("agree"))

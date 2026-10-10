@@ -99,3 +99,7 @@ This first version accepts only its fixed synthetic capsule. Keep requests,
 responses, stores and receipts under ignored `output/`; do not publish them by
 default. Review the resulting plan through an ordinary human decision or PR
 before granting any execution authority.
+
+The CLI applies umask `0077` before creating artifacts: new directories are
+owner-only (`0700`) and new files are owner-only (`0600`), including rejected
+responses. Existing artifacts keep their prior permissions.

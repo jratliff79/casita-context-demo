@@ -12,10 +12,16 @@ import shutil
 import stat
 import subprocess
 import sys
+import tempfile
 import time
 import uuid
 
 MAX_INPUT = 32_000
+# The relay snapshot is bounded at 400,000 bytes; task selection adds pin/envelope metadata.
+MAX_RECEIPT = 405_000
+CLIENT_BOOTSTRAP = ("import runpy,sys; source=sys.argv.pop(1); "
+                    "sys.path.append(source); runpy.run_path(source + '/context_relay.py', "
+                    "run_name='__main__')")
 
 
 class Unavailable(Exception):
@@ -27,11 +33,11 @@ def require(ok):
         raise Unavailable()
 
 
-def private_json(path):
+def private_json(path, limit=MAX_INPUT):
     path = Path(path)
     mode = path.lstat()
     require(stat.S_ISREG(mode.st_mode) and mode.st_uid == os.getuid()
-            and not mode.st_mode & 0o077 and mode.st_size <= MAX_INPUT)
+            and not mode.st_mode & 0o077 and mode.st_size <= limit)
     return json.loads(path.read_text())
 
 
@@ -40,14 +46,14 @@ def absolute(value):
     return Path(value)
 
 
-def run(argv, deadline, check=True, cwd=None):
+def run(argv, deadline, check=True, cwd=None, text=True):
     remaining = deadline - time.monotonic()
     require(remaining > 0)
     # Ignore ambient Git overrides. Never forward hook input or transcripts to a command.
     env = {k: v for k, v in os.environ.items()
            if not k.startswith("GIT_") and k not in ("PYTHONPATH", "PYTHONHOME")}
     result = subprocess.run(argv, cwd=cwd, env=env, capture_output=True,
-                            text=True, timeout=min(remaining, 20))
+                            text=text, timeout=min(remaining, 20))
     if check:
         require(result.returncode == 0)
     return result
@@ -55,12 +61,70 @@ def run(argv, deadline, check=True, cwd=None):
 
 def git(cwd, deadline, *args):
     return run(["git", "-c", "core.fsmonitor=false", "-C", str(cwd), *args],
-               deadline).stdout.strip()
+               deadline).stdout.rstrip("\n")
 
 
 def common_dir(cwd, deadline):
     value = Path(git(cwd, deadline, "rev-parse", "--git-common-dir"))
     return (Path(cwd) / value).resolve() if not value.is_absolute() else value.resolve()
+
+
+def enrolled_repository(cwd, allowed, deadline):
+    common = common_dir(cwd, deadline)
+    if common not in allowed:
+        return False
+    top = Path(git(cwd, deadline, "rev-parse", "--show-toplevel")).resolve()
+    try:
+        Path(cwd).resolve().relative_to(top)
+    except ValueError:
+        return False
+    # Query the enrolled common directory, not a possibly forged .git indirection.
+    inventory = git(common, deadline, "--git-dir", str(common),
+                    "worktree", "list", "--porcelain", "-z")
+    for record in inventory.split("\0\0"):
+        fields = record.split("\0")
+        if fields[0].startswith("worktree ") and "bare" not in fields and not any(
+                f == "prunable" or f.startswith("prunable ") for f in fields):
+            if Path(fields[0][9:]).resolve() == top:
+                return True
+    return False
+
+
+@contextmanager
+def reviewed_client(source, revision, root, deadline):
+    # Export regular top-level Python blobs and the client's import-time fixture.
+    # Working files, ignored bytecode, packages and symlinks never enter the import path.
+    tree = git(source, deadline, "ls-tree", "-r", "-z", revision)
+    with tempfile.TemporaryDirectory(prefix="reviewed-client-", dir=root) as folder:
+        stage = Path(folder)
+        names = set()
+        total = 0
+        for entry in tree.split("\0"):
+            if not entry:
+                continue
+            metadata, name = entry.split("\t", 1)
+            if (not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*\.py", name)
+                    and name != "fixtures/review-source.json"):
+                continue
+            mode, kind, oid = metadata.split()
+            require(mode in ("100644", "100755") and kind == "blob"
+                    and re.fullmatch(r"[0-9a-f]{40}", oid))
+            raw = run(["git", "-C", str(source), "cat-file", "blob", oid],
+                      deadline, text=False).stdout
+            total += len(raw)
+            require(total <= 4_000_000)
+            require(hashlib.sha1(b"blob " + str(len(raw)).encode() + b"\0" + raw).hexdigest() == oid)
+            (stage / name).parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+            (stage / name).write_bytes(raw)
+            (stage / name).chmod(0o600)
+            names.add(name)
+        require("context_relay.py" in names)
+        yield stage
+
+
+def client_command(stage):
+    # No cwd, site customization, PYTHON* overrides or bytecode from the original checkout.
+    return [sys.executable, "-I", "-S", "-B", "-c", CLIENT_BOOTSTRAP, str(stage)]
 
 
 def hook_output(message, context="", unavailable=False):
@@ -104,13 +168,12 @@ def consult(event, config_path):
     allowed = settings.get("repositories")
     require(isinstance(allowed, list) and 1 <= len(allowed) <= 20)
     allowed = [absolute(value).resolve() for value in allowed]
-    # Match the private Git common directory, including worktrees and subdirectories.
-    # A lookalike repository with the same remote cannot opt itself into private context.
+    # Require both the enrolled common directory and its registered worktree top level.
     try:
-        current = common_dir(event["cwd"], deadline)
+        enrolled = enrolled_repository(event["cwd"], allowed, deadline)
     except (Unavailable, subprocess.TimeoutExpired, OSError):
         return {}
-    if current not in allowed:
+    if not enrolled:
         return {}
 
     output = None
@@ -145,15 +208,19 @@ def consult(event, config_path):
                 ready = run(ssh + ["-O", "check", alias], deadline, check=False)
                 if ready.returncode:
                     run(ssh + ["-fN", "-M", "-L", "127.0.0.1:8765:127.0.0.1:8765", alias], deadline)
+                else:
+                    # An alive master is insufficient. OpenSSH accepts an identical active
+                    # forward, but rejects a new bind when another process owns the port.
+                    run(ssh + ["-O", "forward", "-L", "127.0.0.1:8765:127.0.0.1:8765", alias], deadline)
         session = event.get("session_id")
         require(isinstance(session, str) and 0 < len(session) <= 256)
         task = "codex-" + hashlib.sha256(session.encode()).hexdigest()[:32]
         output = root / uuid.uuid4().hex
-        run([sys.executable, str(source / "context_relay.py"), "consult",
-             "--url", "http://127.0.0.1:8765", "--task", task,
-             "--credential", str(credential), "--casita", str(casita), "--output", str(output)],
-            deadline, cwd=source)
-        receipt = private_json(output / "task-start.json")
+        with reviewed_client(source, revision, root, deadline) as stage:
+            run(client_command(stage) + ["consult", "--url", "http://127.0.0.1:8765", "--task", task,
+                 "--credential", str(credential), "--casita", str(casita), "--output", str(output)],
+                deadline, cwd=stage)
+        receipt = private_json(output / "task-start.json", limit=MAX_RECEIPT)
         pin = private_json(output / "verified-pin.json")
         require(isinstance(receipt, dict) and isinstance(pin, dict))
         require(receipt.get("schema") == "casita-task-start.v1" and receipt.get("pin") == pin

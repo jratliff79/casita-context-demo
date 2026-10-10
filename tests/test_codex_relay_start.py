@@ -2,6 +2,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -38,6 +39,10 @@ class StartupTests(unittest.TestCase):
         self.failure = False
         self.bad_receipt = False
         self.ssh_ready = True
+        self.forward_failure = False
+        self.client_blob = b"print('synthetic client')\n"
+        self.client_oid = startup.hashlib.sha1(b"blob " + str(len(self.client_blob)).encode()
+                                              + b"\0" + self.client_blob).hexdigest()
 
     @staticmethod
     def write_private(path, value):
@@ -47,17 +52,30 @@ class StartupTests(unittest.TestCase):
     def fake_git(self, cwd, deadline, *args):
         if args == ("rev-parse", "--git-common-dir"):
             return str(self.root / ".git")
+        if args == ("rev-parse", "--show-toplevel"):
+            return str(self.root / "worktree") if "worktree" in str(cwd) else str(self.root)
+        if args[-4:] == ("worktree", "list", "--porcelain", "-z"):
+            return "worktree " + str(self.root) + "\0HEAD synthetic\0\0worktree " + str(self.root / "worktree") + "\0HEAD synthetic\0\0"
         if args == ("rev-parse", "HEAD"):
             return "a" * 40
         if args == ("status", "--porcelain", "--untracked-files=normal"):
             return ""
+        if args == ("ls-tree", "-r", "-z", "a" * 40):
+            return "100644 blob " + self.client_oid + "\tcontext_relay.py\0"
         self.fail("unexpected Git command")
 
-    def fake_run(self, argv, deadline, check=True, cwd=None):
+    def fake_run(self, argv, deadline, check=True, cwd=None, text=True):
+        if "cat-file" in argv:
+            return subprocess.CompletedProcess(argv, 0, self.client_blob, b"")
         self.commands.append(argv)
         if argv[0] == "ssh":
+            if "forward" in argv and self.forward_failure:
+                raise startup.Unavailable()
             return subprocess.CompletedProcess(argv, 0 if self.ssh_ready or "check" not in argv else 1, "", "")
-        self.assertEqual(argv[2], "consult")
+        self.assertEqual(argv[1:5], ["-I", "-S", "-B", "-c"])
+        self.assertIn("consult", argv)
+        self.assertNotEqual(cwd, self.source)
+        self.assertEqual((cwd / "context_relay.py").read_bytes(), self.client_blob)
         output = Path(argv[argv.index("--output") + 1])
         output.mkdir(mode=0o700)
         self.outputs.append(output)
@@ -139,7 +157,10 @@ class StartupTests(unittest.TestCase):
         self.settings["ssh"] = {"config": str(self.root / "ssh-config"),
                                 "socket": str(self.root / "tunnel.sock"), "alias": "synthetic-relay"}
         self.invoke()
-        self.assertEqual(len([c for c in self.commands if c[0] == "ssh"]), 1)
+        ssh_commands = [c for c in self.commands if c[0] == "ssh"]
+        self.assertEqual(len(ssh_commands), 2)
+        self.assertIn("forward", ssh_commands[1])
+        self.assertIn("127.0.0.1:8765:127.0.0.1:8765", ssh_commands[1])
         self.ssh_ready = False
         self.commands.clear()
         self.invoke()
@@ -149,6 +170,24 @@ class StartupTests(unittest.TestCase):
         self.assertIn("StrictHostKeyChecking=yes", commands[1])
         self.assertIn("ExitOnForwardFailure=yes", commands[1])
         self.assertIn("127.0.0.1:8765:127.0.0.1:8765", commands[1])
+
+    def test_existing_master_without_available_exact_forward_never_receives_credential(self):
+        self.settings["ssh"] = {"config": str(self.root / "ssh-config"),
+                                "socket": str(self.root / "tunnel.sock"), "alias": "synthetic-relay"}
+        self.forward_failure = True
+        self.assertIn("unavailable", self.invoke()["systemMessage"])
+        self.assertEqual(len(self.commands), 2)
+        self.assertTrue(all(c[0] == "ssh" and "--credential" not in c for c in self.commands))
+        self.assertEqual(self.outputs, [])
+
+    def test_valid_large_memory_receipt_is_accepted_but_oversized_receipt_is_removed(self):
+        self.memory = [{"scope": "workspace", "statement": "s" * 1000,
+                        "citation": {"excerpt": ["synthetic evidence"]}} for _ in range(50)]
+        self.assertIn("50 accepted memory", self.invoke()["systemMessage"])
+        self.assertGreater((self.outputs[-1] / "task-start.json").stat().st_size, startup.MAX_INPUT)
+        self.memory = [{"statement": "s" * startup.MAX_RECEIPT}]
+        self.assertIn("unavailable", self.invoke()["systemMessage"])
+        self.assertFalse(self.outputs[-1].exists())
 
     def test_shared_or_symlinked_settings_are_rejected(self):
         self.write_private(self.config, self.settings)
@@ -205,6 +244,91 @@ class StartupTests(unittest.TestCase):
             self.assertNotIn("PYTHONPATH", kwargs["env"])
             self.assertTrue(kwargs["capture_output"])
             self.assertLessEqual(kwargs["timeout"], 5)
+
+
+class GitIsolationTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.repo = self.root / "repo"
+        self.repo.mkdir()
+        self.deadline = startup.time.monotonic() + 20
+        self.git("init", "-q")
+        self.git("config", "core.hooksPath", str(self.root / "no-hooks"))
+        self.git("-c", "user.name=Synthetic", "-c", "user.email=synthetic@example.invalid",
+                 "commit", "--allow-empty", "-qm", "synthetic fixture")
+        self.common = startup.common_dir(self.repo, self.deadline)
+
+    def git(self, *args):
+        result = subprocess.run(["git", "-C", str(self.repo), *args], capture_output=True,
+                                text=True, check=True)
+        return result.stdout.strip()
+
+    def test_real_registered_worktree_and_subdirectory_are_enrolled(self):
+        linked = self.root / "linked worktree"
+        self.git("worktree", "add", "--detach", str(linked))
+        subdir = linked / "subdirectory"
+        subdir.mkdir()
+        self.assertTrue(startup.enrolled_repository(self.repo, [self.common], self.deadline))
+        self.assertTrue(startup.enrolled_repository(subdir, [self.common], self.deadline))
+
+    def test_git_file_or_symlink_to_enrolled_common_dir_does_not_enroll_lookalike(self):
+        for kind in ("file", "symlink"):
+            fake = self.root / kind
+            fake.mkdir()
+            if kind == "file":
+                (fake / ".git").write_text("gitdir: " + str(self.common) + "\n")
+            else:
+                (fake / ".git").symlink_to(self.common, target_is_directory=True)
+            self.assertEqual(startup.common_dir(fake, self.deadline), self.common)
+            self.assertFalse(startup.enrolled_repository(fake, [self.common], self.deadline))
+            # Explicit core.worktree can make Git report the registered primary top level.
+            self.git("config", "core.worktree", str(self.repo))
+            self.assertFalse(startup.enrolled_repository(fake, [self.common], self.deadline))
+            self.git("config", "--unset", "core.worktree")
+
+    def test_ignored_bytecode_and_source_mutations_cannot_enter_exported_client(self):
+        import py_compile
+        (self.repo / ".gitignore").write_text("*.pyc\n__pycache__/\n")
+        (self.repo / "context_relay.py").write_text(
+            "import argparse\nimport helper\nimport json\nfrom pathlib import Path\n"
+            "assert json.loads((Path(__file__).parent / 'fixtures/review-source.json').read_text()) == {'synthetic': True}\n"
+            "print(helper.VALUE)\n")
+        (self.repo / "helper.py").write_text("VALUE = 'reviewed synthetic source'\n")
+        (self.repo / "fixtures").mkdir()
+        (self.repo / "fixtures/review-source.json").write_text('{"synthetic": true}')
+        self.git("add", ".")
+        self.git("-c", "user.name=Synthetic", "-c", "user.email=synthetic@example.invalid",
+                 "commit", "-qm", "reviewed client fixture")
+        revision = self.git("rev-parse", "HEAD")
+        marker = self.root / "unreviewed-code-executed"
+        payload = self.root / "payload.py"
+        payload.write_text("from pathlib import Path\nPath(" + repr(str(marker)) + ").write_text('unsafe')\n")
+        py_compile.compile(str(payload), cfile=str(self.repo / "argparse.pyc"), doraise=True)
+        # A modified working module is also ignored by the exporter: source comes from Git blobs.
+        (self.repo / "helper.py").write_text("VALUE = 'unreviewed working source'\n")
+        (self.repo / "fixtures/review-source.json").write_text('{"synthetic": false}')
+        private = self.root / "private"
+        private.mkdir(mode=0o700)
+        with startup.reviewed_client(self.repo, revision, private, self.deadline) as stage:
+            self.assertEqual(stage.stat().st_mode & 0o077, 0)
+            self.assertFalse((stage / "argparse.pyc").exists())
+            result = startup.run(startup.client_command(stage), self.deadline, cwd=self.repo)
+            self.assertEqual(result.stdout.strip(), "reviewed synthetic source")
+            self.assertFalse(marker.exists())
+        self.assertFalse(stage.exists())
+
+    def test_tracked_python_symlink_is_rejected_before_execution(self):
+        (self.repo / "context_relay.py").symlink_to("unreviewed.py")
+        self.git("add", "context_relay.py")
+        self.git("-c", "user.name=Synthetic", "-c", "user.email=synthetic@example.invalid",
+                 "commit", "-qm", "synthetic unsupported symlink")
+        private = self.root / "private"
+        private.mkdir(mode=0o700)
+        with self.assertRaises(startup.Unavailable):
+            with startup.reviewed_client(self.repo, self.git("rev-parse", "HEAD"), private, self.deadline):
+                self.fail("symlink must not be exported")
 
 
 if __name__ == "__main__":

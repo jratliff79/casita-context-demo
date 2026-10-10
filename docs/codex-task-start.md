@@ -18,8 +18,13 @@ trust the hook on their own execution host.
 First qualify the member's SSH tunnel, credential and
 [native Casita build](../README.md#tested-casita-build). Keep the client checkout
 at a reviewed immutable commit, with no tracked changes or untracked source.
-Ignored output is allowed. This hook does not install dependencies or download
-an executable at task startup.
+Ignored output is allowed. The hook exports regular top-level Python blobs and
+the client's required JSON fixture from that commit into a temporary private
+directory, verifies their Git object hashes,
+and runs the client with isolated Python (`-I -S -B`). Ignored bytecode, working
+files, site customization and the original checkout are absent from its import
+path. The export is removed after consultation. This hook does not install
+dependencies or download an executable at task startup.
 
 Create a mode `0700` private configuration directory outside Git, then save a
 mode `0600` settings file. Substitute your own **absolute** paths and pins:
@@ -45,7 +50,10 @@ mode `0600` settings file. Substitute your own **absolute** paths and pins:
 
 Obtain `repositories` using `git rev-parse --git-common-dir` in the intended
 checkout and resolve a relative result against that working directory. This
-matches the same checkout's subdirectories and linked worktrees. A separate
+matches the same checkout's subdirectories and registered linked worktrees. The
+hook checks the top level against `git worktree list --porcelain -z` from the
+enrolled common directory; a forged `.git` file or symlink cannot enroll an
+unregistered directory. A separate
 clone with an identical remote does not inherit access; add its own common
 directory explicitly. No repository name or remote URL alone enables the hook.
 
@@ -55,8 +63,10 @@ not credential values. Store the credential separately with mode `0600`.
 
 The SSH config must use a separately provisioned tunnel-only identity, pinned
 known hosts, no shell, and local forwarding solely to the loopback relay. The
-hook reuses the control socket or starts a noninteractive master with strict
-host checking and `ExitOnForwardFailure`. It never prompts for a password.
+hook requests the exact loopback forward on an existing control master before
+using it, or starts a noninteractive master with strict host checking and
+`ExitOnForwardFailure`. A running master alone is insufficient: a failed forward
+stops consultation before sending a credential. It never prompts for a password.
 For a manually managed local tunnel, omit `ssh`; the hook still contacts only
 `http://127.0.0.1:8765`. Do not add a public bind or HTTP endpoint.
 
@@ -72,7 +82,7 @@ events, handlers and trust settings. Replace the paths before using it:
   "hooks": [
     {
       "type": "command",
-      "command": "python3 /ABSOLUTE/PRIVATE/codex_relay_start.py --config /ABSOLUTE/PRIVATE/settings.json",
+      "command": "python3 -I -S -B /ABSOLUTE/PRIVATE/codex_relay_start.py --config /ABSOLUTE/PRIVATE/settings.json",
       "timeout": 45,
       "statusMessage": "Consulting shared team context",
       "additionalContextLimit": 1500
@@ -110,6 +120,9 @@ technically prevent tools from running: the fallback requirement is an agent
 instruction, not a tool-policy gate. Process execution has a 35-second overall
 budget within a 45-second hook timeout. A killed hook or runtime failure can
 produce Codex's own error instead; never interpret that as verified consultation.
+Hook input and private settings are limited to 32,000 bytes. The restored task
+receipt has a separate 405,000-byte limit, accommodating the relay's 400,000-byte
+snapshot bound plus the task-selection envelope; larger receipts are rejected.
 
 The full workspace snapshot remains accessible to all enabled members and is
 restored privately before task filtering. Review author, citation, source

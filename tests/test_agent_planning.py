@@ -235,6 +235,52 @@ class PlanningChecks(unittest.TestCase):
         with self.assertRaises(ValueError):
             planning.unwrap(b'{"role":"builder","role":"tester"}')
 
+    def test_failed_initial_transport_retains_receipt_without_usable_state(self):
+        output = self.root / "failed-start"
+        output.mkdir()
+        # Python is executable but cannot run Casita's init command.
+        with self.assertRaises(RuntimeError):
+            planning.save_state(output, self.state, sys.executable)
+        self.assertFalse(planning.read_json(output / "transport-receipt.json")["ok"])
+        for name in ("bundle", "received", "state-sha256.txt", "summary.json"):
+            self.assertFalse((output / name).exists(), name)
+
+    def test_failed_post_restore_audit_cannot_feed_another_request(self):
+        request = self.root / "request"
+        request.mkdir()
+        planning.write_bundle(request / "bundle", self.state)
+        raw_request = canonical(planning.make_request(self.state, "synthetic-no-inference"))
+        (request / "request.json").write_bytes(raw_request)
+        response = self.root / "response.json"
+        raw = canonical(self.reply())
+        response.write_bytes(raw)
+        output = self.root / "failed-reply"
+        args = SimpleNamespace(response=response, request=request, request_sha256=digest(raw_request),
+                               output=output, casita="unused")
+        def fresh(path):
+            path.mkdir()
+            return path
+        def failed_audit(binary, folder, state):
+            planning.write_bundle(folder / "received", state)
+            (folder / "transport-receipt.json").write_bytes(canonical({"ok": False}))
+            raise RuntimeError("synthetic post-restore audit failed")
+        with patch.object(planning, "new_output", side_effect=fresh), \
+                patch.object(planning, "transport", side_effect=failed_audit):
+            with self.assertRaisesRegex(RuntimeError, "post-restore audit failed"):
+                planning.receive(args)
+        self.assertEqual((output / "raw-response.json").read_bytes(), raw)
+        self.assertFalse(planning.read_json(output / "receipt.json")["accepted"])
+        self.assertFalse(planning.read_json(output / "transport-receipt.json")["ok"])
+        expected = planning.state_id(planning.advance(self.state, self.reply()))
+        for name in ("bundle", "received"):
+            followup = SimpleNamespace(bundle=output / name, state_sha256=expected,
+                                       model="synthetic-no-inference", output=self.root / f"from-{name}")
+            with self.assertRaises((ValueError, OSError)):
+                planning.prepare(followup)
+            self.assertFalse(followup.output.exists())
+        for name in ("state-sha256.txt", "summary.json"):
+            self.assertFalse((output / name).exists(), name)
+
 
 if __name__ == "__main__":
     unittest.main()

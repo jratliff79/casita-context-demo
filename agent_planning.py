@@ -196,10 +196,19 @@ def transport(binary, output, state):
 
 
 def save_state(output, state, binary):
-    write_bundle(output / "bundle", state)
-    (output / "state-sha256.txt").write_text(state_id(state) + "\n")
-    (output / "summary.json").write_bytes(canonical(summary(state)))
-    transport(binary, output, state)
+    try:
+        write_bundle(output / "bundle", state)
+        transport(binary, output, state)
+        (output / "state-sha256.txt").write_text(state_id(state) + "\n")
+        (output / "summary.json").write_bytes(canonical(summary(state)))
+    except BaseException:
+        # A failed export, restore or audit must not leave a usable next state.
+        for name in ("bundle", "received"):
+            if (output / name).exists():
+                shutil.rmtree(output / name)
+        for name in ("state-sha256.txt", "summary.json"):
+            (output / name).unlink(missing_ok=True)
+        raise
 
 
 def make_request(state, model):

@@ -103,3 +103,7 @@ before granting any execution authority.
 The CLI applies umask `0077` before creating artifacts: new directories are
 owner-only (`0700`) and new files are owner-only (`0600`), including rejected
 responses. Existing artifacts keep their prior permissions.
+
+A failed Casita export, restore or integrity audit removes the input and restored
+next-state bundles and does not publish a state pin or summary. Raw replies and
+failure receipts remain available for inspection, but cannot advance the plan.

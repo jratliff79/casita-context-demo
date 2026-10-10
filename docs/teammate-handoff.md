@@ -114,6 +114,10 @@ hashes in these controls, so a valid hash alone cannot bypass source/parent chec
 
 ## From a demo to a team workflow
 
+For proposals about who should do what next, see the
+[bounded planning exchange](agent-planning.md). It retains a counterproposal and
+requires both roles to agree to the same plan, while leaving human review pending.
+
 Keep reviewed project knowledge in ordinary versioned files, with an owner and
 source references. Use task capsules for the evidence and unfinished work behind
 a particular handoff. An assistant can read both when starting a new session;

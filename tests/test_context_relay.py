@@ -1,11 +1,13 @@
 import copy
 from concurrent.futures import ThreadPoolExecutor
+import gc
 import json
 from pathlib import Path
 import subprocess
 import tempfile
 import threading
 import unittest
+import weakref
 from unittest.mock import patch
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
@@ -160,6 +162,44 @@ class RelayTests(unittest.TestCase):
             relay.citation({"path": "source/policy.txt", "sha256": self.context["files"][0]["sha256"],
                             "start_line": 2, "end_line": 2, "excerpt": ["invented claim"]}, self.context)
 
+    def test_citations_use_lf_lines_without_unicode_separator_or_trailing_phantom_lines(self):
+        for raw, excerpt in (("first\u2028second", ["first\u2028second"]),
+                             ("first\x85second", ["first\x85second"]),
+                             ("one\r\ntwo\r\n", ["one", "two"])):
+            context = copy.deepcopy(self.context)
+            source = context["files"][0]
+            source.update(text=raw, sha256=relay.digest(raw.encode()))
+            valid = {"path": source["path"], "sha256": source["sha256"],
+                     "start_line": 1, "end_line": len(excerpt), "excerpt": excerpt}
+            relay.citation(valid, context)
+            invented = dict(valid, start_line=len(excerpt) + 1, end_line=len(excerpt) + 1,
+                            excerpt=["second"])
+            with self.assertRaises(relay.Rejected):
+                relay.citation(invented, context)
+
+    def test_sole_owner_revocation_rejected_and_member_revocation_still_works(self):
+        with self.assertRaisesRegex(relay.Rejected, "sole workspace owner"):
+            relay.revoke_member(self.state, "jp")
+        self.assertEqual(self.call("context", {})["revision"], 0)
+        relay.revoke_member(self.state, "cj")
+        with self.assertRaisesRegex(relay.Rejected, "unauthorized"):
+            self.call("context", {}, "cj")
+
+    def test_long_running_cli_diagnostics_do_not_retain_completed_command_output(self):
+        class Output(str):
+            pass
+        outputs = []
+        def command(argv, **kwargs):
+            output = Output("synthetic root listing " * 5000)
+            outputs.append(weakref.ref(output))
+            return subprocess.CompletedProcess(argv, 0, output, "")
+        store = relay.Casita("casita", self.root / "unused", relay.DiscardDiagnostics())
+        with patch("demo.subprocess.run", side_effect=command):
+            for _ in range(100):
+                store.run("root", "ls")
+        gc.collect()
+        self.assertTrue(all(reference() is None for reference in outputs))
+
     def test_link_traversal_hidden_paths_unselected_fields_and_bad_hashes_rejected(self):
         for path in ("../private.txt", "/private.txt", "source/.env", "source/key.pem", "a//b", "a\\b"):
             with self.subTest(path=path):
@@ -195,6 +235,35 @@ class RelayTests(unittest.TestCase):
             self.assertNotIn(canary, encoded)
         with self.assertRaisesRegex(relay.Rejected, "regular Git files"):
             relay.prepare(repo, revision, ["linked.txt"], "test-task", "Selected task", [], [], [])
+
+    def test_prepare_ignores_replacement_refs_poisoned_git_environment_and_path_quoting(self):
+        repo = self.root / "replacements"
+        repo.mkdir()
+        def git(*args):
+            return subprocess.run(["git", "-C", str(repo), *args], capture_output=True,
+                                  check=True, text=True, env=relay.git_environment()).stdout.strip()
+        git("init")
+        filename = "café.txt"
+        source = repo / filename
+        source.write_text("ORIGINAL SELECTED BY COMMIT\n")
+        def commit():
+            git("add", ".")
+            git("-c", "user.name=Synthetic", "-c", "user.email=synthetic@example.invalid",
+                "-c", "commit.gpgsign=false", "commit", "-m", "synthetic")
+            return git("rev-parse", "HEAD")
+        original = commit()
+        source.write_text("REPLACEMENT CANARY\n")
+        replacement = commit()
+        git("replace", original, replacement)
+        git("config", "core.quotePath", "true")
+        with patch.dict("os.environ", {"GIT_DIR": str(self.root / "wrong-git-dir"),
+                                       "GIT_WORK_TREE": str(self.root / "wrong-worktree"),
+                                       "GIT_OBJECT_DIRECTORY": str(self.root / "wrong-objects")}):
+            context = relay.prepare(repo, original, [filename], "test-task", "selected", [], [], [])
+        self.assertEqual(context["source_revision"], original)
+        self.assertEqual(context["files"][0]["path"], filename)
+        self.assertEqual(context["files"][0]["text"], "ORIGINAL SELECTED BY COMMIT\n")
+        self.assertNotIn(b"REPLACEMENT CANARY", relay.canonical(context))
 
     def test_new_task_preserves_other_checkpoint_and_consult_filters_scoped_memory(self):
         self.publish()

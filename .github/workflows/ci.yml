@@ -211,7 +211,7 @@ jobs:
           print(f"PASS: {len(commands)} commands, context/result roots, exact files, cache exclusion and negative controls")
           print(f"Observed reversed import order: {reversed_order}")
           PY
-      - name: Run two authenticated relay clients with real Casita snapshots
+      - name: Run two relay identities with real Casita snapshots
         run: >-
           uv run --no-project --python 3.12 python context_relay_demo.py
           --casita output/casita-build/debug/casita --output output/live-context-relay

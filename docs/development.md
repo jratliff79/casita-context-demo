@@ -11,8 +11,8 @@ The [relay guide](live-context-relay.md) covers the private service, task-start
 consultation, event polling and a JP/CJ setup template. Unit tests exercise
 concurrent stale writes, rollback, authentication/revocation, source selection,
 owner decisions, per-task memory filtering and cursor recovery. CI runs two
-scripted client processes against real HTTP and Casita stores, including a server
-restart. It does not contact CJ, import Eventools source or configure an assistant.
+authenticated scripted identities against real HTTP and Casita stores, including
+a server restart. It does not contact CJ, import Eventools source or configure an assistant.
 
 Install the [host prerequisites](../README.md#prerequisites) and
 [tested Casita build](../README.md#tested-casita-build) first.

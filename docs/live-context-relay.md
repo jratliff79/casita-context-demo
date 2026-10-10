@@ -7,8 +7,8 @@ durable event stream. It runs until stopped. Clients can poll continuously and
 resume from their saved cursor after going offline.
 
 This is a private local-service pilot, not a hosted product. The automated trial
-uses two scripted client processes named `jp` and `cj` and synthetic Eventools
-notes. Actual CJ participation, two-device SSH access and automatic assistant
+uses short-lived CLI clients and a coordinator with two authenticated identities,
+`jp` and `cj`, and synthetic Eventools notes. Actual CJ participation, two-device SSH access and automatic assistant
 startup integration have not been tested. No Eventools source is in this repo.
 
 ## Try the complete synthetic flow
@@ -240,7 +240,8 @@ To revoke CJ's future API access without restarting:
 python3 context_relay.py revoke --state output/eventools-relay --member cj
 ```
 
-Reads, writes, polling and idempotent retries check enabled membership each time.
+The sole owner cannot be revoked through this command. Reads, writes, polling
+and idempotent retries check enabled membership each time.
 Revocation cannot delete copies CJ already received. The owner of the host/state
 directory is trusted and can read all selected workspace content. There is one
 workspace, one owner, at most ten other members, twenty retained task checkpoints,

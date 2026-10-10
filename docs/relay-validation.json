@@ -28,14 +28,15 @@
     "synthetic_durable_demo_passed": true
   },
   "python_unit_tests": {
-    "passed": 245,
+    "passed": 249,
     "python": "3.9"
   },
   "relay": {
     "actual_cj_participated": false,
+    "authenticated_identities": 2,
     "casita_restore_verified": true,
-    "client_processes": 2,
     "codex_auto_wakeup": false,
+    "coordinator_also_requests": true,
     "eventools_source_shared": false,
     "negative_controls": {
       "duplicate_submission_reused": true,
@@ -60,6 +61,7 @@
     "remote_devices_tested": false,
     "scripted_clients": true,
     "shared_revision": 2,
+    "short_lived_cli_clients": true,
     "synthetic": true
   }
 }

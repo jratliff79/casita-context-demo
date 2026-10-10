@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
-"""Two scripted client processes, real HTTP and Casita, synthetic source only."""
+"""Two authenticated scripted identities, real HTTP and Casita, synthetic source only."""
 import argparse
 import copy
 import json
 import os
 from pathlib import Path
-import socket
 import subprocess
 import sys
 import time
@@ -27,21 +26,26 @@ def run(binary, output):
         return subprocess.run([sys.executable, str(SCRIPT), *map(str, args)],
                               capture_output=True, text=True, timeout=60, check=True)
     cli("init", "--state", state, "--workspace", "synthetic-team", "--owner", "jp", "--member", "cj")
-    with socket.socket() as sock:
-        sock.bind(("127.0.0.1", 0))
-        port = sock.getsockname()[1]
-    url = "http://127.0.0.1:" + str(port)
+    url = None
     jp, cj = state / "credentials/jp.json", state / "credentials/cj.json"
     def start():
-        log = (output / ("server-" + str(len(logs)) + ".log")).open("wb")
+        nonlocal url
+        log_path = output / ("server-" + str(len(logs)) + ".log")
+        log = log_path.open("wb")
         logs.append(log)
         process = subprocess.Popen([sys.executable, str(SCRIPT), "serve", "--state", str(state),
-                                    "--casita", binary, "--port", str(port)], stdout=log, stderr=log)
+                                    "--casita", binary, "--port", "0"], stdout=log, stderr=log)
         processes.append(process)
         deadline = time.monotonic() + 20
         while time.monotonic() < deadline:
             if process.poll() is not None:
                 raise RuntimeError("relay failed to start")
+            # The child owns its listener before reporting the selected port.
+            lines = log_path.read_text().splitlines()
+            if not lines or not lines[0].startswith("Listening on 127.0.0.1:"):
+                time.sleep(.05)
+                continue
+            url = "http://" + lines[0].removeprefix("Listening on ")
             try:
                 client(url, jp, "updates", {"after": 0})
                 return process
@@ -144,13 +148,14 @@ def run(binary, output):
         controls["independent_member_survives_revocation"] = True
         assert all(controls.values())
         receipt = {"ok": True, "synthetic": True, "scripted_clients": True,
-                   "client_processes": 2, "real_http": True, "casita_restore_verified": True,
+                   "authenticated_identities": 2, "short_lived_cli_clients": True,
+                   "coordinator_also_requests": True, "real_http": True, "casita_restore_verified": True,
                    "shared_revision": 2, "negative_controls": controls,
                    "actual_cj_participated": False, "eventools_source_shared": False,
                    "remote_devices_tested": False, "codex_auto_wakeup": False,
                    "received_source_executed": False}
         (output / "receipt.json").write_bytes(canonical(receipt))
-        print("PASS: two authenticated client processes, Casita restore, reviewed memory, restart and catch-up")
+        print("PASS: two authenticated identities, Casita restore, reviewed memory, restart and catch-up")
         return receipt
     finally:
         for process in processes:

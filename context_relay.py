@@ -20,6 +20,7 @@ from urllib.request import Request, build_opener, ProxyHandler, HTTPRedirectHand
 
 from authentication import read_regular
 from demo import Casita, canonical, digest, file_map
+from git_review import git_environment, git_lines
 
 LIMIT = 400_000
 WIRE_LIMIT = 2_000_000
@@ -88,7 +89,7 @@ def citation(value, context):
     start, end = value["start_line"], value["end_line"]
     require(source is not None and type(start) is int and type(end) is int,
             "citation source or lines missing")
-    lines = source["text"].splitlines()
+    lines = git_lines(source["text"].encode("utf-8"))
     require(1 <= start <= end <= len(lines) and end - start < 40
             and value["sha256"] == source["sha256"]
             and value["excerpt"] == lines[start - 1:end], "citation differs from selected source")
@@ -131,6 +132,19 @@ def initialize(state, workspace, owner, members):
                 "workspace": workspace, "token": token}))
 
 
+class DiscardDiagnostics:
+    def append(self, command):
+        pass  # Long-running relay: do not retain argv or stdout/stderr histories.
+
+
+def revoke_member(state, member):
+    with connect(state) as db:
+        owner = db.execute("SELECT owner FROM settings").fetchone()["owner"]
+        require(member != owner, "cannot revoke the sole workspace owner")
+        require(db.execute("UPDATE members SET enabled=0 WHERE name=?", (member,)).rowcount == 1,
+                "unknown member")
+
+
 class Relay:
     """One local process serializes Casita operations; SQLite commits head + event together."""
     def __init__(self, state, binary):
@@ -139,8 +153,7 @@ class Relay:
         with connect(self.state) as db:
             settings = db.execute("SELECT * FROM settings").fetchone()
             self.workspace, self.owner = settings["workspace"], settings["owner"]
-        self.commands = []  # Diagnostic output stays in owner-only local state.
-        self.store = Casita(self.binary, self.state / "store", self.commands)
+        self.store = Casita(self.binary, self.state / "store", DiscardDiagnostics())
         if not (self.state / "store").exists():
             self.store.run("init")
 
@@ -415,16 +428,18 @@ def prepare(repo, revision, selected, task, summary, completed, pending, blocker
             "choose a full immutable commit")
     def git(*args):
         return subprocess.run(["git", "-C", str(repo), *args], check=True,
-                              capture_output=True, timeout=30).stdout
+                              capture_output=True, timeout=30, env=git_environment()).stdout
     require(git("rev-parse", revision + "^{commit}").decode().strip() == revision,
             "revision must name the exact commit")
     require(1 <= len(selected) <= 20 and len(set(selected)) == len(selected), "invalid selection")
     files = []
     for path in selected:
         require(safe_path(path), "invalid selected path")
-        entry = git("ls-tree", revision, "--", path).decode().strip()
-        require(bool(entry) and entry.split("\t")[-1] == path
-                and entry.split()[0] in ("100644", "100755"),
+        entries = [entry for entry in git("ls-tree", "--full-tree", "-z", revision, "--", path).split(b"\x00")
+                   if entry]
+        require(len(entries) == 1, "select regular Git files only")
+        metadata, recorded_path = entries[0].split(b"\t", 1)
+        require(recorded_path.decode("utf-8") == path and metadata.split()[0] in (b"100644", b"100755"),
                 "select regular Git files only")
         size = int(git("cat-file", "-s", revision + ":" + path))
         require(0 < size <= 100_000, "selected source exceeds limit")
@@ -552,9 +567,7 @@ def main():
             finally:
                 server.server_close()
     elif args.command == "revoke":
-        with connect(args.state) as db:
-            require(db.execute("UPDATE members SET enabled=0 WHERE name=?", (args.member,)).rowcount == 1,
-                    "unknown member")
+        revoke_member(args.state, args.member)
         print("Revoked future requests. Already delivered copies remain with their recipients.")
     elif args.command == "prepare":
         data = prepare(args.repo, args.revision, args.file, args.task, args.summary,

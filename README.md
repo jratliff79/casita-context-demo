@@ -53,6 +53,7 @@ Choose the example closest to your task:
 | Continue a task from its saved visible state | [Public docs checkpoint pilot](docs/docs-checkpoint-case.md) | One recorded AI review from a pinned public snapshot; replay needs no AI account |
 | Hand a task to a teammate and review a shared knowledge update | [Teammate handoff](docs/teammate-handoff.md) | Separate stores, competing scripted proposals and explicit owner selection |
 | Have two assistants agree on who does what | [Planning exchange](docs/agent-planning.md) | Bounded proposals, counterproposals and two explicit agreements before human review |
+| Consult reviewed team memory when starting a task | [Live context relay](docs/live-context-relay.md) | Authenticated clients, separate task checkpoints, durable updates and owner-reviewed memory |
 
 Consider a change to a private pricing calculation. An outside reviewer can see
 the selected diff and source without receiving repository access. If a helper is
@@ -103,7 +104,7 @@ From the demo root, build the default CLI with CI's source and dependency pins:
 
 ```sh
 git clone https://github.com/cachix/casita.git output/casita-source
-git -C output/casita-source checkout 1407672f4b235609ae7fff0f87a30e06183f941f
+git -C output/casita-source checkout 9d7a2f42b14d86189662e21241f72a55ccb42cb6
 cp ci/Cargo.lock output/casita-source/Cargo.lock
 cargo build --locked --package casita --bin casita \
   --manifest-path output/casita-source/Cargo.toml \
@@ -117,17 +118,18 @@ uses the same locked dependency snapshot but is not an identical build. See the
 [dependency snapshot](ci/README.md) for details. The optional image demo needs an
 OCI-enabled build, documented in its own guide.
 
-Casita source `1407672f4b235609ae7fff0f87a30e06183f941f` was upstream `main` when
-checked on 2026-10-08. It is an immutable tested snapshot, not a claim of current
+Casita source `9d7a2f42b14d86189662e21241f72a55ccb42cb6` was upstream `main` when
+checked on 2026-10-10. It is an immutable tested snapshot, not a claim of current
 latest upstream. Casita is pre-release and its CLI may change. Keep this pin when
 reproducing these examples. If you already have that build, set
 `CASITA_DEMO_BIN` to its executable path instead.
 
-The [current-pin validation](docs/casita-update-validation.json) records locked
-default and OCI builds with Rust 1.94.1, core handoff and request replays,
-artifact/event-kit/checkpoint demos, native Git checks, bounded metadata tests,
-and OCI transport with a trusted host checker. It does not repeat the historical
-Apple Container trial or perform a fresh AI review of the transported evidence.
+The [current-pin validation](docs/relay-validation.json) records a locked
+default build with Rust 1.94.1, the core handoff, native Git checks and the live
+relay pilot. CI also builds OCI support and runs the existing handoff examples.
+The [previous pin validation](docs/casita-update-validation.json) retains its
+original 2026-10-08 metadata. This update does not repeat the historical Apple
+Container trial or perform a fresh AI review of transported evidence.
 The [previous pin receipt](docs/casita-20261005-validation.json) and older receipts
 keep their original source pins. These correctness checks do not measure the
 performance improvement reported upstream.
@@ -176,6 +178,7 @@ Casita, OpenSSH or an image runtime. No project installation is required.
 | Freeze visible task state and verify two scripted continuations against their parent | [Synthetic workflow checkpoint](docs/ai-workflow-checkpoint.md) |
 | See a fresh reviewer continue a public docs task from selected evidence | [Recorded docs checkpoint pilot](docs/docs-checkpoint-case.md) |
 | Share task context, review proposed team knowledge and inspect the selected result | [Synthetic teammate handoff](docs/teammate-handoff.md) |
+| Start a private relay and consult approved memory before a task | [Live relay and JP/CJ pilot](docs/live-context-relay.md) |
 | Understand missing context and explicit approval | [Context requests](docs/context-requests.md) |
 | See an actual reviewer request and recorded reassessment | [Public reviewer case](docs/context-request-case.md) |
 | See a capsule review lead to a landed fix | [Review-to-fix case](docs/review-to-fix.md) |

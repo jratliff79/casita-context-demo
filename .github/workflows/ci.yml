@@ -82,7 +82,7 @@ jobs:
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           repository: cachix/casita
-          ref: 1407672f4b235609ae7fff0f87a30e06183f941f
+          ref: 9d7a2f42b14d86189662e21241f72a55ccb42cb6
           path: output/casita-source
           persist-credentials: false
       - name: Check out immutable public review source
@@ -211,6 +211,10 @@ jobs:
           print(f"PASS: {len(commands)} commands, context/result roots, exact files, cache exclusion and negative controls")
           print(f"Observed reversed import order: {reversed_order}")
           PY
+      - name: Run two authenticated relay clients with real Casita snapshots
+        run: >-
+          uv run --no-project --python 3.12 python context_relay_demo.py
+          --casita output/casita-build/debug/casita --output output/live-context-relay
       - name: Restore synthetic build artifacts without rebuilding
         run: |
           uv run --no-project --python 3.12 python artifacts.py --casita output/casita-build/debug/casita --output output/build-artifacts
@@ -731,10 +735,11 @@ jobs:
           print("PASS: recorded empty report unchanged, both source commits and independent controls")
           PY
 
-      - name: Test upstream bounded metadata buffers
+      - name: Test upstream bounded metadata and NAR decoder admission
         run: >-
           cargo +1.94.1 test --locked --package casita --features experimental
-          --test metadata_buffers --manifest-path output/casita-source/Cargo.toml
+          --test metadata_buffers --test nar_decoder_admission
+          --manifest-path output/casita-source/Cargo.toml
           --target-dir output/casita-build
 
   environment:
@@ -755,7 +760,7 @@ jobs:
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           repository: cachix/casita
-          ref: 1407672f4b235609ae7fff0f87a30e06183f941f
+          ref: 9d7a2f42b14d86189662e21241f72a55ccb42cb6
           path: output/casita-source
           persist-credentials: false
       - name: Install pinned Rust toolchain and dependency snapshot

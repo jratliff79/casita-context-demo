@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Prepare, explicitly send and validate numbered selected-source review requests."""
 import argparse
+import os
 from pathlib import Path
 import re
 import sys
@@ -211,6 +212,7 @@ def main():
         mode.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     try:
+        os.umask(0o077)
         folder = {"request": prepare, "send": send, "validate": validate}[args.mode](args)
     except (ValueError, OSError, RuntimeError, KeyError, TypeError, AttributeError) as error:
         print(f"Halo review failed: {error}", file=sys.stderr)

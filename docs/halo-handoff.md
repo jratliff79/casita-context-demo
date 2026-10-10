@@ -102,3 +102,7 @@ reasoning validation, human approval or merge authority. A real two-person
 handoff remains a separate trial. Use synthetic or selected public licensed
 source for a shareable demonstration. Keep raw contexts, responses, stores,
 receipts and keys under ignored `output/`; do not publish them by default.
+
+The CLI applies umask `0077` before creating artifacts, so new directories are
+owner-only (`0700`) and new files are owner-only (`0600`). This also covers
+retained failure responses. It does not change permissions on older artifacts.

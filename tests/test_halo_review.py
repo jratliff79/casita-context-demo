@@ -6,6 +6,9 @@ import unittest
 from unittest.mock import Mock, patch
 from urllib.error import HTTPError
 import io
+import stat
+import subprocess
+import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import threading
 
@@ -66,6 +69,74 @@ class HaloReviewChecks(unittest.TestCase):
         path.write_bytes(demo.canonical(value))
         return SimpleNamespace(request=self.bundle, request_sha256=self.request_hash,
                                response=path, output=self.root / name)
+
+    def cli(self, *args):
+        # Set the common permissive umask in the child, without changing the test process.
+        launcher = "import os, runpy, sys; os.umask(0o022); script=sys.argv.pop(1); sys.path.insert(0, os.path.dirname(script)); runpy.run_path(script, run_name='__main__')"
+        return subprocess.run([sys.executable, "-c", launcher, str(Path(halo.__file__).resolve()),
+                               *map(str, args)], cwd=self.root, capture_output=True, text=True, timeout=15)
+
+    def assert_private(self, folder):
+        for path in [folder, *folder.rglob("*")]:
+            self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o700 if path.is_dir() else 0o600, str(path))
+
+    def private_request(self):
+        result = self.cli("request", "--context", self.input, "--pins", self.pin_path,
+                          "--signature", self.root / "pins.sig", "--allowed-signers", self.root / "allowed",
+                          "--signer", "unit-sender", "--source", self.repository, "--model", "unit-model",
+                          "--output", "output/private-request")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        folder = self.root / "output/private-request"
+        self.assert_private(folder)
+        return folder, (folder / "request-sha256.txt").read_text().strip()
+
+    def test_cli_request_and_valid_or_rejected_validation_are_private_under_umask_0022(self):
+        request, expected = self.private_request()
+        for name, valid in (("valid", True), ("rejected", False)):
+            report = json.loads(demo.canonical(self.report))
+            if not valid:
+                report["findings"][0]["citations"][0]["excerpt"] = "invented source"
+            raw = self.root / f"{name}.json"
+            raw.write_bytes(demo.canonical(report))
+            result = self.cli("validate", "--request", request, "--request-sha256", expected,
+                              "--response", raw, "--output", f"output/private-{name}")
+            self.assertEqual(result.returncode, 0 if valid else 1, result.stderr)
+            folder = self.root / f"output/private-{name}"
+            self.assert_private(folder)
+            self.assertEqual((folder / "raw-response.json").read_bytes(), raw.read_bytes())
+            self.assertEqual((folder / "report.json").exists(), valid)
+
+    def test_cli_send_retains_private_success_and_error_responses_under_umask_0022(self):
+        request, expected = self.private_request()
+        class Handler(BaseHTTPRequestHandler):
+            code = 200
+            def do_POST(self):
+                self.rfile.read(int(self.headers["Content-Length"]))
+                self.send_response(self.code)
+                body = b'{"synthetic":"retained response"}'
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+            def log_message(self, *args):
+                pass
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        worker = threading.Thread(target=server.serve_forever, daemon=True)
+        worker.start()
+        try:
+            for code in (200, 500):
+                Handler.code = code
+                result = self.cli("send", "--request", request, "--request-sha256", expected,
+                                  "--endpoint", f"http://127.0.0.1:{server.server_port}/v1/chat/completions",
+                                  "--allow-inference", "--output", f"output/private-send-{code}")
+                self.assertEqual(result.returncode, 0 if code == 200 else 1, result.stderr)
+                folder = self.root / f"output/private-send-{code}"
+                self.assert_private(folder)
+                self.assertTrue((folder / "response.json").is_file())
+                self.assertEqual(review.read_json(folder / "receipt.json")["ok"], code == 200)
+        finally:
+            server.shutdown()
+            server.server_close()
+            worker.join(timeout=5)
 
     def test_numbering_preserves_original_non_one_start_and_dirty_checkout_is_excluded(self):
         payload = json.loads(self.request["messages"][1]["content"])

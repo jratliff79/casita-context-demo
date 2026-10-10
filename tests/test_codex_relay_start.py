@@ -2,6 +2,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import shlex
 import sys
 import tempfile
 import unittest
@@ -122,6 +123,38 @@ class StartupTests(unittest.TestCase):
             self.assertNotIn(canary, json.dumps(self.commands))
         self.assertEqual(self.commands[0][self.commands[0].index("--url") + 1], "http://127.0.0.1:8765")
 
+    def test_private_json_reads_validated_fd_despite_path_replacement(self):
+        self.write_private(self.config, {"selection": "reviewed"})
+        original_fstat = os.fstat
+        def replaced_entry(fd):
+            mode = original_fstat(fd)
+            self.config.rename(self.root / "old-settings.json")
+            self.config.write_text('{"selection":"unqualified replacement"}')
+            self.config.chmod(0o666)
+            return mode
+        with patch.object(startup.os, "fstat", side_effect=replaced_entry):
+            self.assertEqual(startup.private_json(self.config), {"selection": "reviewed"})
+        with self.assertRaises(startup.Unavailable):
+            startup.private_json(self.config)
+        self.config.unlink()
+        self.config.symlink_to(self.root / "old-settings.json")
+        with self.assertRaises(startup.Unavailable):
+            startup.private_json(self.config)
+
+    def test_documented_command_generator_preserves_paths_with_shell_syntax(self):
+        docs = (Path(startup.__file__).parent / "docs/codex-task-start.md").read_text()
+        snippet = docs.split("```python\n", 1)[1].split("```", 1)[0]
+        adapter = self.root / "adapter space' $; name.py"
+        settings = self.root / "settings space' $; name.json"
+        adapter.write_text("import json,sys; print(json.dumps(sys.argv[1:]))\n")
+        snippet = snippet.replace('"/ABSOLUTE/PRIVATE/codex_relay_start.py"', repr(str(adapter)))
+        snippet = snippet.replace('"/ABSOLUTE/PRIVATE/settings.json"', repr(str(settings)))
+        generated = subprocess.check_output([sys.executable, "-c", snippet], text=True)
+        command = json.loads(generated)["command"]
+        self.assertEqual(shlex.split(command)[4:], [str(adapter), "--config", str(settings)])
+        result = subprocess.check_output(["sh", "-c", command], text=True)
+        self.assertEqual(json.loads(result), ["--config", str(settings)])
+
     def test_resume_and_compaction_reconsult_into_distinct_private_outputs(self):
         self.invoke()
         for source in ("resume", "compact", "clear"):
@@ -227,6 +260,28 @@ class StartupTests(unittest.TestCase):
         self.assertEqual(forward[forward.index("-L") + 1], cancel[cancel.index("-L") + 1])
         self.assertFalse(self.outputs[-1].exists())
         self.assertTrue(all("exit" not in c for c in self.commands))
+
+    def test_expired_consultation_deadline_still_spawns_bounded_cancellation(self):
+        self.settings["ssh"] = {"config": str(self.root / "ssh-config"),
+                                "socket": str(self.root / "tunnel.sock"), "alias": "synthetic-relay"}
+        real_run = startup.run
+        self.write_private(self.config, self.settings)
+        with patch.object(startup.time, "monotonic", return_value=100) as now:
+            def expired_run(argv, deadline, *args, **kwargs):
+                if "consult" in argv:
+                    now.return_value = deadline + 1
+                    raise subprocess.TimeoutExpired("synthetic client", 35)
+                if "cancel" in argv:
+                    return real_run(argv, deadline, *args, **kwargs)
+                return self.fake_run(argv, deadline, *args, **kwargs)
+            with patch.object(startup, "git", side_effect=self.fake_git), \
+                    patch.object(startup, "run", side_effect=expired_run), \
+                    patch.object(startup.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, "", "")) as command:
+                self.assertIn("unavailable", startup.consult(self.event, self.config)["systemMessage"])
+                command.assert_called_once()
+                self.assertIn("cancel", command.call_args.args[0])
+                self.assertGreater(command.call_args.kwargs["timeout"], 0)
+                self.assertLessEqual(command.call_args.kwargs["timeout"], 3)
 
     def test_long_master_socket_namespace_is_rejected_before_authentication(self):
         parent = self.root / ("s" * 90)

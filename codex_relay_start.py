@@ -35,11 +35,17 @@ def require(ok):
 
 
 def private_json(path, limit=MAX_INPUT):
-    path = Path(path)
-    mode = path.lstat()
-    require(stat.S_ISREG(mode.st_mode) and mode.st_uid == os.getuid()
-            and not mode.st_mode & 0o077 and mode.st_size <= limit)
-    return json.loads(path.read_text())
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except OSError:
+        raise Unavailable() from None
+    with os.fdopen(fd, "rb") as stream:
+        mode = os.fstat(stream.fileno())
+        require(stat.S_ISREG(mode.st_mode) and mode.st_uid == os.getuid()
+                and not mode.st_mode & 0o077 and mode.st_size <= limit)
+        raw = stream.read(limit + 1)
+    require(len(raw) <= limit)
+    return json.loads(raw)
 
 
 def absolute(value):
@@ -253,7 +259,8 @@ def forwarded_url(ssh_settings, config, root, deadline):
             yield "http://127.0.0.1:" + str(port)
         finally:
             try:
-                run(control + ["-O", "cancel", "-L", forward, alias], deadline)
+                # Cleanup still runs when the consultation exhausted its own budget.
+                run(control + ["-O", "cancel", "-L", forward, alias], time.monotonic() + 3)
             except (Unavailable, OSError, subprocess.TimeoutExpired):
                 pass
 

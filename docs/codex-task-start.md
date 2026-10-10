@@ -105,7 +105,7 @@ events, handlers and trust settings. Replace the paths before using it:
   "hooks": [
     {
       "type": "command",
-      "command": "python3 -I -S -B /ABSOLUTE/PRIVATE/codex_relay_start.py --config /ABSOLUTE/PRIVATE/settings.json",
+      "command": "python3 -I -S -B '/ABSOLUTE/PRIVATE/codex_relay_start.py' --config '/ABSOLUTE/PRIVATE/settings.json'",
       "timeout": 45,
       "statusMessage": "Consulting shared team context",
       "additionalContextLimit": 1500
@@ -113,6 +113,23 @@ events, handlers and trust settings. Replace the paths before using it:
   ]
 }
 ```
+
+For actual paths, generate the command with `shlex.join` and JSON serialization
+rather than substituting raw text into the example. This handles spaces,
+apostrophes and shell metacharacters in a valid path:
+
+```python
+import json
+import shlex
+
+adapter = "/ABSOLUTE/PRIVATE/codex_relay_start.py"
+settings = "/ABSOLUTE/PRIVATE/settings.json"
+print(json.dumps({"command": shlex.join([
+    "python3", "-I", "-S", "-B", adapter, "--config", settings
+])}))
+```
+
+Use the generated `command` value in the existing handler.
 
 Review the script, settings and hook command. Open `/hooks` in the Codex CLI and
 trust this exact definition through Codex's normal review flow. Do not write a
@@ -145,7 +162,8 @@ report the failure and obtain an explicit fallback decision. It does not reuse
 old context. Partial failed restoration is removed. This warning does not
 technically prevent tools from running: the fallback requirement is an agent
 instruction, not a tool-policy gate. Process execution has a 35-second overall
-budget within a 45-second hook timeout. A killed hook or runtime failure can
+budget plus up to three seconds for tunnel cleanup within a 45-second hook timeout.
+A killed hook or runtime failure can
 produce Codex's own error instead; never interpret that as verified consultation.
 Hook input and private settings are limited to 32,000 bytes. The restored task
 receipt has a separate 405,000-byte limit, accommodating the relay's 400,000-byte

@@ -1,0 +1,49 @@
+{
+  "schema": "casita-context-demo.halo-numbered-trial.v1",
+  "recorded_date": "2026-10-09",
+  "source_repository": "https://github.com/jratliff79/casita-context-demo",
+  "source_commit": "619a230a8cedeca36fc1a5d95a61eabfb07a68b4",
+  "source_license": "MIT",
+  "context_id": "0e987d95439da32d4487b0d8143dc9131136c441ed4c00ba7f70cc85cab18507",
+  "inference_transport": "mcp__halo_upstream__lemonade_chat",
+  "requested_model": "Halo-Qwen38-MTP",
+  "inference_calls": 2,
+  "source_signature_verified": true,
+  "original_git_verified": true,
+  "first_response_accepted": false,
+  "first_rejection": "citation excerpt differs from captured source: first line indentation omitted",
+  "explicit_manual_correction": true,
+  "corrected_report_citations_verified": true,
+  "returned_archive_signature_verified": true,
+  "return_signer_role": "dedicated Mac controller; not model identity attestation",
+  "private_disposable_keys_removed": true,
+  "recommendation": "Display each verified proposal citation beside its statement in the teammate summary",
+  "omission_independently_reproduced": true,
+  "implementation_written_independently": true,
+  "human_owner_approval_performed": false,
+  "two_person_handoff_performed": false,
+  "remote_casita_import_performed": false,
+  "live_http_halo_trial_performed": false,
+  "model_tools_supplied": false,
+  "received_code_executed": false,
+  "execution_attested": false,
+  "reasoning_quality_verified": false,
+  "publication_of_raw_artifacts_performed": false,
+  "artifact_sha256": {
+    "initial_request": "d3af817d81ddcbb61934552b6ecc4fb2534cadb414c79a50fc5af63a32e68915",
+    "manual_correction_request": "c80f3a03f94e8f3fda06a10a57afb9fd276c6ee0acbfee283940961f8d5c7d3c",
+    "first_raw_response": "0aa06b8413447987c935eeccca978a9a973a2e7cd42e28b93a131ddb19f1c564",
+    "corrected_raw_response": "80a785ec3db39c58b159afe9ab41608ec11a9f18f3b0339e641a4e5ae634585e",
+    "verified_report": "420dde628547698a6a0edef6031765915e61b8e098ad9a6ec60bb2b3c9ce3540"
+  },
+  "independent_validation": {
+    "unit_tests_passed": 209,
+    "core_casita_demo_passed": true,
+    "fresh_teammate_selections": [
+      "bob",
+      "carol"
+    ],
+    "http_transport_test": "real loopback synthetic server; not live Halo HTTP",
+    "proposal_citation_regression_checked": true
+  }
+}

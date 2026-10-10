@@ -47,6 +47,7 @@ Choose the example closest to your task:
 | Your need | Start with | What it demonstrates |
 | --- | --- | --- |
 | Get a review without sharing the whole repository | [Complete walkthrough](docs/complete-demo.md) | Selected source, an explicit missing-context request and checked citations |
+| Ask Halo about selected source and check its reply | [Halo handoff](docs/halo-handoff.md) | Opt-in inference, numbered source lines and strict returned-report validation |
 | Recover a previous build output | [Artifact handoff](docs/artifact-handoff.md) | Two synthetic static-site builds restored without rebuilding |
 | Carry a fixed rundown and assets to a venue | [Offline event kit](docs/offline-event-kit.md) | A synthetic kit, local incremental sync and verified snapshot selection |
 | Continue a task from its saved visible state | [Public docs checkpoint pilot](docs/docs-checkpoint-case.md) | One recorded AI review from a pinned public snapshot; replay needs no AI account |
@@ -180,6 +181,7 @@ Casita, OpenSSH or an image runtime. No project installation is required.
 | See a capsule review lead to a landed fix | [Review-to-fix case](docs/review-to-fix.md) |
 | Import repeated Git subtrees and retain them across a process restart | [Runnable Rust API example](examples/native-git/README.md) |
 | Prepare selected source, use a separate worker, or try OCI/Apple Container | [All demonstrations and requirements](docs/examples.md) |
+| Prepare a verified request for Halo and retain its checked or rejected response | [Halo handoff](docs/halo-handoff.md) |
 | Run tests or inspect CI scope | [Development and validation](docs/development.md) |
 | Record a short public demonstration | [Video script and recording guide](docs/demo-video.md) |
 | Watch or reproduce the checkpoint clip | [Checkpoint video and transcript](docs/checkpoint-video.md) |

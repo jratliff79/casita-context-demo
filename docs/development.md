@@ -123,6 +123,16 @@ success flags; they also check that verified task bytes are not reopened.
 Its expected pins come from the local unsigned receipt, not an authenticated
 teammate or approval service.
 
+## Optional Halo selected-source review
+
+The optional [Halo handoff adapter](halo-handoff.md) authenticates selected-Git
+input, freezes numbered source requests and retains valid or rejected responses.
+Unit tests check wrong signer/pins, original line numbers, reviewed-request hashes,
+tool-free payloads, exact quotations and truncated or tool-requesting completions.
+Its one-shot HTTP sender is tested against a local synthetic server and mocked
+failure/redirect/size controls. CI makes no live inference calls. A live model
+trial remains separate from those model-free tests.
+
 ## Recorded public docs checkpoint
 
 The [public docs checkpoint pilot](docs-checkpoint-case.md) has a separate

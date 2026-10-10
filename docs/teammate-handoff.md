@@ -78,7 +78,7 @@ proposal the team should adopt.
    future update; it cannot silently overwrite the selected knowledge.
 
 See the selected knowledge, both retained proposals and unfinished work in one
-view:
+view, with the exact verified source citation beside each proposal:
 
 ```sh
 python3 team_handoff_summary.py --run output/my-teammate-handoff | python3 -m json.tool

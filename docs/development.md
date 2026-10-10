@@ -182,6 +182,16 @@ signed handoff or execution attestation.
 Its `experimental` backend APIs remain tied to the pinned upstream revision.
 
 
+## Bounded assistant planning
+
+The [planning exchange](agent-planning.md) has a model-free CI run with five
+Casita snapshots and separate sender/receiver stores per snapshot. Unit tests
+cover stale parents, changed agreements, retained transcript tampering, scope,
+dependency cycles, exact citations, request rebuilding and the six-turn limit.
+The [recorded Codex/Halo trial](agent-planning-case.md) is separate from CI and
+does not establish teammate account connectivity, authenticated identities or
+execution authority.
+
 ## Historical validation
 
 The [initial validation](validation.md) and

@@ -305,6 +305,31 @@ jobs:
               assert command["argv"][2] in {str(root.resolve() / store) for store in ("worker-store", "returned-store")}
           print("PASS: exact visible checkpoint and two parent-bound returns; no live model or received instructions executed")
           PY
+      - name: Exchange bounded planning proposals without live inference
+        run: |
+          uv run --no-project --python 3.12 python agent_planning.py demo --casita output/casita-build/debug/casita --output output/agent-planning
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          import agent_planning as planning
+          root = Path("output/agent-planning")
+          summary = json.loads((root / "summary.json").read_text())
+          assert summary["status"] == "ready_for_human_review"
+          assert summary["agreed_roles"] == ["builder", "tester"]
+          assert summary["scripted_participants"] and not summary["fresh_ai_run"]
+          assert not summary["human_approval_performed"] and not summary["work_started"]
+          for number in range(5):
+              turn = root / f"turn-{number}"
+              expected = (turn / "state-sha256.txt").read_text().strip()
+              state = planning.load_bundle(turn / "received", expected)
+              assert len(state["turns"]) == number
+              assert json.loads((turn / "transport-receipt.json").read_text())["ok"]
+              assert not planning.summary(state)["identity_authenticated"]
+          assert state["turns"][0]["plan"] != state["turns"][1]["plan"]
+          assert planning.summary(state)["plan_id"] == summary["plan_id"]
+          print("PASS: bounded scripted counterproposal and exact bilateral agreement; human review pending")
+          PY
+
       - name: Exchange teammate proposals and explicitly select shared knowledge
         run: |
           for teammate in bob carol; do

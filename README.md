@@ -51,6 +51,7 @@ Choose the example closest to your task:
 | Carry a fixed rundown and assets to a venue | [Offline event kit](docs/offline-event-kit.md) | A synthetic kit, local incremental sync and verified snapshot selection |
 | Continue a task from its saved visible state | [Public docs checkpoint pilot](docs/docs-checkpoint-case.md) | One recorded AI review from a pinned public snapshot; replay needs no AI account |
 | Hand a task to a teammate and review a shared knowledge update | [Teammate handoff](docs/teammate-handoff.md) | Separate stores, competing scripted proposals and explicit owner selection |
+| Have two assistants agree on who does what | [Planning exchange](docs/agent-planning.md) | Bounded proposals, counterproposals and two explicit agreements before human review |
 
 Consider a change to a private pricing calculation. An outside reviewer can see
 the selected diff and source without receiving repository access. If a helper is

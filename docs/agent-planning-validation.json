@@ -1,0 +1,35 @@
+{
+  "adapter_sha256": "11638c1edaa7bfd255eabfb6a2869aeedc2324bd59fb0a5077f82ee5f92a0bb7",
+  "artifact_sha256": {
+    "codex-agreement.json": "6d617e8285f1a33ea9b016d2cfe8e3d7a2fa32f9c6b8e8fd5f4a875ab1f8473f",
+    "codex-proposal.json": "b76d731671ae74e9bc87ec6a37fc78746db2c44a646ad8b760b50b6eb4e2cdf1",
+    "halo-agreement.json": "b6586b785ef51686eb6fa545aa9aaea5b4973e32210510b48e2ace72977290ba",
+    "halo-counterproposal.json": "09b18deca6337468f339bf546cd4032f2b14f22f7c20d313f24dc240cbfc9cdb"
+  },
+  "casita_binary_sha256": "0263005cde1c7bb6a7a7c340381987dfe765e5a272403c6e458d10dab4df3a2a",
+  "context_id": "e073a48a842c93f124c1d18d543070679d1e5d85f23481cb585c129a3d074f11",
+  "core_casita_demo_passed": true,
+  "final_state_id": "209f4fe7a8caf0d87ebb2eba9a36744ac578b18c8916ff360949708c66e4ff99",
+  "halo_calls": 2,
+  "human_approval_performed": false,
+  "identity_authenticated": false,
+  "independent_teammate_codex_accounts": false,
+  "model_identity_attested": false,
+  "operator_relay": true,
+  "participants": {
+    "builder": "current Codex assistant",
+    "tester": "Halo-Qwen38-MTP via lemonade_chat"
+  },
+  "plan_id": "fef4a91a3bee4b43ba2ed2ccc6c4cd0370e03852647afbd6215c220064d36357",
+  "raw_artifacts_published": false,
+  "received_code_executed": false,
+  "recorded_date": "2026-10-09",
+  "rejected_responses": 0,
+  "schema": "casita-planning-live-trial.v1",
+  "scripted_casita_demo_passed": true,
+  "status": "ready_for_human_review",
+  "synthetic_task": true,
+  "turn_count": 4,
+  "unit_tests_passed": 211,
+  "work_started": false
+}

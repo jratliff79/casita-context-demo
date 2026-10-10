@@ -23,7 +23,8 @@ the client's required JSON fixture from that commit into a temporary private
 directory, verifies their Git object hashes,
 and runs the client with isolated Python (`-I -S -B`). Ignored bytecode, working
 files, site customization and the original checkout are absent from its import
-path. The export is removed after consultation. This hook does not install
+path. Git replacement refs are disabled during source selection and blob reads.
+The export is removed after consultation. This hook does not install
 dependencies or download an executable at task startup.
 
 Create a mode `0700` private configuration directory outside Git, then save a

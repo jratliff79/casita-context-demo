@@ -60,7 +60,7 @@ def run(argv, deadline, check=True, cwd=None, text=True):
 
 
 def git(cwd, deadline, *args):
-    return run(["git", "-c", "core.fsmonitor=false", "-C", str(cwd), *args],
+    return run(["git", "--no-replace-objects", "-c", "core.fsmonitor=false", "-C", str(cwd), *args],
                deadline).stdout.rstrip("\n")
 
 
@@ -109,7 +109,7 @@ def reviewed_client(source, revision, root, deadline):
             mode, kind, oid = metadata.split()
             require(mode in ("100644", "100755") and kind == "blob"
                     and re.fullmatch(r"[0-9a-f]{40}", oid))
-            raw = run(["git", "-C", str(source), "cat-file", "blob", oid],
+            raw = run(["git", "--no-replace-objects", "-C", str(source), "cat-file", "blob", oid],
                       deadline, text=False).stdout
             total += len(raw)
             require(total <= 4_000_000)

@@ -330,6 +330,27 @@ class GitIsolationTests(unittest.TestCase):
             with startup.reviewed_client(self.repo, self.git("rev-parse", "HEAD"), private, self.deadline):
                 self.fail("symlink must not be exported")
 
+    def test_git_replace_refs_cannot_change_the_pinned_client_tree(self):
+        script = self.repo / "context_relay.py"
+        script.write_text("print('original reviewed tree')\n")
+        self.git("add", ".")
+        self.git("-c", "user.name=Synthetic", "-c", "user.email=synthetic@example.invalid",
+                 "commit", "-qm", "original synthetic client")
+        revision = self.git("rev-parse", "HEAD")
+        script.write_text("print('replacement tree must not execute')\n")
+        self.git("add", ".")
+        self.git("-c", "user.name=Synthetic", "-c", "user.email=synthetic@example.invalid",
+                 "commit", "-qm", "replacement synthetic client")
+        replacement = self.git("rev-parse", "HEAD")
+        self.git("reset", "--hard", revision)
+        self.git("replace", revision, replacement)
+        self.assertIn("replacement tree", self.git("show", revision + ":context_relay.py"))
+        private = self.root / "private"
+        private.mkdir(mode=0o700)
+        with startup.reviewed_client(self.repo, revision, private, self.deadline) as stage:
+            result = startup.run(startup.client_command(stage), self.deadline, cwd=stage)
+            self.assertEqual(result.stdout.strip(), "original reviewed tree")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -316,6 +316,12 @@ class RelayTests(unittest.TestCase):
             "request_id": "via-http", "expected_revision": 0, "checkpoint": self.context})
         self.assertEqual(result["pin"]["revision"], 1)
         self.assertEqual(relay.client(url, self.credentials["cj"], "context", {})["revision"], 1)
+        self.assertEqual(relay.client(url, self.credentials["cj"], "context", {},
+                                      relay_port=server.server_port)["revision"], 1)
+        with self.assertRaises(HTTPError) as wrong_host:
+            relay.client(url, self.credentials["cj"], "context", {},
+                         relay_port=1 if server.server_port != 1 else 2)
+        self.assertEqual(wrong_host.exception.code, 403)
         for headers, status in (({}, 401), ({"Origin": "https://example.invalid"}, 403),
                                 ({"Host": "example.invalid"}, 403)):
             request = Request(url + "/context", data=relay.canonical({"workspace": "synthetic-team"}),
@@ -329,6 +335,24 @@ class RelayTests(unittest.TestCase):
                     "http://secret@127.0.0.1:8765", "http://127.0.0.1:8765/elsewhere"):
             with self.subTest(url=url), self.assertRaisesRegex(relay.Rejected, "loopback"):
                 relay.client(url, self.root / "missing", "context", {})
+
+    def test_client_forwarded_port_sets_remote_loopback_host(self):
+        response = unittest.mock.MagicMock()
+        response.__enter__.return_value.read.return_value = relay.canonical({"workspace": "synthetic-team"})
+        opener = unittest.mock.MagicMock()
+        opener.open.return_value = response
+        with patch.object(relay, "build_opener", return_value=opener):
+            relay.client("http://127.0.0.1:43210", self.credentials["jp"], "context", {}, relay_port=8765)
+            request = opener.open.call_args.args[0]
+            self.assertEqual(request.full_url, "http://127.0.0.1:43210/context")
+            self.assertEqual(request.get_header("Host"), "127.0.0.1:8765")
+            relay.client("http://127.0.0.1:43210", self.credentials["jp"], "context", {})
+            self.assertIsNone(opener.open.call_args.args[0].get_header("Host"))
+
+    def test_client_rejects_invalid_remote_ports_before_credentials(self):
+        for port in (True, False, 0, -1, 65536, "8765", 8765.0):
+            with self.subTest(port=port), self.assertRaisesRegex(relay.Rejected, "relay port"):
+                relay.client("http://127.0.0.1:43210", self.root / "missing", "context", {}, relay_port=port)
 
     def test_cli_init_credentials_and_state_are_owner_only_under_permissive_parent_umask(self):
         script = Path(relay.__file__).resolve()

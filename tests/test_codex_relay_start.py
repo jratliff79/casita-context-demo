@@ -12,7 +12,7 @@ import codex_relay_start as startup
 
 class StartupTests(unittest.TestCase):
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory()
+        self.temp = tempfile.TemporaryDirectory(dir="/tmp")
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
         self.source = self.root / "source"
@@ -39,6 +39,9 @@ class StartupTests(unittest.TestCase):
         self.failure = False
         self.bad_receipt = False
         self.ssh_ready = True
+        self.ssh_destination = "hostname synthetic-relay\nuser synthetic\nport 22\n"
+        self.object_format = "sha1"
+        self.revision = "a" * 40
         self.forward_failure = False
         self.client_blob = b"print('synthetic client')\n"
         self.client_oid = startup.hashlib.sha1(b"blob " + str(len(self.client_blob)).encode()
@@ -57,10 +60,12 @@ class StartupTests(unittest.TestCase):
         if args[-4:] == ("worktree", "list", "--porcelain", "-z"):
             return "worktree " + str(self.root) + "\0HEAD synthetic\0\0worktree " + str(self.root / "worktree") + "\0HEAD synthetic\0\0"
         if args == ("rev-parse", "HEAD"):
-            return "a" * 40
+            return self.revision
+        if args == ("rev-parse", "--show-object-format=storage"):
+            return self.object_format
         if args == ("status", "--porcelain", "--untracked-files=normal"):
             return ""
-        if args == ("ls-tree", "-r", "-z", "a" * 40):
+        if args == ("ls-tree", "-r", "-z", self.revision):
             return "100644 blob " + self.client_oid + "\tcontext_relay.py\0"
         self.fail("unexpected Git command")
 
@@ -69,6 +74,8 @@ class StartupTests(unittest.TestCase):
             return subprocess.CompletedProcess(argv, 0, self.client_blob, b"")
         self.commands.append(argv)
         if argv[0] == "ssh":
+            if "-G" in argv:
+                return subprocess.CompletedProcess(argv, 0, self.ssh_destination, "")
             if "forward" in argv and self.forward_failure:
                 raise startup.Unavailable()
             return subprocess.CompletedProcess(argv, 0 if self.ssh_ready or "check" not in argv else 1, "", "")
@@ -158,27 +165,100 @@ class StartupTests(unittest.TestCase):
                                 "socket": str(self.root / "tunnel.sock"), "alias": "synthetic-relay"}
         self.invoke()
         ssh_commands = [c for c in self.commands if c[0] == "ssh"]
-        self.assertEqual(len(ssh_commands), 2)
-        self.assertIn("forward", ssh_commands[1])
-        self.assertIn("127.0.0.1:8765:127.0.0.1:8765", ssh_commands[1])
+        client = next(c for c in self.commands if c[0] != "ssh")
+        self.assertEqual(client[client.index("--relay-port") + 1], "8765")
+        self.assertEqual(len(ssh_commands), 4)
+        self.assertIn("forward", ssh_commands[2])
+        self.assertRegex(ssh_commands[2][ssh_commands[2].index("-L") + 1], r"127\.0\.0\.1:\d+:127\.0\.0\.1:8765")
+        self.assertIn("cancel", ssh_commands[3])
+        forwarded = ssh_commands[2][ssh_commands[2].index("-L") + 1]
+        self.assertEqual(forwarded, ssh_commands[3][ssh_commands[3].index("-L") + 1])
+        derived = ssh_commands[1][ssh_commands[1].index("-S") + 1]
+        self.assertNotEqual(derived, self.settings["ssh"]["socket"])
         self.ssh_ready = False
         self.commands.clear()
         self.invoke()
         commands = [c for c in self.commands if c[0] == "ssh"]
-        self.assertEqual(len(commands), 2)
-        self.assertIn("BatchMode=yes", commands[1])
-        self.assertIn("StrictHostKeyChecking=yes", commands[1])
-        self.assertIn("ExitOnForwardFailure=yes", commands[1])
-        self.assertIn("127.0.0.1:8765:127.0.0.1:8765", commands[1])
+        self.assertEqual(len(commands), 5)
+        self.assertIn("BatchMode=yes", commands[2])
+        self.assertIn("StrictHostKeyChecking=yes", commands[2])
+        self.assertIn("ExitOnForwardFailure=yes", commands[2])
+        self.assertIn("ClearAllForwardings=yes", commands[2])
+        self.assertNotIn("-L", commands[2])
+        self.assertIn("forward", commands[3])
 
     def test_existing_master_without_available_exact_forward_never_receives_credential(self):
         self.settings["ssh"] = {"config": str(self.root / "ssh-config"),
                                 "socket": str(self.root / "tunnel.sock"), "alias": "synthetic-relay"}
         self.forward_failure = True
         self.assertIn("unavailable", self.invoke()["systemMessage"])
-        self.assertEqual(len(self.commands), 2)
+        self.assertEqual(len(self.commands), 3)
         self.assertTrue(all(c[0] == "ssh" and "--credential" not in c for c in self.commands))
         self.assertEqual(self.outputs, [])
+
+    def test_changed_effective_destination_or_alias_never_reuses_previous_master(self):
+        self.settings["ssh"] = {"config": str(self.root / "ssh-config"),
+                                "socket": str(self.root / "tunnel.sock"), "alias": "synthetic-relay"}
+        sockets = []
+        for host in ("first", "second"):
+            self.ssh_destination = "hostname " + host + "\nuser synthetic\nport 22\n"
+            self.invoke()
+            check = [c for c in self.commands if "check" in c][-1]
+            sockets.append(check[check.index("-S") + 1])
+        self.settings["ssh"]["alias"] = "different-alias"
+        self.invoke()
+        check = [c for c in self.commands if "check" in c][-1]
+        sockets.append(check[check.index("-S") + 1])
+        self.assertEqual(len(set(sockets)), 3)
+
+    def test_failed_client_cancels_only_its_ephemeral_forward(self):
+        self.settings["ssh"] = {"config": str(self.root / "ssh-config"),
+                                "socket": str(self.root / "tunnel.sock"), "alias": "synthetic-relay"}
+        self.failure = True
+        self.assertIn("unavailable", self.invoke()["systemMessage"])
+        forward = next(c for c in self.commands if "forward" in c)
+        cancel = next(c for c in self.commands if "cancel" in c)
+        self.assertEqual(forward[forward.index("-L") + 1], cancel[cancel.index("-L") + 1])
+        self.assertFalse(self.outputs[-1].exists())
+        self.assertTrue(all("exit" not in c for c in self.commands))
+
+    def test_long_master_socket_namespace_is_rejected_before_authentication(self):
+        parent = self.root / ("s" * 90)
+        parent.mkdir(mode=0o700)
+        self.settings["ssh"] = {"config": str(self.root / "ssh-config"),
+                                "socket": str(parent / "tunnel.sock"), "alias": "synthetic-relay"}
+        self.assertIn("unavailable", self.invoke()["systemMessage"])
+        self.assertEqual(len(self.commands), 1)
+        self.assertIn("-G", self.commands[0])
+        self.assertEqual(self.outputs, [])
+
+    def test_present_malformed_ssh_setting_is_rejected_before_any_client_invocation(self):
+        for value in ({}, None, False, [], {"alias": "synthetic-relay"}):
+            self.settings["ssh"] = value
+            self.commands.clear()
+            self.assertIn("unavailable", self.invoke()["systemMessage"])
+            self.assertEqual(self.commands, [])
+
+    def test_allowlisted_enrollment_errors_require_visible_fallback(self):
+        self.write_private(self.config, self.settings)
+        for failing in (("rev-parse", "--show-toplevel"), ("worktree", "list", "--porcelain", "-z")):
+            def failed_git(cwd, deadline, *args):
+                if args == failing or args[-4:] == failing:
+                    raise subprocess.TimeoutExpired("synthetic Git inspection", 1)
+                return self.fake_git(cwd, deadline, *args)
+            with patch.object(startup, "git", side_effect=failed_git), patch.object(startup, "run") as command:
+                result = startup.consult(self.event, self.config)
+                self.assertIn("unavailable", result["systemMessage"])
+                self.assertIn("explicit fallback", result["hookSpecificOutput"]["additionalContext"])
+                command.assert_not_called()
+
+    def test_sha256_client_revision_and_blob_hashes_are_supported(self):
+        self.object_format = "sha256"
+        self.revision = "a" * 64
+        self.settings["source_revision"] = self.revision
+        self.client_oid = startup.hashlib.sha256(b"blob " + str(len(self.client_blob)).encode()
+                                                + b"\0" + self.client_blob).hexdigest()
+        self.assertIn("verified", self.invoke()["systemMessage"])
 
     def test_valid_large_memory_receipt_is_accepted_but_oversized_receipt_is_removed(self):
         self.memory = [{"scope": "workspace", "statement": "s" * 1000,
@@ -350,6 +430,40 @@ class GitIsolationTests(unittest.TestCase):
         with startup.reviewed_client(self.repo, revision, private, self.deadline) as stage:
             result = startup.run(startup.client_command(stage), self.deadline, cwd=stage)
             self.assertEqual(result.stdout.strip(), "original reviewed tree")
+
+    def test_real_sha256_repository_exports_matching_commit_and_blob_objects(self):
+        self.repo = self.root / "sha256-repo"
+        self.repo.mkdir()
+        self.git("init", "-q", "--object-format=sha256")
+        self.git("config", "core.hooksPath", str(self.root / "no-hooks"))
+        (self.repo / "context_relay.py").write_text("print('synthetic SHA-256 client')\n")
+        self.git("add", ".")
+        self.git("-c", "user.name=Synthetic", "-c", "user.email=synthetic@example.invalid",
+                 "commit", "-qm", "synthetic SHA-256 fixture")
+        revision = self.git("rev-parse", "HEAD")
+        self.assertEqual(len(revision), 64)
+        private = self.root / "private"
+        private.mkdir(mode=0o700)
+        with startup.reviewed_client(self.repo, revision, private, self.deadline) as stage:
+            result = startup.run(startup.client_command(stage), self.deadline, cwd=stage)
+            self.assertEqual(result.stdout.strip(), "synthetic SHA-256 client")
+
+    def test_background_status_preserves_index_bytes_and_existing_index_lock(self):
+        script = self.repo / "context_relay.py"
+        script.write_text("print('synthetic client')\n")
+        self.git("add", ".")
+        self.git("-c", "user.name=Synthetic", "-c", "user.email=synthetic@example.invalid",
+                 "commit", "-qm", "synthetic index fixture")
+        index = self.common / "index"
+        before = index.read_bytes()
+        os.utime(script, (1, 1))
+        self.assertEqual(startup.git(self.repo, self.deadline, "status", "--porcelain", "--untracked-files=normal"), "")
+        self.assertEqual(index.read_bytes(), before)
+        lock = self.common / "index.lock"
+        lock.write_bytes(b"synthetic concurrent Git lock")
+        self.assertEqual(startup.git(self.repo, self.deadline, "status", "--porcelain", "--untracked-files=normal"), "")
+        self.assertEqual(index.read_bytes(), before)
+        self.assertEqual(lock.read_bytes(), b"synthetic concurrent Git lock")
 
 
 if __name__ == "__main__":

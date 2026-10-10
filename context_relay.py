@@ -360,17 +360,22 @@ class NoRedirect(HTTPRedirectHandler):
         raise Rejected("redirect rejected")
 
 
-def client(url, credential, operation, body):
+def client(url, credential, operation, body, relay_port=None):
     target = urlsplit(url)
     require(target.scheme == "http" and target.hostname in ("127.0.0.1", "localhost")
             and target.port is not None and target.path in ("", "/") and not target.query
             and not target.fragment and not target.username and not target.password,
             "use a loopback URL, with SSH forwarding for another machine")
+    headers = {"Content-Type": "application/json"}
+    if relay_port is not None:
+        require(type(relay_port) is int and 1 <= relay_port <= 65535,
+                "invalid relay port")
+        headers["Host"] = f"{target.hostname}:{relay_port}"
     config = json.loads(read_regular(credential, 4096))
+    headers["Authorization"] = "Bearer " + config["token"]
     request = Request(url.rstrip("/") + "/" + operation,
                       data=canonical({"workspace": config["workspace"], **body}),
-                      headers={"Authorization": "Bearer " + config["token"],
-                               "Content-Type": "application/json"})
+                      headers=headers)
     with build_opener(ProxyHandler({}), NoRedirect()).open(request, timeout=30) as response:
         raw = response.read(WIRE_LIMIT + 1)
     require(len(raw) <= WIRE_LIMIT, "response exceeds limit")
@@ -549,6 +554,8 @@ def main():
             p.add_argument("--casita", required=True)
             if name == "consult":
                 p.add_argument("--task", required=True)
+                p.add_argument("--relay-port", type=int,
+                               help="remote loopback relay port when SSH uses a different local port")
         elif name == "updates":
             p.add_argument("--after", type=int, required=True)
         else:
@@ -591,7 +598,10 @@ def main():
         else:
             body = {"after": args.after} if args.command == "updates" else {}
         operation = "context" if args.command == "consult" else args.command
-        result = client(args.url, args.credential, operation, body)
+        if args.command == "consult" and args.relay_port is not None:
+            result = client(args.url, args.credential, operation, body, relay_port=args.relay_port)
+        else:
+            result = client(args.url, args.credential, operation, body)
         if args.command in ("context", "consult"):
             require(result["pin"] is not None, "no checkpoint published")
             snapshot = receive(result, args.casita, args.output)

@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import socket as sockets
 import stat
 import subprocess
 import sys
@@ -60,7 +61,7 @@ def run(argv, deadline, check=True, cwd=None, text=True):
 
 
 def git(cwd, deadline, *args):
-    return run(["git", "--no-replace-objects", "-c", "core.fsmonitor=false", "-C", str(cwd), *args],
+    return run(["git", "--no-replace-objects", "--no-optional-locks", "-c", "core.fsmonitor=false", "-C", str(cwd), *args],
                deadline).stdout.rstrip("\n")
 
 
@@ -69,8 +70,8 @@ def common_dir(cwd, deadline):
     return (Path(cwd) / value).resolve() if not value.is_absolute() else value.resolve()
 
 
-def enrolled_repository(cwd, allowed, deadline):
-    common = common_dir(cwd, deadline)
+def enrolled_repository(cwd, allowed, deadline, common=None):
+    common = common_dir(cwd, deadline) if common is None else common
     if common not in allowed:
         return False
     top = Path(git(cwd, deadline, "rev-parse", "--show-toplevel")).resolve()
@@ -95,6 +96,9 @@ def reviewed_client(source, revision, root, deadline):
     # Export regular top-level Python blobs and the client's import-time fixture.
     # Working files, ignored bytecode, packages and symlinks never enter the import path.
     tree = git(source, deadline, "ls-tree", "-r", "-z", revision)
+    object_format = git(source, deadline, "rev-parse", "--show-object-format=storage")
+    require(object_format in ("sha1", "sha256"))
+    hash_length = 40 if object_format == "sha1" else 64
     with tempfile.TemporaryDirectory(prefix="reviewed-client-", dir=root) as folder:
         stage = Path(folder)
         names = set()
@@ -108,12 +112,12 @@ def reviewed_client(source, revision, root, deadline):
                 continue
             mode, kind, oid = metadata.split()
             require(mode in ("100644", "100755") and kind == "blob"
-                    and re.fullmatch(r"[0-9a-f]{40}", oid))
-            raw = run(["git", "--no-replace-objects", "-C", str(source), "cat-file", "blob", oid],
+                    and re.fullmatch(r"[0-9a-f]{" + str(hash_length) + "}", oid))
+            raw = run(["git", "--no-replace-objects", "--no-optional-locks", "-C", str(source), "cat-file", "blob", oid],
                       deadline, text=False).stdout
             total += len(raw)
             require(total <= 4_000_000)
-            require(hashlib.sha1(b"blob " + str(len(raw)).encode() + b"\0" + raw).hexdigest() == oid)
+            require(hashlib.new(object_format, b"blob " + str(len(raw)).encode() + b"\0" + raw).hexdigest() == oid)
             (stage / name).parent.mkdir(mode=0o700, parents=True, exist_ok=True)
             (stage / name).write_bytes(raw)
             (stage / name).chmod(0o600)
@@ -157,6 +161,51 @@ def tunnel_lock(root, deadline):
         yield
 
 
+@contextmanager
+def relay_url(settings, root, deadline):
+    if "ssh" not in settings:
+        yield "http://127.0.0.1:8765"
+        return
+    ssh_settings = settings["ssh"]
+    require(isinstance(ssh_settings, dict) and set(ssh_settings) == {"config", "socket", "alias"})
+    config = absolute(ssh_settings["config"])
+    namespace = absolute(ssh_settings["socket"])
+    alias = ssh_settings["alias"]
+    require(isinstance(alias, str) and re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}", alias))
+    ssh = ["ssh", "-F", str(config), "-o", "BatchMode=yes", "-o", "ConnectTimeout=5",
+           "-o", "StrictHostKeyChecking=yes", "-o", "ExitOnForwardFailure=yes"]
+    effective = run(ssh + ["-G", alias], deadline).stdout
+    require(len(effective.encode()) <= MAX_INPUT)
+    # A legacy socket, or a master for another alias/effective destination, is never reused.
+    identity = hashlib.sha256(json.dumps([str(namespace), alias, effective]).encode()).hexdigest()
+    parent = namespace.parent.lstat()
+    require(stat.S_ISDIR(parent.st_mode) and parent.st_uid == os.getuid() and not parent.st_mode & 0o077)
+    socket = namespace.parent / ("c-" + identity[:20])
+    # OpenSSH appends a temporary suffix while creating its master socket atomically.
+    require(len(os.fsencode(socket)) + 18 < 104)
+    master = ssh + ["-S", str(socket)]
+    # Control requests read no SSH config: only the explicitly requested forward is installed.
+    control = ["ssh", "-F", "none", "-S", str(socket)]
+    with tunnel_lock(root, deadline):
+        ready = run(master + ["-O", "check", alias], deadline, check=False)
+        if ready.returncode:
+            run(master + ["-o", "ClearAllForwardings=yes", "-fN", "-M", alias], deadline)
+        # Reserve a free loopback port for this consultation. If another listener wins the
+        # release/bind race, OpenSSH rejects the forward before any credential is sent.
+        with sockets.socket() as probe:
+            probe.bind(("127.0.0.1", 0))
+            port = probe.getsockname()[1]
+        forward = "127.0.0.1:" + str(port) + ":127.0.0.1:8765"
+        run(control + ["-O", "forward", "-L", forward, alias], deadline)
+        try:
+            yield "http://127.0.0.1:" + str(port)
+        finally:
+            try:
+                run(control + ["-O", "cancel", "-L", forward, alias], deadline)
+            except (Unavailable, OSError, subprocess.TimeoutExpired):
+                pass
+
+
 def consult(event, config_path):
     require(isinstance(event, dict) and event.get("hook_event_name") == "SessionStart")
     require(event.get("source") in ("startup", "resume", "clear", "compact"))
@@ -170,17 +219,26 @@ def consult(event, config_path):
     allowed = [absolute(value).resolve() for value in allowed]
     # Require both the enrolled common directory and its registered worktree top level.
     try:
-        enrolled = enrolled_repository(event["cwd"], allowed, deadline)
+        current = common_dir(event["cwd"], deadline)
     except (Unavailable, subprocess.TimeoutExpired, OSError):
         return {}
-    if not enrolled:
+    if current not in allowed:
         return {}
+    try:
+        if not enrolled_repository(event["cwd"], allowed, deadline, common=current):
+            return {}
+    except (Unavailable, subprocess.TimeoutExpired, OSError):
+        return hook_output("Shared relay enrollment unavailable. An explicit fallback decision is required.",
+                           unavailable=True)
 
     output = None
     try:
         source = absolute(settings["source_dir"])
         revision = settings["source_revision"]
-        require(isinstance(revision, str) and re.fullmatch(r"[0-9a-f]{40}", revision))
+        object_format = git(source, deadline, "rev-parse", "--show-object-format=storage")
+        require(object_format in ("sha1", "sha256"))
+        hash_length = 40 if object_format == "sha1" else 64
+        require(isinstance(revision, str) and re.fullmatch(r"[0-9a-f]{" + str(hash_length) + "}", revision))
         require(git(source, deadline, "rev-parse", "HEAD") == revision)
         require(not git(source, deadline, "status", "--porcelain", "--untracked-files=normal"))
         credential = absolute(settings["credential"])
@@ -195,30 +253,15 @@ def consult(event, config_path):
         mode = root.lstat()
         require(stat.S_ISDIR(mode.st_mode) and mode.st_uid == os.getuid()
                 and not mode.st_mode & 0o077)
-        ssh_settings = settings.get("ssh")
-        if ssh_settings:
-            config = absolute(ssh_settings["config"])
-            socket = absolute(ssh_settings["socket"])
-            alias = ssh_settings["alias"]
-            require(isinstance(alias, str) and re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}", alias))
-            ssh = ["ssh", "-F", str(config), "-S", str(socket), "-o", "BatchMode=yes",
-                   "-o", "ConnectTimeout=5", "-o", "StrictHostKeyChecking=yes",
-                   "-o", "ExitOnForwardFailure=yes"]
-            with tunnel_lock(root, deadline):
-                ready = run(ssh + ["-O", "check", alias], deadline, check=False)
-                if ready.returncode:
-                    run(ssh + ["-fN", "-M", "-L", "127.0.0.1:8765:127.0.0.1:8765", alias], deadline)
-                else:
-                    # An alive master is insufficient. OpenSSH accepts an identical active
-                    # forward, but rejects a new bind when another process owns the port.
-                    run(ssh + ["-O", "forward", "-L", "127.0.0.1:8765:127.0.0.1:8765", alias], deadline)
         session = event.get("session_id")
         require(isinstance(session, str) and 0 < len(session) <= 256)
         task = "codex-" + hashlib.sha256(session.encode()).hexdigest()[:32]
         output = root / uuid.uuid4().hex
-        with reviewed_client(source, revision, root, deadline) as stage:
-            run(client_command(stage) + ["consult", "--url", "http://127.0.0.1:8765", "--task", task,
-                 "--credential", str(credential), "--casita", str(casita), "--output", str(output)],
+        with relay_url(settings, root, deadline) as url, reviewed_client(source, revision, root, deadline) as stage:
+            transport = ["--relay-port", "8765"] if "ssh" in settings else []
+            run(client_command(stage) + ["consult", "--url", url, "--task", task,
+                 "--credential", str(credential), "--casita", str(casita), "--output", str(output)] + transport,
+                # The relay checks its own loopback port in Host, independent of the local tunnel port.
                 deadline, cwd=stage)
         receipt = private_json(output / "task-start.json", limit=MAX_RECEIPT)
         pin = private_json(output / "verified-pin.json")

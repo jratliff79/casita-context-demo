@@ -23,7 +23,9 @@ the client's required JSON fixture from that commit into a temporary private
 directory, verifies their Git object hashes,
 and runs the client with isolated Python (`-I -S -B`). Ignored bytecode, working
 files, site customization and the original checkout are absent from its import
-path. Git replacement refs are disabled during source selection and blob reads.
+path. Git replacement refs are disabled during source selection and blob reads;
+SHA-1 and SHA-256 Git object formats are supported. Git inspection uses
+`--no-optional-locks` so a background status check cannot refresh the client's index.
 The export is removed after consultation. This hook does not install
 dependencies or download an executable at task startup.
 
@@ -63,13 +65,26 @@ PATH_TO_CASITA` for the locally qualified binary hash. Settings contain paths,
 not credential values. Store the credential separately with mode `0600`.
 
 The SSH config must use a separately provisioned tunnel-only identity, pinned
-known hosts, no shell, and local forwarding solely to the loopback relay. The
-hook requests the exact loopback forward on an existing control master before
-using it, or starts a noninteractive master with strict host checking and
-`ExitOnForwardFailure`. A running master alone is insufficient: a failed forward
-stops consultation before sending a credential. It never prompts for a password.
+known hosts, no shell, and local forwarding solely to the loopback relay. `socket`
+sets a private socket namespace; its parent must be owned by the current user
+with mode `0700`. The actual master socket is derived from the alias and effective
+SSH configuration in that parent, so a legacy socket or a different destination
+cannot be reused. Keep this directory path short enough for a Unix socket,
+including OpenSSH's temporary creation suffix; long paths are rejected before authentication.
+
+The hook starts a noninteractive master with strict host checking and
+`ExitOnForwardFailure`, clearing inherited forwards. Each consultation requests
+a fresh ephemeral loopback port to remote `127.0.0.1:8765`, then cancels that
+specific forward after use. The pinned client must include the `consult
+--relay-port` option; the hook supplies `8765` so HTTP Host validation uses the
+remote relay port while the connection uses the temporary local port.
+Forwarding control requests read no SSH config,
+so only that mapping is requested. A bind failure stops before credential delivery.
+Existing manually managed port-8765 tunnels can coexist with the hook's own
+destination-bound tunnel. It never prompts for a password.
 For a manually managed local tunnel, omit `ssh`; the hook still contacts only
-`http://127.0.0.1:8765`. Do not add a public bind or HTTP endpoint.
+`http://127.0.0.1:8765`. A present empty, null or incomplete SSH block is rejected
+rather than treated as a manual-tunnel choice. Do not add a public bind or HTTP endpoint.
 
 ## Add and trust the hook
 
@@ -113,7 +128,8 @@ task ID. Existing named checkpoints still require an explicit manual
 `context_relay.py consult --task TASK_ID`; this adapter does not infer a shared
 task identifier from a prompt or branch name.
 
-On authentication, transport, pin, binary or restoration failure, the hook
+On enrollment-inspection failure after the Git common directory matches the
+allowlist, or on authentication, transport, pin, binary or restoration failure, the hook
 returns a visible unavailable-context warning and instructs the assistant to
 report the failure and obtain an explicit fallback decision. It does not reuse
 old context. Partial failed restoration is removed. This warning does not

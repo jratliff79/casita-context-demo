@@ -56,6 +56,12 @@ class TeamSummaryChecks(unittest.TestCase):
                 self.assertEqual(result["pending"], ["test-in-a-real-workflow"])
                 self.assertEqual(result["selected_proposal_id"], receipt["proposal_pins"][person]["proposal_id"])
                 self.assertEqual([p["proposer"] for p in result["proposals"] if p["status"] == "selected"], [person])
+                for proposal in result["proposals"]:
+                    self.assertEqual(proposal["citation"], {
+                        "path": team.SOURCE, "file_sha256": team.digest(team.POLICY),
+                        "start_line": 2, "end_line": 3,
+                        "excerpt": ["Retries must not exceed two additional attempts.",
+                                    "The operator may choose a lower retry limit."]})
                 self.assertEqual(team.file_map(run), before)
 
     def test_success_flags_do_not_bypass_changed_proposal(self):

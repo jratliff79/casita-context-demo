@@ -65,6 +65,7 @@ def summarize(run):
             "proposals": [{"proposer": person,
                            "proposal_id": proposal_pins[person]["proposal_id"],
                            "statement": proposals[person]["replacement"]["statement"],
+                           "citation": proposals[person]["citation"],
                            "status": "selected" if person == selected else "not selected; needs fresh review"}
                           for person in team.PEOPLE],
             "limits": ["Expected pins come from this trusted local run receipt; they are unsigned.",

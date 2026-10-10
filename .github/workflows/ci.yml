@@ -360,6 +360,11 @@ jobs:
               assert summary["selected_proposal_id"] == receipt["proposal_pins"][selected]["proposal_id"]
               assert summary["pending"] == ["test-in-a-real-workflow"]
               assert len(summary["proposals"]) == 2
+              for proposal in summary["proposals"]:
+                  original = verify_proposal(root / f"owner/proposals/{proposal['proposer']}",
+                                             receipt["proposal_pins"][proposal["proposer"]],
+                                             root / "owner/context-v1", receipt["input_pin"])
+                  assert proposal["citation"] == original["citation"]
               assert [p["proposer"] for p in summary["proposals"] if p["status"] == "selected"] == [selected]
           print("PASS: both explicit owner selections, retained competing advice and exact source/parent bindings")
           PY
@@ -449,6 +454,28 @@ jobs:
               assert role["ok"] and all(c["exit_code"] == 0 for c in role["commands"])
           assert not (folder / "rejected-modified-pins/store").exists()
           print("PASS: synthetic Git selections, signed round trip, exact citations and rejection controls")
+          PY
+
+      - name: Prepare numbered review requests and validate a scripted reply offline
+        run: |
+          python halo_review.py request --context output/git-review-example/receiver --pins output/git-review-example/sender/pins.json --signature output/git-review-example/sender/pins.sig --allowed-signers output/git-review-example/sender-allowed-signers --signer synthetic-sender --source output/git-review-example/synthetic-repository --model synthetic-no-inference --output output/halo-adapter-request
+          python halo_review.py validate --request output/halo-adapter-request --request-sha256 "$(cat output/halo-adapter-request/request-sha256.txt)" --response output/git-review-example/report.json --output output/halo-adapter-validated
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root = Path("output/halo-adapter-request")
+          request = json.loads((root / "request.json").read_text())
+          payload = json.loads(request["messages"][1]["content"])
+          source = next(item for item in payload["sources"] if item["id"] == "classifier")
+          assert [item["line"] for item in source["lines"]] == [3, 4, 5, 6]
+          assert not request["allow_download"] and "tools" not in request
+          receipt = json.loads((root / "receipt.json").read_text())
+          assert receipt["signature_verified"] and receipt["original_git_verified"]
+          assert not receipt["inference_performed"]
+          returned = Path("output/halo-adapter-validated")
+          assert json.loads((returned / "report.json").read_text()) == json.loads(Path("output/git-review-example/report.json").read_text())
+          assert json.loads((returned / "receipt.json").read_text())["accepted"]
+          print("PASS: authenticated numbered request and exact scripted response; no live inference")
           PY
 
       - name: Replay the public selected-Git capsule review

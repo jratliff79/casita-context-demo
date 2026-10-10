@@ -108,6 +108,11 @@ update. Updates to one task preserve the other task checkpoints.
 
 ## Consult the relay at the beginning of every task
 
+For opt-in automatic consultation in local Codex chats, see the
+[Codex task-start adapter](codex-task-start.md). It adds a reviewed and trusted
+`SessionStart` hook on each teammate's machine. Manual consultation remains
+available below; installing a template alone does not prove runtime invocation.
+
 Both teammates install the same demo code and tested CLI locally. For CJ, use the
 privately delivered credential path instead of JP's path below:
 

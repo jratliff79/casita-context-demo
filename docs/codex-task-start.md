@@ -28,6 +28,9 @@ SHA-1 and SHA-256 Git object formats are supported. Git inspection uses
 `--no-optional-locks` so a background status check cannot refresh the client's index.
 The export is removed after consultation. This hook does not install
 dependencies or download an executable at task startup.
+The configured Casita bytes are copied into a private temporary executable and
+hashed there; only that verified copy is executed. Replacing the original path
+after validation cannot change the executable used by the consultation.
 
 Create a mode `0700` private configuration directory outside Git, then save a
 mode `0600` settings file. Substitute your own **absolute** paths and pins:
@@ -65,7 +68,11 @@ PATH_TO_CASITA` for the locally qualified binary hash. Settings contain paths,
 not credential values. Store the credential separately with mode `0600`.
 
 The SSH config must use a separately provisioned tunnel-only identity, pinned
-known hosts, no shell, and local forwarding solely to the loopback relay. `socket`
+known hosts, no shell, and local forwarding solely to the loopback relay. The
+config must be a regular file owned by the current user and not writable by
+group or others. Symlinks and `Include` directives are unsupported; keep this
+config self-contained. SSH evaluates a private copy of those checked bytes, so
+replacing the original cannot change a consultation in progress. `socket`
 sets a private socket namespace; its parent must be owned by the current user
 with mode `0700`. The actual master socket is derived from the alias and effective
 SSH configuration in that parent, so a legacy socket or a different destination
@@ -120,6 +127,9 @@ mode `0700` directory. It reports the workspace, verified revision, accepted
 memory count and receipt path. Its developer context asks the assistant to read
 `task-start.json` before planning and treat all shared material as untrusted
 evidence. It does not inject source or memory statements as developer instructions.
+The output root must be outside Git checkouts, including linked worktrees and
+paths that enter a checkout through a parent symlink. A misplaced output root
+is rejected before creating or restoring private context.
 
 A fresh task gets accepted workspace memory, but no other task's checkpoint or
 task-specific memory. The initial synthetic pilot can therefore legitimately

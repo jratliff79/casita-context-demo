@@ -19,6 +19,8 @@ class StartupTests(unittest.TestCase):
         self.source.mkdir()
         self.binary = self.root / "casita"
         self.binary.write_bytes(b"synthetic executable")
+        self.write_private(self.root / "ssh-config", {})
+        (self.root / "ssh-config").write_text("Host synthetic-relay\n HostName synthetic.invalid\n")
         self.credential = self.root / "member.json"
         self.write_private(self.credential, {"workspace": "synthetic-team", "token": "synthetic-secret-canary"})
         self.config = self.root / "settings.json"
@@ -83,6 +85,10 @@ class StartupTests(unittest.TestCase):
         self.assertIn("consult", argv)
         self.assertNotEqual(cwd, self.source)
         self.assertEqual((cwd / "context_relay.py").read_bytes(), self.client_blob)
+        executable = Path(argv[argv.index("--casita") + 1])
+        self.assertNotEqual(executable, self.binary)
+        self.assertEqual(executable.read_bytes(), b"synthetic executable")
+        self.assertEqual(executable.stat().st_mode & 0o777, 0o700)
         output = Path(argv[argv.index("--output") + 1])
         output.mkdir(mode=0o700)
         self.outputs.append(output)
@@ -238,6 +244,73 @@ class StartupTests(unittest.TestCase):
             self.commands.clear()
             self.assertIn("unavailable", self.invoke()["systemMessage"])
             self.assertEqual(self.commands, [])
+
+    def test_ssh_config_rejects_writable_symlink_and_include_inputs_before_ssh(self):
+        config = self.root / "ssh-config"
+        self.settings["ssh"] = {"config": str(config), "socket": str(self.root / "tunnel.sock"),
+                                "alias": "synthetic-relay"}
+        config.chmod(0o622)
+        self.assertIn("unavailable", self.invoke()["systemMessage"])
+        config.chmod(0o600)
+        for line in ("Include extras.conf", "iNcLuDe=extras.conf", "  Include /synthetic/*.conf"):
+            config.write_text(line + "\n")
+            self.assertIn("unavailable", self.invoke()["systemMessage"])
+        config.unlink()
+        config.symlink_to(self.credential)
+        self.assertIn("unavailable", self.invoke()["systemMessage"])
+        self.assertEqual(self.commands, [])
+
+    def test_ssh_uses_protected_snapshot_despite_original_config_replacement(self):
+        config = self.root / "ssh-config"
+        original = config.read_bytes()
+        self.settings["ssh"] = {"config": str(config), "socket": str(self.root / "tunnel.sock"),
+                                "alias": "synthetic-relay"}
+        def changed_run(argv, *args, **kwargs):
+            if argv[0] == "ssh" and argv[argv.index("-F") + 1] != "none":
+                snapshot = Path(argv[argv.index("-F") + 1])
+                self.assertNotEqual(snapshot, config)
+                self.assertEqual(snapshot.read_bytes(), original)
+                self.assertEqual(snapshot.stat().st_mode & 0o777, 0o600)
+                config.write_text("ProxyCommand synthetic-unreviewed-command\n")
+            return self.fake_run(argv, *args, **kwargs)
+        self.write_private(self.config, self.settings)
+        with patch.object(startup, "git", side_effect=self.fake_git), patch.object(startup, "run", side_effect=changed_run):
+            self.assertIn("verified", startup.consult(self.event, self.config)["systemMessage"])
+        self.assertEqual(list((self.root / "consultations").glob("ssh-config-*")), [])
+
+    def test_original_executable_replacement_cannot_change_client_binary(self):
+        def changed_run(argv, *args, **kwargs):
+            if "cat-file" in argv:
+                self.binary.write_bytes(b"synthetic unqualified replacement")
+            return self.fake_run(argv, *args, **kwargs)
+        self.write_private(self.config, self.settings)
+        with patch.object(startup, "git", side_effect=self.fake_git), patch.object(startup, "run", side_effect=changed_run):
+            self.assertIn("verified", startup.consult(self.event, self.config)["systemMessage"])
+        self.assertEqual(list((self.root / "consultations").glob("reviewed-casita-*")), [])
+        target = self.root / "original-binary"
+        target.write_bytes(b"synthetic executable")
+        self.binary.unlink()
+        self.binary.symlink_to(target)
+        with patch.object(startup, "git", side_effect=self.fake_git), patch.object(startup, "run", side_effect=changed_run):
+            self.assertIn("verified", startup.consult(self.event, self.config)["systemMessage"])
+        self.assertEqual(target.read_bytes(), b"synthetic unqualified replacement")
+
+    def test_output_root_in_checkout_or_linked_checkout_is_rejected_before_contact(self):
+        for marker in ("directory", "file"):
+            checkout = self.root / marker
+            checkout.mkdir()
+            if marker == "directory":
+                (checkout / ".git").mkdir()
+            else:
+                (checkout / ".git").write_text("gitdir: /synthetic/common/worktrees/linked\n")
+            self.settings["output_dir"] = str(checkout / "private")
+            self.assertIn("unavailable", self.invoke()["systemMessage"])
+            self.assertFalse((checkout / "private").exists())
+        alias = self.root / "output-parent-link"
+        alias.symlink_to(checkout, target_is_directory=True)
+        self.settings["output_dir"] = str(alias / "private")
+        self.assertIn("unavailable", self.invoke()["systemMessage"])
+        self.assertEqual(self.commands, [])
 
     def test_allowlisted_enrollment_errors_require_visible_fallback(self):
         self.write_private(self.config, self.settings)

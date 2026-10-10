@@ -131,6 +131,47 @@ def client_command(stage):
     return [sys.executable, "-I", "-S", "-B", "-c", CLIENT_BOOTSTRAP, str(stage)]
 
 
+def require_outside_git(root):
+    # Resolving first also catches a path entering a checkout through a parent symlink.
+    root = root.resolve()
+    require(not any((parent / ".git").exists() or (parent / ".git").is_symlink()
+                    for parent in (root, *root.parents)))
+
+
+@contextmanager
+def reviewed_executable(source, expected, root, deadline):
+    with tempfile.TemporaryDirectory(prefix="reviewed-casita-", dir=root) as folder:
+        target = Path(folder) / "casita"
+        digest = hashlib.sha256()
+        fd = os.open(source, os.O_RDONLY | os.O_NONBLOCK)
+        with os.fdopen(fd, "rb") as original, target.open("xb") as copy:
+            require(stat.S_ISREG(os.fstat(original.fileno()).st_mode))
+            while True:
+                require(time.monotonic() < deadline)
+                chunk = original.read(1024 * 1024)
+                if not chunk:
+                    break
+                digest.update(chunk)
+                copy.write(chunk)
+        require(digest.hexdigest() == expected)
+        target.chmod(0o700)
+        yield target
+
+
+def protected_ssh_config(source):
+    fd = os.open(source, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    with os.fdopen(fd, "rb") as stream:
+        mode = os.fstat(stream.fileno())
+        require(stat.S_ISREG(mode.st_mode) and mode.st_uid == os.getuid()
+                and not mode.st_mode & 0o022 and mode.st_size <= MAX_INPUT)
+        raw = stream.read(MAX_INPUT + 1)
+    require(len(raw) <= MAX_INPUT)
+    # Keep the evaluated config immutable and self-contained. Include/glob inputs
+    # would otherwise be reopened by SSH outside this protected snapshot.
+    require(not re.search(r"^\s*include(?=\s|=|$)", raw.decode("utf-8"), re.I | re.M))
+    return raw
+
+
 def hook_output(message, context="", unavailable=False):
     result = {"systemMessage": message, "hookSpecificOutput": {
         "hookEventName": "SessionStart", "additionalContext": context}}
@@ -169,6 +210,17 @@ def relay_url(settings, root, deadline):
     ssh_settings = settings["ssh"]
     require(isinstance(ssh_settings, dict) and set(ssh_settings) == {"config", "socket", "alias"})
     config = absolute(ssh_settings["config"])
+    raw = protected_ssh_config(config)
+    with tempfile.TemporaryDirectory(prefix="ssh-config-", dir=root) as folder:
+        snapshot = Path(folder) / "config"
+        snapshot.write_bytes(raw)
+        snapshot.chmod(0o600)
+        with forwarded_url(ssh_settings, snapshot, root, deadline) as url:
+            yield url
+
+
+@contextmanager
+def forwarded_url(ssh_settings, config, root, deadline):
     namespace = absolute(ssh_settings["socket"])
     alias = ssh_settings["alias"]
     require(isinstance(alias, str) and re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}", alias))
@@ -247,8 +299,8 @@ def consult(event, config_path):
         casita = absolute(settings["casita"])
         expected = settings["casita_sha256"]
         require(isinstance(expected, str) and re.fullmatch(r"[0-9a-f]{64}", expected))
-        require(hashlib.sha256(casita.read_bytes()).hexdigest() == expected)
         root = absolute(settings["output_dir"])
+        require_outside_git(root)
         root.mkdir(mode=0o700, parents=True, exist_ok=True)
         mode = root.lstat()
         require(stat.S_ISDIR(mode.st_mode) and mode.st_uid == os.getuid()
@@ -257,10 +309,11 @@ def consult(event, config_path):
         require(isinstance(session, str) and 0 < len(session) <= 256)
         task = "codex-" + hashlib.sha256(session.encode()).hexdigest()[:32]
         output = root / uuid.uuid4().hex
-        with relay_url(settings, root, deadline) as url, reviewed_client(source, revision, root, deadline) as stage:
+        with reviewed_executable(casita, expected, root, deadline) as executable, \
+                relay_url(settings, root, deadline) as url, reviewed_client(source, revision, root, deadline) as stage:
             transport = ["--relay-port", "8765"] if "ssh" in settings else []
             run(client_command(stage) + ["consult", "--url", url, "--task", task,
-                 "--credential", str(credential), "--casita", str(casita), "--output", str(output)] + transport,
+                 "--credential", str(credential), "--casita", str(executable), "--output", str(output)] + transport,
                 # The relay checks its own loopback port in Host, independent of the local tunnel port.
                 deadline, cwd=stage)
         receipt = private_json(output / "task-start.json", limit=MAX_RECEIPT)

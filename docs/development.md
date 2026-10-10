@@ -1,5 +1,19 @@
 # Development and validation
 
+## Live context relay
+
+```sh
+python3 context_relay_demo.py --casita "$CASITA_DEMO_BIN" \
+  --output output/relay-development
+```
+
+The [relay guide](live-context-relay.md) covers the private service, task-start
+consultation, event polling and a JP/CJ setup template. Unit tests exercise
+concurrent stale writes, rollback, authentication/revocation, source selection,
+owner decisions, per-task memory filtering and cursor recovery. CI runs two
+authenticated scripted identities against real HTTP and Casita stores, including
+a server restart. It does not contact CJ, import Eventools source or configure an assistant.
+
 Install the [host prerequisites](../README.md#prerequisites) and
 [tested Casita build](../README.md#tested-casita-build) first.
 

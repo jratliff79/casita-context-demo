@@ -1,0 +1,67 @@
+{
+  "casita_commit": "9d7a2f42b14d86189662e21241f72a55ccb42cb6",
+  "checked_on": "2026-10-10",
+  "cli_lock_sha256": "b501acdc69574ec7f1daf4fa597cc570e891d7fef764e53238f9c5a0adb20664",
+  "compiler": "Rust 1.94.1",
+  "core_handoff": true,
+  "default_build": {
+    "binary_sha256": "eb7c6972b3f58f68afb3cd30bb5b568eb2b5ad86b8147e71478aacbea20666ca",
+    "features": "default",
+    "locked": true
+  },
+  "demo_base_commit": "451ad543a409370c3cdac12f365bf3ab9a8f5250",
+  "dependency_sources_changed": false,
+  "limits": {
+    "actual_cj_trial": false,
+    "assistant_startup_configured": false,
+    "container_execution": false,
+    "eventools_source_shared": false,
+    "fresh_ai_review_of_capsules": false,
+    "local_oci_build_repeated": false,
+    "power_loss_recovery_tested": false,
+    "remote_device_trial": false
+  },
+  "lockfile_generator": "Cargo 1.99.0; Rust 1.94.1-compatible resolution",
+  "native_git": {
+    "locked": true,
+    "restart_tests_passed": 2,
+    "synthetic_durable_demo_passed": true
+  },
+  "python_unit_tests": {
+    "passed": 249,
+    "python": "3.9"
+  },
+  "relay": {
+    "actual_cj_participated": false,
+    "authenticated_identities": 2,
+    "casita_restore_verified": true,
+    "codex_auto_wakeup": false,
+    "coordinator_also_requests": true,
+    "eventools_source_shared": false,
+    "negative_controls": {
+      "duplicate_submission_reused": true,
+      "forged_citation": true,
+      "idempotency_reuse": true,
+      "independent_member_survives_revocation": true,
+      "invalid_token": true,
+      "member_cannot_accept": true,
+      "new_task_consults_workspace_memory": true,
+      "offline_catchup": true,
+      "restart_recovery": true,
+      "revoked_idempotent_write": true,
+      "revoked_reads": true,
+      "stale_proposal": true,
+      "stale_write": true,
+      "watch_resume_without_duplicate_events": true,
+      "wrong_workspace": true
+    },
+    "ok": true,
+    "real_http": true,
+    "received_source_executed": false,
+    "remote_devices_tested": false,
+    "scripted_clients": true,
+    "shared_revision": 2,
+    "short_lived_cli_clients": true,
+    "synthetic": true
+  }
+}

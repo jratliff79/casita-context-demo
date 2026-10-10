@@ -444,7 +444,7 @@ dependencies = [
 [[package]]
 name = "casita"
 version = "0.1.0"
-source = "git+https://github.com/cachix/casita?rev=1407672f4b235609ae7fff0f87a30e06183f941f#1407672f4b235609ae7fff0f87a30e06183f941f"
+source = "git+https://github.com/cachix/casita?rev=9d7a2f42b14d86189662e21241f72a55ccb42cb6#9d7a2f42b14d86189662e21241f72a55ccb42cb6"
 dependencies = [
  "astral-tokio-tar",
  "async-stream",

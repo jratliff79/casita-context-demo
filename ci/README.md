@@ -1,11 +1,11 @@
 # Casita dependency snapshot
 
-The pinned upstream Casita revision, `1407672f4b235609ae7fff0f87a30e06183f941f`,
+The pinned upstream Casita revision, `9d7a2f42b14d86189662e21241f72a55ccb42cb6`,
 ignores `Cargo.lock`. A fresh source checkout therefore cannot build with
 `--locked` on its own.
 
 `Cargo.lock` here was regenerated in a fresh public-source checkout of that
-revision using Cargo 1.98.1, which resolved Rust 1.94.1-compatible packages from
+revision using Cargo 1.99.0, which resolved Rust 1.94.1-compatible packages from
 Casita's declared minimum Rust version. CI copies it into the fresh upstream
 checkout before building with Rust 1.94.1 and `--locked`. It contains public
 registry checksums and pinned Git dependency revisions, including dependencies
@@ -17,10 +17,10 @@ The OCI job imports a digest-pinned public Python image anonymously, checks the
 restored layout and runs the trusted host checker; it does not execute the image.
 Both jobs use the same source pin, toolchain and dependency snapshot. The separate
 Apple Container execution is recorded in [the local image trial](../docs/pinned-environment.json).
-The [current-pin local validation](../docs/casita-update-validation.json) records
-locked default and OCI builds, core and artifact/event-kit/checkpoint demos,
-native Git checks, bounded metadata tests and image transport with the host
-checker. The [previous receipt](../docs/casita-20261005-validation.json) retains its
+The [current-pin local validation](../docs/relay-validation.json) records the
+locked default build, core handoff, native Git checks and authenticated relay
+pilot. CI retains the default and OCI example jobs and adds the two-client relay
+trial. The [previous receipt](../docs/casita-update-validation.json) retains its
 original pin and build metadata. These checks preserve the distinction between
 transport and container execution; they do not benchmark the upstream change.
 The default-feature handoff job also runs [the signed pin example](../docs/signed-handoff.md)

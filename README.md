@@ -54,6 +54,7 @@ Choose the example closest to your task:
 | Hand a task to a teammate and review a shared knowledge update | [Teammate handoff](docs/teammate-handoff.md) | Separate stores, competing scripted proposals and explicit owner selection |
 | Have two assistants agree on who does what | [Planning exchange](docs/agent-planning.md) | Bounded proposals, counterproposals and two explicit agreements before human review |
 | Consult reviewed team memory when starting a task | [Live context relay](docs/live-context-relay.md) | Authenticated clients, separate task checkpoints, durable updates and owner-reviewed memory |
+| Consult a relay automatically in a local Codex chat | [Codex task-start adapter](docs/codex-task-start.md) | Opt-in SessionStart hook, fresh verified receipt and explicit unavailable-context behavior |
 
 Consider a change to a private pricing calculation. An outside reviewer can see
 the selected diff and source without receiving repository access. If a helper is

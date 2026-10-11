@@ -1,0 +1,320 @@
+#!/usr/bin/env python3
+"""Opt-in encrypted relay backups. Configuration/credentials stay outside Git.
+
+Linux operator tool, not a context receiver. Only known pinned runtime is copied;
+snapshot contents are never executed. Cloud credentials need PutObject, a single
+CloudWatch namespace, and a single SNS topic, never object read/delete access.
+"""
+import argparse
+import base64
+import datetime as dt
+import fcntl
+import hashlib
+import json
+import os
+from pathlib import Path
+import shutil
+import sqlite3
+import stat
+import subprocess
+import tempfile
+import time
+import uuid
+from urllib.request import Request, ProxyHandler, HTTPRedirectHandler, build_opener
+
+
+class BackupError(Exception):
+    pass
+
+
+def require(condition, message):
+    if not condition:
+        raise BackupError(message)
+
+
+def sha256(path):
+    h = hashlib.sha256()
+    with Path(path).open('rb') as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b''):
+            h.update(block)
+    return h.hexdigest()
+
+
+def private_json(path, owner=None):
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    with os.fdopen(fd) as stream:
+        info = os.fstat(stream.fileno())
+        require(stat.S_ISREG(info.st_mode) and info.st_uid == (os.getuid() if owner is None else owner)
+                and stat.S_IMODE(info.st_mode) == 0o600 and info.st_size < 1_000_000,
+                'unsafe private configuration')
+        return json.load(stream)
+
+
+def write_json(path, data):
+    path = Path(path)
+    temporary = path.with_name(path.name + '.' + uuid.uuid4().hex + '.tmp')
+    try:
+        with temporary.open('x') as stream:
+            os.chmod(temporary, 0o600)
+            json.dump(data, stream, indent=2)
+            stream.write('\n')
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def inventory(root, limit):
+    root = Path(root)
+    result, size = {}, 0
+    require(root.is_dir() and not root.is_symlink(), 'unsafe input tree')
+    for path in [root, *sorted(root.rglob('*'))]:
+        info = path.lstat()
+        require(stat.S_ISREG(info.st_mode) or stat.S_ISDIR(info.st_mode),
+                'links and special files are not backed up')
+        item = dict(kind='directory' if path.is_dir() else 'file',
+                    mode=stat.S_IMODE(info.st_mode), uid=info.st_uid, gid=info.st_gid)
+        if path.is_file():
+            size += info.st_size
+            require(size <= limit, 'input exceeds configured size limit')
+            item.update(size=info.st_size, sha256=sha256(path))
+        result[path.relative_to(root).as_posix()] = item
+    return result
+
+
+def copy_tree(source, destination, limit):
+    """Caller quiesces all writers first. Verify bytes and original Linux metadata."""
+    before = inventory(source, limit)
+    shutil.copytree(source, destination)
+    for name, item in before.items():
+        path = Path(destination) / name
+        os.chown(path, item['uid'], item['gid'])
+        os.chmod(path, item['mode'])
+    require(inventory(destination, limit) == before, 'copy inventory mismatch')
+    return before
+
+
+def command(*args):
+    # Never emit subprocess stderr: paths/content/errors may contain private data.
+    subprocess.run(args, check=True, capture_output=True, timeout=120)
+
+
+def health(config):
+    credential = private_json(config['health_credential'], Path(config['state']).stat().st_uid)
+    request = Request('http://127.0.0.1:' + str(config['port']) + '/updates',
+                      data=json.dumps({'workspace': credential['workspace'], 'after': 0}).encode(),
+                      headers={'Authorization': 'Bearer ' + credential['token'],
+                               'Content-Type': 'application/json'})
+    class NoRedirect(HTTPRedirectHandler):
+        def redirect_request(self, *args, **kwargs):
+            raise BackupError('readiness redirects are disabled')
+    with build_opener(ProxyHandler({}), NoRedirect()).open(request, timeout=3) as response:
+        require(response.status == 200, 'authenticated readiness failed')
+
+
+def capture(config, payload, run=command, ready=health):
+    state, app = Path(config['state']), Path(config['app'])
+    binary = Path(config['binary'])
+    require(sha256(binary) == config['binary_sha256'], 'native binary pin mismatch')
+    expected = private_json(config['runtime_inventory'])
+    actual = inventory(app, config['max_bytes'])
+    require({k: v['sha256'] for k, v in actual.items() if v['kind'] == 'file'} == expected,
+            'runtime source pin mismatch')
+    run('/usr/bin/systemctl', 'is-active', '--quiet', config['service'])
+    start = time.monotonic()
+    try:
+        # Finally starts the service even if stop/copy raises. ExecStopPost also
+        # restarts it when this controller is killed before Python can clean up.
+        run('/usr/bin/systemctl', 'stop', config['service'])
+        copy_tree(state, payload / 'state', config['max_bytes'])
+    finally:
+        run('/usr/bin/systemctl', 'start', config['service'])
+    last = None
+    for _ in range(30):
+        try:
+            ready(config)
+            last = None
+            break
+        except Exception as error:
+            last = error
+            time.sleep(0.2)
+    require(last is None, 'authenticated readiness failed')
+    pause = round(time.monotonic() - start, 3)
+    copy_tree(app, payload / 'runtime-app', config['max_bytes'])
+    shutil.copy2(binary, payload / 'linux-casita')
+    shutil.copy2(config['service_unit'], payload / 'context-relay.service')
+    db = sqlite3.connect('file:' + str(payload / 'state/relay.sqlite') + '?mode=ro', uri=True)
+    try:
+        require(db.execute('pragma integrity_check').fetchone()[0] == 'ok', 'SQLite integrity failed')
+        head = db.execute('select revision,pin from revisions order by revision desc limit 1').fetchone()
+        cursor = db.execute('select coalesce(max(cursor),0) from events').fetchone()[0]
+        members = [{'name': name, 'enabled': bool(enabled)} for name, enabled in
+                   db.execute('select name,enabled from members order by name')]
+        require(head is not None, 'no committed relay snapshot')
+    finally:
+        db.close()
+    manifest = dict(schema='relay-private-recovery.v1', source_commit=config['source_commit'],
+                    casita_commit=config['casita_commit'], pin=json.loads(head[1]),
+                    revision=head[0], event_cursor=cursor, service_pause_seconds=pause,
+                    members=members,
+                    inventory=inventory(payload, config['max_bytes']))
+    write_json(payload / 'recovery-manifest.json', manifest)
+    return manifest
+
+
+def encrypt(payload, destination, recipient):
+    # Stream plaintext directly to age, never create a plaintext tar file.
+    with Path(destination).open('xb') as output, tempfile.TemporaryFile() as errors:
+        os.chmod(destination, 0o600)
+        tar = subprocess.Popen(['/usr/bin/tar', '-czf', '-', '-C', str(payload), '.'],
+                               stdout=subprocess.PIPE, stderr=errors)
+        age = subprocess.Popen(['/usr/bin/age', '-r', recipient], stdin=tar.stdout,
+                               stdout=output, stderr=errors)
+        tar.stdout.close()
+        try:
+            require(age.wait(timeout=120) == 0 and tar.wait(timeout=20) == 0,
+                    'archive encryption failed')
+        finally:
+            for process in (age, tar):
+                if process.poll() is None:
+                    process.kill()
+                process.wait()
+    with Path(destination).open('rb') as stream:
+        require(stream.read(22) == b'age-encryption.org/v1\n', 'not an age archive')
+
+
+def object_keys(now, run_id, include_daily):
+    name = now.strftime('%Y/%m/%d/%Y%m%dT%H%M%SZ-') + run_id + '.tar.gz.age'
+    return ['hourly/' + name] + (['daily/' + name] if include_daily else [])
+
+
+class Cloud:
+    def __init__(self, config):
+        import boto3  # Optional operator dependency; ordinary demo/tests need none.
+        from botocore.config import Config
+        session = boto3.Session(region_name=config['region'])
+        options = Config(connect_timeout=5, read_timeout=30,
+                         retries={'max_attempts': 3, 'mode': 'standard'})
+        self.s3 = session.client('s3', config=options)
+        self.metrics = session.client('cloudwatch', config=options)
+        self.sns = session.client('sns', config=options)
+        self.config = config
+
+    def upload(self, archive, key):
+        checksum = base64.b64encode(bytes.fromhex(sha256(archive))).decode()
+        with Path(archive).open('rb') as stream:
+            response = self.s3.put_object(Bucket=self.config['bucket'], Key=key, Body=stream,
+                                          ServerSideEncryption='AES256', ChecksumSHA256=checksum,
+                                          ContentType='application/octet-stream')
+        require(response.get('ChecksumSHA256') == checksum, 'S3 checksum acknowledgement mismatch')
+
+    def age(self, seconds):
+        self.metrics.put_metric_data(Namespace=self.config['namespace'], MetricData=[{
+            'MetricName': 'BackupAgeSeconds', 'Value': seconds, 'Unit': 'Seconds',
+            'Dimensions': [{'Name': 'Relay', 'Value': self.config['relay_name']}]}])
+
+    def alert(self, message):
+        self.sns.publish(TopicArn=self.config['topic_arn'],
+                         Subject=('TEST: ' if self.config.get('qualification_test') else '')
+                         + 'Context relay backup status', Message=message)
+
+
+def backup(config, cloud, now=None, make_capture=capture, make_archive=encrypt):
+    now = now or dt.datetime.now(dt.timezone.utc)
+    spool = Path(config['spool'])
+    status_path = spool / 'status.json'
+    previous = private_json(status_path) if status_path.exists() else {}
+    phase, run_id = 'preflight', uuid.uuid4().hex
+    stage = spool / ('staging-' + run_id)
+    archive = spool / ('pending-' + run_id + '.age')
+    try:
+        require(shutil.disk_usage(spool).free > config['max_bytes'] + 256 * 1024 * 1024,
+                'insufficient staging capacity')
+        stage.mkdir(mode=0o700)
+        phase = 'capture'
+        manifest = make_capture(config, stage)
+        phase = 'encryption'
+        make_archive(stage, archive, config['recipient'])
+        # Delete plaintext before any remote upload. Always delete on failure too.
+        shutil.rmtree(stage)
+        phase = 'upload'
+        daily_date = now.date().isoformat()
+        keys = object_keys(now, run_id, previous.get('daily_date') != daily_date)
+        for key in keys:
+            cloud.upload(archive, key)
+        result = dict(schema='relay-backup-status.v1', last_success=now.timestamp(),
+                      daily_date=daily_date, keys=keys, ciphertext_sha256=sha256(archive),
+                      ciphertext_bytes=archive.stat().st_size, revision=manifest['revision'],
+                      event_cursor=manifest['event_cursor'], failed=False)
+        write_json(status_path, result)
+        phase = 'heartbeat'
+        cloud.age(0)
+        if previous.get('failed'):
+            cloud.alert('Recovery: encrypted off-host backup completed. No context or credentials included in this alert.')
+        return result
+    except Exception:
+        # Do not report raw exceptions or paths to the cloud or journal.
+        failure = dict(previous, failed=True, failure_phase=phase,
+                       failure_at=dt.datetime.now(dt.timezone.utc).timestamp())
+        write_json(status_path, failure)
+        try:
+            cloud.alert('Backup failed during ' + phase + '. Inspect private operator logs/configuration; no secret or source content is included.')
+        except Exception:
+            pass  # An independently evaluated missing heartbeat catches host/network failures.
+        raise BackupError('backup failed during ' + phase) from None
+    finally:
+        if stage.exists():
+            shutil.rmtree(stage)
+        archive.unlink(missing_ok=True)
+
+
+def monitor(config, cloud, now=None):
+    status = private_json(Path(config['spool']) / 'status.json')
+    age = max(0, (now or time.time()) - status.get('last_success', 0))
+    cloud.age(age)
+    return age
+
+
+def cleanup(spool):
+    """Root-only fixed spool; also used after controller SIGKILL by systemd."""
+    for path in Path(spool).iterdir():
+        if path.name.startswith('staging-') and not path.is_symlink() and path.is_dir():
+            shutil.rmtree(path)
+        elif path.name.startswith('pending-') and not path.is_symlink() and path.is_file():
+            path.unlink()
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('operation', choices=['backup', 'monitor', 'cleanup'])
+    parser.add_argument('--config', type=Path, required=True)
+    args = parser.parse_args()
+    os.umask(0o077)
+    require(os.getuid() == 0, 'run only through the reviewed root operator service')
+    config = private_json(args.config)
+    require(config['service'] == 'context-relay.service', 'unexpected service')
+    spool = Path(config['spool'])
+    require(spool.is_dir() and not spool.is_symlink() and spool.stat().st_uid == 0
+            and stat.S_IMODE(spool.stat().st_mode) == 0o700, 'unsafe spool directory')
+    with (spool / 'controller.lock').open('a') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        if args.operation == 'cleanup':
+            cleanup(spool)
+            return
+        cloud = Cloud(config)
+        if args.operation == 'backup':
+            cleanup(spool)
+            result = backup(config, cloud)
+            print('Encrypted off-host backup complete; revision ' + str(result['revision']))
+        else:
+            monitor(config, cloud)
+            print('Backup freshness metric published')
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except Exception:
+        print('Backup controller failed; inspect private operator configuration. No sensitive error details emitted.')
+        raise SystemExit(1)

@@ -31,6 +31,8 @@ dependencies or download an executable at task startup.
 The configured Casita bytes are copied into a private temporary executable and
 hashed there; only that verified copy is executed. Replacing the original path
 after validation cannot change the executable used by the consultation.
+Executables are limited to 256,000,000 bytes both at the initial size check and
+while copying, so a mistaken or growing input cannot fill the consultation volume.
 
 Create a mode `0700` private configuration directory outside Git, then save a
 mode `0600` settings file. Substitute your own **absolute** paths and pins:
@@ -79,6 +81,11 @@ with mode `0700`. The actual master socket is derived from the alias and effecti
 SSH configuration in that parent, so a legacy socket or a different destination
 cannot be reused. Keep this directory path short enough for a Unix socket,
 including OpenSSH's temporary creation suffix; long paths are rejected before authentication.
+`Match`, `ProxyCommand`, `LocalCommand`, `KnownHostsCommand`, provider directives
+and `XAuthLocation` are also unsupported because they can execute mutable local
+helpers. They are rejected before `ssh -G`; use simple Host blocks. X11, agent
+forwarding and local commands are disabled, and external key providers cannot
+be selected through the inherited environment.
 Private output and socket directories also require root/user-owned ancestors
 that are not writable by group or others, except trusted sticky directories
 such as the system temporary directory. This prevents another account from
@@ -104,6 +111,8 @@ destination-bound tunnel. It never prompts for a password.
 For a manually managed local tunnel, omit `ssh`; the hook still contacts only
 `http://127.0.0.1:8765`. A present empty, null or incomplete SSH block is rejected
 rather than treated as a manual-tunnel choice. Do not add a public bind or HTTP endpoint.
+If your connection needs an unsupported custom SSH helper, qualify and maintain
+that tunnel separately and use this explicit manual-tunnel configuration.
 
 ## Add and trust the hook
 

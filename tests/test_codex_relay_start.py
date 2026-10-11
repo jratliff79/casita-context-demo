@@ -356,6 +356,42 @@ class StartupTests(unittest.TestCase):
             self.assertIn("verified", startup.consult(self.event, self.config)["systemMessage"])
         self.assertEqual(target.read_bytes(), b"synthetic unqualified replacement")
 
+    def test_oversized_sparse_executable_rejects_before_copy_or_contact(self):
+        with self.binary.open("wb") as stream:
+            stream.truncate(startup.MAX_EXECUTABLE + 1)
+        self.assertIn("unavailable", self.invoke()["systemMessage"])
+        self.assertEqual(self.commands, [])
+        self.assertEqual(list((self.root / "consultations").glob("reviewed-casita-*")), [])
+
+    def test_executable_growth_is_bounded_even_with_a_matching_digest(self):
+        raw = b"synthetic executable" * 100
+        self.binary.write_bytes(raw)
+        actual = self.binary.stat()
+        fields = list(actual)
+        fields[6] = 1  # Simulate the smaller size observed before a file grows.
+        real_fstat = os.fstat
+        def observed_before_growth(fd):
+            mode = real_fstat(fd)
+            return os.stat_result(fields) if mode.st_ino == actual.st_ino else mode
+        private = self.root / "private"
+        private.mkdir(mode=0o700)
+        with patch.object(startup, "MAX_EXECUTABLE", 64), patch.object(startup.os, "fstat", side_effect=observed_before_growth):
+            with self.assertRaises(startup.Unavailable):
+                with startup.reviewed_executable(self.binary, startup.hashlib.sha256(raw).hexdigest(), private, startup.time.monotonic() + 5):
+                    self.fail("growth exceeded copy limit")
+        self.assertEqual(list(private.iterdir()), [])
+
+    def test_command_and_provider_ssh_directives_reject_before_config_evaluation(self):
+        self.settings["ssh"] = {"config": str(self.root / "ssh-config"), "known_hosts": str(self.root / "known-hosts"),
+                                "socket": str(self.root / "tunnel.sock"), "alias": "synthetic-relay"}
+        for directive in ("Match exec synthetic-command", "Match host *", "ProxyCommand=synthetic-helper",
+                          "LocalCommand synthetic-helper", "KnownHostsCommand synthetic-helper",
+                          "PKCS11Provider /synthetic/provider", "SecurityKeyProvider /synthetic/provider",
+                          "XAuthLocation /synthetic/helper"):
+            (self.root / "ssh-config").write_text(directive + "\n")
+            self.assertIn("unavailable", self.invoke()["systemMessage"])
+            self.assertEqual(self.commands, [])
+
     def test_output_root_in_checkout_or_linked_checkout_is_rejected_before_contact(self):
         for marker in ("directory", "file"):
             checkout = self.root / marker

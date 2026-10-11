@@ -23,6 +23,7 @@ MAX_INPUT = 32_000
 # The relay snapshot is bounded at 400,000 bytes; task selection adds pin/envelope metadata.
 MAX_RECEIPT = 405_000
 MAX_COMMAND_OUTPUT = 4_000_000
+MAX_EXECUTABLE = 256_000_000
 GIT = "/usr/bin/git"
 SSH = "/usr/bin/ssh"
 CLIENT_BOOTSTRAP = ("import runpy,sys; source=sys.argv.pop(1); "
@@ -69,7 +70,7 @@ def run(argv, deadline, check=True, cwd=None, text=True):
                 and not mode.st_mode & 0o022 and mode.st_mode & 0o111)
     env = {k: v for k, v in os.environ.items()
            if not k.startswith(("GIT_", "DYLD_", "LD_"))
-           and k not in ("PYTHONPATH", "PYTHONHOME", "DEVELOPER_DIR", "SDKROOT")}
+           and k not in ("PYTHONPATH", "PYTHONHOME", "DEVELOPER_DIR", "SDKROOT", "SSH_SK_PROVIDER")}
     env["PATH"] = "/usr/bin:/bin"
     stop = time.monotonic() + min(remaining, 20)
     buffers = [bytearray(), bytearray()]
@@ -206,12 +207,16 @@ def reviewed_executable(source, expected, root, deadline):
         digest = hashlib.sha256()
         fd = os.open(source, os.O_RDONLY | os.O_NONBLOCK)
         with os.fdopen(fd, "rb") as original, target.open("xb") as copy:
-            require(stat.S_ISREG(os.fstat(original.fileno()).st_mode))
+            mode = os.fstat(original.fileno())
+            require(stat.S_ISREG(mode.st_mode) and mode.st_size <= MAX_EXECUTABLE)
+            size = 0
             while True:
                 require(time.monotonic() < deadline)
                 chunk = original.read(1024 * 1024)
                 if not chunk:
                     break
+                size += len(chunk)
+                require(size <= MAX_EXECUTABLE)
                 digest.update(chunk)
                 copy.write(chunk)
         require(digest.hexdigest() == expected)
@@ -232,9 +237,11 @@ def protected_ssh_file(source):
 
 def protected_ssh_config(source):
     raw = protected_ssh_file(source)
-    # Keep the evaluated config immutable and self-contained. Include/glob inputs
-    # would otherwise be reopened by SSH outside this protected snapshot.
-    require(not re.search(r"^\s*include(?=\s|=|$)", raw.decode("utf-8"), re.I | re.M))
+    # Match exec runs even during -G; connection helper/provider directives can
+    # also execute code from mutable paths. Accept only a self-contained config.
+    require(not re.search(r"^\s*(?:include|match|proxycommand|localcommand|knownhostscommand|"
+                          r"pkcs11provider|securitykeyprovider|xauthlocation)(?=\s|=|$)",
+                          raw.decode("utf-8"), re.I | re.M))
     return raw
 
 
@@ -296,7 +303,9 @@ def forwarded_url(ssh_settings, config, known_hosts, keys_digest, root, deadline
     alias = ssh_settings["alias"]
     require(isinstance(alias, str) and re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}", alias))
     ssh = [SSH, "-F", str(config), "-o", "BatchMode=yes", "-o", "ConnectTimeout=5",
-           "-o", "StrictHostKeyChecking=yes", "-o", "ExitOnForwardFailure=yes"]
+           "-o", "StrictHostKeyChecking=yes", "-o", "ExitOnForwardFailure=yes",
+           "-o", "PermitLocalCommand=no", "-o", "ForwardX11=no", "-o", "ForwardAgent=no",
+           "-o", "PKCS11Provider=none", "-o", "SecurityKeyProvider=internal"]
     effective = run(ssh + ["-G", alias], deadline).stdout
     require(len(effective.encode()) <= MAX_INPUT)
     options = dict(line.split(" ", 1) for line in effective.splitlines() if " " in line)

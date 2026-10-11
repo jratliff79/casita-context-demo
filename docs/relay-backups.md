@@ -4,6 +4,9 @@
 quiesces writers briefly, copies complete private state with Linux ownership and
 modes, restarts the relay, checks authenticated readiness and encrypts a recovery
 package with age before uploading ciphertext. Snapshot context is never executed.
+Derived Python `__pycache__` directories are excluded from runtime pin comparison
+and runtime archives; only pinned source is restored. Private relay state is
+copied completely, without that runtime-only exclusion.
 
 This is not a general installer or automatic deployment. Supply reviewed private
 root-owned mode-0600 configuration outside Git, with a mode-0700 spool directory.

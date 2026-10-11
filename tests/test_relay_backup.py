@@ -154,6 +154,17 @@ class Backups(unittest.TestCase):
             backup.capture(config, self.root/'payload', run=lambda *args: calls.append(args))
         self.assertEqual(calls[-1], ('/usr/bin/systemctl', 'start', 'synthetic.service'))
 
+    def test_runtime_cache_is_excluded_but_private_state_is_complete(self):
+        tree = self.root/'tree'; tree.mkdir()
+        (tree/'source.py').write_text('SYNTHETIC SOURCE')
+        cache = tree/'__pycache__'; cache.mkdir(); (cache/'source.pyc').write_bytes(b'SYNTHETIC CACHE')
+        target = self.root/'runtime'
+        backup.copy_tree(tree, target, 1000, exclude_cache=True)
+        self.assertFalse((target/'__pycache__').exists())
+        state = self.root/'state'
+        backup.copy_tree(tree, state, 1000)
+        self.assertTrue((state/'__pycache__/source.pyc').exists())
+
     def test_cleanup_only_removes_owned_spool_artifacts(self):
         (self.root/'staging-test').mkdir(); (self.root/'staging-test'/'private').write_text('SYNTHETIC')
         (self.root/'pending-test.age').write_text('SYNTHETIC')

@@ -65,11 +65,13 @@ def write_json(path, data):
         temporary.unlink(missing_ok=True)
 
 
-def inventory(root, limit):
+def inventory(root, limit, exclude_cache=False):
     root = Path(root)
     result, size = {}, 0
     require(root.is_dir() and not root.is_symlink(), 'unsafe input tree')
     for path in [root, *sorted(root.rglob('*'))]:
+        if exclude_cache and '__pycache__' in path.relative_to(root).parts:
+            continue
         info = path.lstat()
         require(stat.S_ISREG(info.st_mode) or stat.S_ISDIR(info.st_mode),
                 'links and special files are not backed up')
@@ -83,10 +85,11 @@ def inventory(root, limit):
     return result
 
 
-def copy_tree(source, destination, limit):
+def copy_tree(source, destination, limit, exclude_cache=False):
     """Caller quiesces all writers first. Verify bytes and original Linux metadata."""
-    before = inventory(source, limit)
-    shutil.copytree(source, destination)
+    before = inventory(source, limit, exclude_cache)
+    shutil.copytree(source, destination,
+                    ignore=shutil.ignore_patterns('__pycache__') if exclude_cache else None)
     for name, item in before.items():
         path = Path(destination) / name
         os.chown(path, item['uid'], item['gid'])
@@ -118,7 +121,7 @@ def capture(config, payload, run=command, ready=health):
     binary = Path(config['binary'])
     require(sha256(binary) == config['binary_sha256'], 'native binary pin mismatch')
     expected = private_json(config['runtime_inventory'])
-    actual = inventory(app, config['max_bytes'])
+    actual = inventory(app, config['max_bytes'], exclude_cache=True)
     require({k: v['sha256'] for k, v in actual.items() if v['kind'] == 'file'} == expected,
             'runtime source pin mismatch')
     run('/usr/bin/systemctl', 'is-active', '--quiet', config['service'])
@@ -141,7 +144,7 @@ def capture(config, payload, run=command, ready=health):
             time.sleep(0.2)
     require(last is None, 'authenticated readiness failed')
     pause = round(time.monotonic() - start, 3)
-    copy_tree(app, payload / 'runtime-app', config['max_bytes'])
+    copy_tree(app, payload / 'runtime-app', config['max_bytes'], exclude_cache=True)
     shutil.copy2(binary, payload / 'linux-casita')
     shutil.copy2(config['service_unit'], payload / 'context-relay.service')
     db = sqlite3.connect('file:' + str(payload / 'state/relay.sqlite') + '?mode=ro', uri=True)

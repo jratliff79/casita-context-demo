@@ -22,6 +22,8 @@ class StartupTests(unittest.TestCase):
         self.binary.write_bytes(b"synthetic executable")
         self.write_private(self.root / "ssh-config", {})
         (self.root / "ssh-config").write_text("Host synthetic-relay\n HostName synthetic.invalid\n")
+        self.write_private(self.root / "known-hosts", {})
+        (self.root / "known-hosts").write_text("synthetic.invalid ssh-ed25519 SYNTHETIC\n")
         self.credential = self.root / "member.json"
         self.write_private(self.credential, {"workspace": "synthetic-team", "token": "synthetic-secret-canary"})
         self.config = self.root / "settings.json"
@@ -76,7 +78,7 @@ class StartupTests(unittest.TestCase):
         if "cat-file" in argv:
             return subprocess.CompletedProcess(argv, 0, self.client_blob, b"")
         self.commands.append(argv)
-        if argv[0] == "ssh":
+        if argv[0] == startup.SSH:
             if "-G" in argv:
                 return subprocess.CompletedProcess(argv, 0, self.ssh_destination, "")
             if "forward" in argv and self.forward_failure:
@@ -152,7 +154,11 @@ class StartupTests(unittest.TestCase):
         generated = subprocess.check_output([sys.executable, "-c", snippet], text=True)
         command = json.loads(generated)["command"]
         self.assertEqual(shlex.split(command)[4:], [str(adapter), "--config", str(settings)])
-        result = subprocess.check_output(["sh", "-c", command], text=True)
+        shadow = self.root / "python3"
+        shadow.write_text("#!/bin/sh\nexit 76\n")
+        shadow.chmod(0o700)
+        with patch.dict(os.environ, {"PATH": str(self.root)}):
+            result = subprocess.check_output(["/bin/sh", "-c", command], text=True)
         self.assertEqual(json.loads(result), ["--config", str(settings)])
 
     def test_resume_and_compaction_reconsult_into_distinct_private_outputs(self):
@@ -201,10 +207,10 @@ class StartupTests(unittest.TestCase):
 
     def test_tunnel_is_reused_or_started_with_strict_noninteractive_loopback_forwarding(self):
         self.settings["ssh"] = {"config": str(self.root / "ssh-config"),
-                                "socket": str(self.root / "tunnel.sock"), "alias": "synthetic-relay"}
+                                "known_hosts": str(self.root / "known-hosts"), "socket": str(self.root / "tunnel.sock"), "alias": "synthetic-relay"}
         self.invoke()
-        ssh_commands = [c for c in self.commands if c[0] == "ssh"]
-        client = next(c for c in self.commands if c[0] != "ssh")
+        ssh_commands = [c for c in self.commands if c[0] == startup.SSH]
+        client = next(c for c in self.commands if c[0] != startup.SSH)
         self.assertEqual(client[client.index("--relay-port") + 1], "8765")
         self.assertEqual(len(ssh_commands), 4)
         self.assertIn("forward", ssh_commands[2])
@@ -217,7 +223,7 @@ class StartupTests(unittest.TestCase):
         self.ssh_ready = False
         self.commands.clear()
         self.invoke()
-        commands = [c for c in self.commands if c[0] == "ssh"]
+        commands = [c for c in self.commands if c[0] == startup.SSH]
         self.assertEqual(len(commands), 5)
         self.assertIn("BatchMode=yes", commands[2])
         self.assertIn("StrictHostKeyChecking=yes", commands[2])
@@ -228,16 +234,16 @@ class StartupTests(unittest.TestCase):
 
     def test_existing_master_without_available_exact_forward_never_receives_credential(self):
         self.settings["ssh"] = {"config": str(self.root / "ssh-config"),
-                                "socket": str(self.root / "tunnel.sock"), "alias": "synthetic-relay"}
+                                "known_hosts": str(self.root / "known-hosts"), "socket": str(self.root / "tunnel.sock"), "alias": "synthetic-relay"}
         self.forward_failure = True
         self.assertIn("unavailable", self.invoke()["systemMessage"])
-        self.assertEqual(len(self.commands), 3)
-        self.assertTrue(all(c[0] == "ssh" and "--credential" not in c for c in self.commands))
+        self.assertEqual(len(self.commands), 4)
+        self.assertTrue(all(c[0] == startup.SSH and "--credential" not in c for c in self.commands))
         self.assertEqual(self.outputs, [])
 
     def test_changed_effective_destination_or_alias_never_reuses_previous_master(self):
         self.settings["ssh"] = {"config": str(self.root / "ssh-config"),
-                                "socket": str(self.root / "tunnel.sock"), "alias": "synthetic-relay"}
+                                "known_hosts": str(self.root / "known-hosts"), "socket": str(self.root / "tunnel.sock"), "alias": "synthetic-relay"}
         sockets = []
         for host in ("first", "second"):
             self.ssh_destination = "hostname " + host + "\nuser synthetic\nport 22\n"
@@ -252,7 +258,7 @@ class StartupTests(unittest.TestCase):
 
     def test_failed_client_cancels_only_its_ephemeral_forward(self):
         self.settings["ssh"] = {"config": str(self.root / "ssh-config"),
-                                "socket": str(self.root / "tunnel.sock"), "alias": "synthetic-relay"}
+                                "known_hosts": str(self.root / "known-hosts"), "socket": str(self.root / "tunnel.sock"), "alias": "synthetic-relay"}
         self.failure = True
         self.assertIn("unavailable", self.invoke()["systemMessage"])
         forward = next(c for c in self.commands if "forward" in c)
@@ -263,8 +269,9 @@ class StartupTests(unittest.TestCase):
 
     def test_expired_consultation_deadline_still_spawns_bounded_cancellation(self):
         self.settings["ssh"] = {"config": str(self.root / "ssh-config"),
-                                "socket": str(self.root / "tunnel.sock"), "alias": "synthetic-relay"}
+                                "known_hosts": str(self.root / "known-hosts"), "socket": str(self.root / "tunnel.sock"), "alias": "synthetic-relay"}
         real_run = startup.run
+        real_popen = subprocess.Popen
         self.write_private(self.config, self.settings)
         with patch.object(startup.time, "monotonic", return_value=100) as now:
             def expired_run(argv, deadline, *args, **kwargs):
@@ -276,18 +283,17 @@ class StartupTests(unittest.TestCase):
                 return self.fake_run(argv, deadline, *args, **kwargs)
             with patch.object(startup, "git", side_effect=self.fake_git), \
                     patch.object(startup, "run", side_effect=expired_run), \
-                    patch.object(startup.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, "", "")) as command:
+                    patch.object(startup.subprocess, "Popen", side_effect=lambda argv, **kw: real_popen([sys.executable, "-c", "pass"], **kw)) as command:
                 self.assertIn("unavailable", startup.consult(self.event, self.config)["systemMessage"])
                 command.assert_called_once()
                 self.assertIn("cancel", command.call_args.args[0])
-                self.assertGreater(command.call_args.kwargs["timeout"], 0)
-                self.assertLessEqual(command.call_args.kwargs["timeout"], 3)
+                self.assertTrue(command.call_args.kwargs["start_new_session"])
 
     def test_long_master_socket_namespace_is_rejected_before_authentication(self):
         parent = self.root / ("s" * 90)
         parent.mkdir(mode=0o700)
         self.settings["ssh"] = {"config": str(self.root / "ssh-config"),
-                                "socket": str(parent / "tunnel.sock"), "alias": "synthetic-relay"}
+                                "known_hosts": str(self.root / "known-hosts"), "socket": str(parent / "tunnel.sock"), "alias": "synthetic-relay"}
         self.assertIn("unavailable", self.invoke()["systemMessage"])
         self.assertEqual(len(self.commands), 1)
         self.assertIn("-G", self.commands[0])
@@ -302,7 +308,7 @@ class StartupTests(unittest.TestCase):
 
     def test_ssh_config_rejects_writable_symlink_and_include_inputs_before_ssh(self):
         config = self.root / "ssh-config"
-        self.settings["ssh"] = {"config": str(config), "socket": str(self.root / "tunnel.sock"),
+        self.settings["ssh"] = {"config": str(config), "known_hosts": str(self.root / "known-hosts"), "socket": str(self.root / "tunnel.sock"),
                                 "alias": "synthetic-relay"}
         config.chmod(0o622)
         self.assertIn("unavailable", self.invoke()["systemMessage"])
@@ -318,10 +324,10 @@ class StartupTests(unittest.TestCase):
     def test_ssh_uses_protected_snapshot_despite_original_config_replacement(self):
         config = self.root / "ssh-config"
         original = config.read_bytes()
-        self.settings["ssh"] = {"config": str(config), "socket": str(self.root / "tunnel.sock"),
+        self.settings["ssh"] = {"config": str(config), "known_hosts": str(self.root / "known-hosts"), "socket": str(self.root / "tunnel.sock"),
                                 "alias": "synthetic-relay"}
         def changed_run(argv, *args, **kwargs):
-            if argv[0] == "ssh" and argv[argv.index("-F") + 1] != "none":
+            if argv[0] == startup.SSH and argv[argv.index("-F") + 1] != "none":
                 snapshot = Path(argv[argv.index("-F") + 1])
                 self.assertNotEqual(snapshot, config)
                 self.assertEqual(snapshot.read_bytes(), original)
@@ -366,6 +372,22 @@ class StartupTests(unittest.TestCase):
         self.settings["output_dir"] = str(alias / "private")
         self.assertIn("unavailable", self.invoke()["systemMessage"])
         self.assertEqual(self.commands, [])
+
+    def test_private_output_and_socket_leaf_cannot_use_replaceable_ancestors(self):
+        shared = self.root / "shared"
+        shared.mkdir()
+        shared.chmod(0o777)
+        private = shared / "private"
+        private.mkdir(mode=0o700)
+        self.settings["output_dir"] = str(private)
+        self.assertIn("unavailable", self.invoke()["systemMessage"])
+        self.assertEqual(self.commands, [])
+        self.settings["output_dir"] = str(self.root / "consultations")
+        self.settings["ssh"] = {"config": str(self.root / "ssh-config"), "known_hosts": str(self.root / "known-hosts"),
+                                "socket": str(private / "tunnel.sock"), "alias": "synthetic-relay"}
+        self.assertIn("unavailable", self.invoke()["systemMessage"])
+        self.assertEqual(len(self.commands), 1)
+        self.assertIn("-G", self.commands[0])
 
     def test_allowlisted_enrollment_errors_require_visible_fallback(self):
         self.write_private(self.config, self.settings)
@@ -438,23 +460,114 @@ class StartupTests(unittest.TestCase):
                 command.assert_not_called()
 
     def test_deadline_expiry_does_not_start_a_subprocess(self):
-        with patch.object(startup.subprocess, "run") as command:
+        with patch.object(startup.subprocess, "Popen") as command:
             with self.assertRaises(startup.Unavailable):
                 startup.run(["synthetic"], startup.time.monotonic() - 1)
             command.assert_not_called()
 
     def test_subprocess_diagnostics_are_captured_and_git_overrides_removed(self):
-        with patch.dict(os.environ, {"GIT_DIR": "synthetic-other-repo", "PYTHONPATH": "synthetic-module-override"}), patch.object(startup.subprocess, "run") as command:
-            command.return_value = subprocess.CompletedProcess([], 0, "", "")
-            startup.run(["synthetic"], startup.time.monotonic() + 5)
+        real_popen = subprocess.Popen
+        with patch.dict(os.environ, {"GIT_DIR": "synthetic-other-repo", "PYTHONPATH": "synthetic-module-override", "PATH": str(self.root), "DEVELOPER_DIR": "synthetic-override"}), patch.object(startup.subprocess, "Popen", wraps=real_popen) as command:
+            result = startup.run([sys.executable, "-c", "import sys; print('out'); print('err', file=sys.stderr)"], startup.time.monotonic() + 5)
             kwargs = command.call_args.kwargs
             self.assertNotIn("GIT_DIR", kwargs["env"])
             self.assertNotIn("PYTHONPATH", kwargs["env"])
-            self.assertTrue(kwargs["capture_output"])
-            self.assertLessEqual(kwargs["timeout"], 5)
+            self.assertNotIn("DEVELOPER_DIR", kwargs["env"])
+            self.assertEqual(kwargs["env"]["PATH"], "/usr/bin:/bin")
+            self.assertEqual(result.stdout, "out\n")
+            self.assertEqual(result.stderr, "err\n")
+            self.assertEqual(kwargs["stdin"], subprocess.DEVNULL)
+
+    def test_both_subprocess_pipes_are_bounded_and_overflow_reaps_child(self):
+        real_popen = subprocess.Popen
+        processes = []
+        def tracked(*args, **kw):
+            process = real_popen(*args, **kw)
+            processes.append(process)
+            return process
+        for stream in ("stdout", "stderr"):
+            with patch.object(startup.subprocess, "Popen", side_effect=tracked):
+                code = f"import sys,time; sys.{stream}.buffer.write(b'x'*{startup.MAX_COMMAND_OUTPUT + 100000}); sys.{stream}.flush(); time.sleep(60)"
+                with self.assertRaises(startup.Unavailable):
+                    startup.run([sys.executable, "-c", code], startup.time.monotonic() + 5)
+            self.assertIsNotNone(processes[-1].poll())
+
+    def test_stream_capture_deadline_kills_a_silent_child(self):
+        with self.assertRaises(subprocess.TimeoutExpired):
+            startup.run([sys.executable, "-c", "import time; time.sleep(60)"], startup.time.monotonic() + 0.1)
+
+    def test_forward_request_timeout_still_cancels_uncertain_mapping(self):
+        self.settings["ssh"] = {"config": str(self.root / "ssh-config"),
+                                "known_hosts": str(self.root / "known-hosts"),
+                                "socket": str(self.root / "tunnel.sock"), "alias": "synthetic-relay"}
+        def timed_run(argv, deadline, *args, **kw):
+            if "forward" in argv:
+                self.commands.append(argv)
+                raise subprocess.TimeoutExpired("synthetic forward", 20)
+            return self.fake_run(argv, deadline, *args, **kw)
+        self.write_private(self.config, self.settings)
+        with patch.object(startup, "git", side_effect=self.fake_git), patch.object(startup, "run", side_effect=timed_run):
+            self.assertIn("unavailable", startup.consult(self.event, self.config)["systemMessage"])
+        forward = next(c for c in self.commands if "forward" in c)
+        cancel = next(c for c in self.commands if "cancel" in c)
+        self.assertEqual(forward[forward.index("-L") + 1], cancel[cancel.index("-L") + 1])
+        self.assertEqual(self.outputs, [])
+
+    def test_known_hosts_are_protected_snapshotted_and_bind_master_identity(self):
+        known = self.root / "known-hosts"
+        original = known.read_bytes()
+        self.settings["ssh"] = {"config": str(self.root / "ssh-config"), "known_hosts": str(known),
+                                "socket": str(self.root / "tunnel.sock"), "alias": "synthetic-relay"}
+        known.chmod(0o666)
+        self.assertIn("unavailable", self.invoke()["systemMessage"])
+        self.assertEqual(self.commands, [])
+        known.chmod(0o600)
+        def replaced_run(argv, deadline, *args, **kw):
+            if "-G" in argv:
+                known.write_text("synthetic replacement host key\n")
+            elif argv[0] == startup.SSH and "check" in argv:
+                option = next(v for v in argv if v.startswith("UserKnownHostsFile="))
+                snapshot = Path(json.loads(option.split("=", 1)[1]))
+                self.assertEqual(snapshot.read_bytes(), original)
+                for value in ("GlobalKnownHostsFile=none", "KnownHostsCommand=none", "VerifyHostKeyDNS=no"):
+                    self.assertIn(value, argv)
+            return self.fake_run(argv, deadline, *args, **kw)
+        self.write_private(self.config, self.settings)
+        with patch.object(startup, "git", side_effect=self.fake_git), patch.object(startup, "run", side_effect=replaced_run):
+            self.assertIn("verified", startup.consult(self.event, self.config)["systemMessage"])
+        first = next(c for c in self.commands if "check" in c)
+        self.invoke()
+        last = [c for c in self.commands if "check" in c][-1]
+        self.assertNotEqual(first[first.index("-S") + 1], last[last.index("-S") + 1])
+        known.unlink()
+        known.symlink_to(self.credential)
+        self.commands.clear()
+        self.assertIn("unavailable", self.invoke()["systemMessage"])
+        self.assertEqual(self.commands, [])
+
+    def test_dynamic_known_hosts_command_and_dns_trust_are_rejected(self):
+        self.settings["ssh"] = {"config": str(self.root / "ssh-config"), "known_hosts": str(self.root / "known-hosts"),
+                                "socket": str(self.root / "tunnel.sock"), "alias": "synthetic-relay"}
+        for option in ("knownhostscommand synthetic-dynamic-command", "verifyhostkeydns true", "verifyhostkeydns ask"):
+            self.ssh_destination = "hostname synthetic-relay\n" + option + "\n"
+            self.commands.clear()
+            self.assertIn("unavailable", self.invoke()["systemMessage"])
+            self.assertEqual(len(self.commands), 1)
+            self.assertIn("-G", self.commands[0])
 
 
 class GitIsolationTests(unittest.TestCase):
+    def test_task_path_cannot_shadow_qualified_git_or_ssh(self):
+        shadow = self.root / "shadow"
+        shadow.mkdir()
+        for name in ("git", "ssh"):
+            binary = shadow / name
+            binary.write_text("#!/bin/sh\nexit 76\n")
+            binary.chmod(0o700)
+        with patch.dict(os.environ, {"PATH": str(shadow), "DEVELOPER_DIR": str(shadow)}):
+            self.assertEqual(Path(startup.git(self.repo, self.deadline, "rev-parse", "--show-toplevel")).resolve(), self.repo.resolve())
+            result = startup.run([startup.SSH, "-V"], self.deadline)
+            self.assertIn("OpenSSH", result.stderr + result.stdout)
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)

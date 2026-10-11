@@ -48,6 +48,7 @@ mode `0600` settings file. Substitute your own **absolute** paths and pins:
   "output_dir": "/ABSOLUTE/PRIVATE/consultations",
   "ssh": {
     "config": "/ABSOLUTE/PRIVATE/ssh-config",
+    "known_hosts": "/ABSOLUTE/PRIVATE/known-hosts",
     "socket": "/ABSOLUTE/PRIVATE/tunnel.sock",
     "alias": "team-relay"
   }
@@ -78,6 +79,17 @@ with mode `0700`. The actual master socket is derived from the alias and effecti
 SSH configuration in that parent, so a legacy socket or a different destination
 cannot be reused. Keep this directory path short enough for a Unix socket,
 including OpenSSH's temporary creation suffix; long paths are rejected before authentication.
+Private output and socket directories also require root/user-owned ancestors
+that are not writable by group or others, except trusted sticky directories
+such as the system temporary directory. This prevents another account from
+replacing a private leaf through a writable parent.
+
+The separate `known_hosts` file is required. It must contain the independently
+verified relay key, be owned by the current user, and be a regular file that is
+not writable by group or others. The hook snapshots those protected bytes and
+binds the master identity to their hash. SSH uses only that private host-key
+snapshot; global host-key databases and automatic host-key updates are disabled.
+Configurations using `KnownHostsCommand` or DNS host-key trust are rejected.
 
 The hook starts a noninteractive master with strict host checking and
 `ExitOnForwardFailure`, clearing inherited forwards. Each consultation requests
@@ -105,7 +117,7 @@ events, handlers and trust settings. Replace the paths before using it:
   "hooks": [
     {
       "type": "command",
-      "command": "python3 -I -S -B '/ABSOLUTE/PRIVATE/codex_relay_start.py' --config '/ABSOLUTE/PRIVATE/settings.json'",
+      "command": "/usr/bin/python3 -I -S -B '/ABSOLUTE/PRIVATE/codex_relay_start.py' --config '/ABSOLUTE/PRIVATE/settings.json'",
       "timeout": 45,
       "statusMessage": "Consulting shared team context",
       "additionalContextLimit": 1500
@@ -124,12 +136,16 @@ import shlex
 
 adapter = "/ABSOLUTE/PRIVATE/codex_relay_start.py"
 settings = "/ABSOLUTE/PRIVATE/settings.json"
+interpreter = "/usr/bin/python3"
 print(json.dumps({"command": shlex.join([
-    "python3", "-I", "-S", "-B", adapter, "--config", settings
+    interpreter, "-I", "-S", "-B", adapter, "--config", settings
 ])}))
 ```
 
 Use the generated `command` value in the existing handler.
+Qualify that absolute interpreter path before installation. This Unix adapter
+uses protected system `/usr/bin/git` and `/usr/bin/ssh`, sets a fixed system PATH
+for child processes, and removes Git, Python, loader and developer-directory overrides.
 
 Review the script, settings and hook command. Open `/hooks` in the Codex CLI and
 trust this exact definition through Codex's normal review flow. Do not write a
@@ -168,6 +184,9 @@ produce Codex's own error instead; never interpret that as verified consultation
 Hook input and private settings are limited to 32,000 bytes. The restored task
 receipt has a separate 405,000-byte limit, accommodating the relay's 400,000-byte
 snapshot bound plus the task-selection envelope; larger receipts are rejected.
+Child stdout and stderr are each limited to 4,000,000 bytes while streaming;
+overflow or timeout kills and reaps the child process group. An uncertain SSH
+forwarding request is also followed by independently budgeted exact cancellation.
 
 The full workspace snapshot remains accessible to all enabled members and is
 restored privately before task filtering. Review author, citation, source

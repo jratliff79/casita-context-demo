@@ -8,7 +8,9 @@ import json
 import os
 from pathlib import Path
 import re
+import selectors
 import shutil
+import signal
 import socket as sockets
 import stat
 import subprocess
@@ -20,6 +22,9 @@ import uuid
 MAX_INPUT = 32_000
 # The relay snapshot is bounded at 400,000 bytes; task selection adds pin/envelope metadata.
 MAX_RECEIPT = 405_000
+MAX_COMMAND_OUTPUT = 4_000_000
+GIT = "/usr/bin/git"
+SSH = "/usr/bin/ssh"
 CLIENT_BOOTSTRAP = ("import runpy,sys; source=sys.argv.pop(1); "
                     "sys.path.append(source); runpy.run_path(source + '/context_relay.py', "
                     "run_name='__main__')")
@@ -57,17 +62,55 @@ def run(argv, deadline, check=True, cwd=None, text=True):
     remaining = deadline - time.monotonic()
     require(remaining > 0)
     # Ignore ambient Git overrides. Never forward hook input or transcripts to a command.
+    require(Path(argv[0]).is_absolute())
+    if argv[0] in (GIT, SSH):
+        mode = Path(argv[0]).stat()
+        require(stat.S_ISREG(mode.st_mode) and mode.st_uid == 0
+                and not mode.st_mode & 0o022 and mode.st_mode & 0o111)
     env = {k: v for k, v in os.environ.items()
-           if not k.startswith("GIT_") and k not in ("PYTHONPATH", "PYTHONHOME")}
-    result = subprocess.run(argv, cwd=cwd, env=env, capture_output=True,
-                            text=text, timeout=min(remaining, 20))
+           if not k.startswith(("GIT_", "DYLD_", "LD_"))
+           and k not in ("PYTHONPATH", "PYTHONHOME", "DEVELOPER_DIR", "SDKROOT")}
+    env["PATH"] = "/usr/bin:/bin"
+    stop = time.monotonic() + min(remaining, 20)
+    buffers = [bytearray(), bytearray()]
+    with subprocess.Popen(argv, cwd=cwd, env=env, stdout=subprocess.PIPE,
+                          stderr=subprocess.PIPE, stdin=subprocess.DEVNULL, start_new_session=True) as process:
+        try:
+            with selectors.DefaultSelector() as selector:
+                selector.register(process.stdout, selectors.EVENT_READ, 0)
+                selector.register(process.stderr, selectors.EVENT_READ, 1)
+                while selector.get_map():
+                    remaining = stop - time.monotonic()
+                    if remaining <= 0:
+                        raise subprocess.TimeoutExpired(argv, 20)
+                    for key, _ in selector.select(remaining):
+                        chunk = os.read(key.fd, 65536)
+                        if not chunk:
+                            selector.unregister(key.fileobj)
+                            continue
+                        buffer = buffers[key.data]
+                        require(len(buffer) + len(chunk) <= MAX_COMMAND_OUTPUT)
+                        buffer.extend(chunk)
+            process.wait(timeout=max(0, stop - time.monotonic()))
+        except BaseException:
+            # Kill the entire client process group, including a nested Casita child.
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            process.wait(timeout=1)
+            raise
+        values = [bytes(buffer) for buffer in buffers]
+        if text:
+            values = [value.decode("utf-8") for value in values]
+        result = subprocess.CompletedProcess(argv, process.returncode, *values)
     if check:
         require(result.returncode == 0)
     return result
 
 
 def git(cwd, deadline, *args):
-    return run(["git", "--no-replace-objects", "--no-optional-locks", "-c", "core.fsmonitor=false", "-C", str(cwd), *args],
+    return run([GIT, "--no-replace-objects", "--no-optional-locks", "-c", "core.fsmonitor=false", "-C", str(cwd), *args],
                deadline).stdout.rstrip("\n")
 
 
@@ -119,7 +162,7 @@ def reviewed_client(source, revision, root, deadline):
             mode, kind, oid = metadata.split()
             require(mode in ("100644", "100755") and kind == "blob"
                     and re.fullmatch(r"[0-9a-f]{" + str(hash_length) + "}", oid))
-            raw = run(["git", "--no-replace-objects", "--no-optional-locks", "-C", str(source), "cat-file", "blob", oid],
+            raw = run([GIT, "--no-replace-objects", "--no-optional-locks", "-C", str(source), "cat-file", "blob", oid],
                       deadline, text=False).stdout
             total += len(raw)
             require(total <= 4_000_000)
@@ -144,6 +187,18 @@ def require_outside_git(root):
                     for parent in (root, *root.parents)))
 
 
+def require_private_directory(path):
+    mode = path.lstat()
+    require(stat.S_ISDIR(mode.st_mode) and mode.st_uid == os.getuid() and not mode.st_mode & 0o077)
+    # A private leaf can still be replaced through an unsafe ancestor. Root/user
+    # owned sticky directories protect our entries; other writable parents do not.
+    for parent in set((*path.parents, *path.resolve().parents)):
+        mode = parent.lstat()
+        require(mode.st_uid in (0, os.getuid()))
+        require(stat.S_ISLNK(mode.st_mode) or (stat.S_ISDIR(mode.st_mode)
+                and (not mode.st_mode & 0o022 or mode.st_mode & stat.S_ISVTX)))
+
+
 @contextmanager
 def reviewed_executable(source, expected, root, deadline):
     with tempfile.TemporaryDirectory(prefix="reviewed-casita-", dir=root) as folder:
@@ -164,7 +219,7 @@ def reviewed_executable(source, expected, root, deadline):
         yield target
 
 
-def protected_ssh_config(source):
+def protected_ssh_file(source):
     fd = os.open(source, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     with os.fdopen(fd, "rb") as stream:
         mode = os.fstat(stream.fileno())
@@ -172,6 +227,11 @@ def protected_ssh_config(source):
                 and not mode.st_mode & 0o022 and mode.st_size <= MAX_INPUT)
         raw = stream.read(MAX_INPUT + 1)
     require(len(raw) <= MAX_INPUT)
+    return raw
+
+
+def protected_ssh_config(source):
+    raw = protected_ssh_file(source)
     # Keep the evaluated config immutable and self-contained. Include/glob inputs
     # would otherwise be reopened by SSH outside this protected snapshot.
     require(not re.search(r"^\s*include(?=\s|=|$)", raw.decode("utf-8"), re.I | re.M))
@@ -214,36 +274,46 @@ def relay_url(settings, root, deadline):
         yield "http://127.0.0.1:8765"
         return
     ssh_settings = settings["ssh"]
-    require(isinstance(ssh_settings, dict) and set(ssh_settings) == {"config", "socket", "alias"})
+    require(isinstance(ssh_settings, dict) and set(ssh_settings) == {"config", "socket", "alias", "known_hosts"})
     config = absolute(ssh_settings["config"])
     raw = protected_ssh_config(config)
+    keys = protected_ssh_file(absolute(ssh_settings["known_hosts"]))
+    require(keys.strip())
     with tempfile.TemporaryDirectory(prefix="ssh-config-", dir=root) as folder:
         snapshot = Path(folder) / "config"
         snapshot.write_bytes(raw)
         snapshot.chmod(0o600)
-        with forwarded_url(ssh_settings, snapshot, root, deadline) as url:
+        known_hosts = Path(folder) / "known-hosts"
+        known_hosts.write_bytes(keys)
+        known_hosts.chmod(0o600)
+        with forwarded_url(ssh_settings, snapshot, known_hosts, hashlib.sha256(keys).hexdigest(), root, deadline) as url:
             yield url
 
 
 @contextmanager
-def forwarded_url(ssh_settings, config, root, deadline):
+def forwarded_url(ssh_settings, config, known_hosts, keys_digest, root, deadline):
     namespace = absolute(ssh_settings["socket"])
     alias = ssh_settings["alias"]
     require(isinstance(alias, str) and re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}", alias))
-    ssh = ["ssh", "-F", str(config), "-o", "BatchMode=yes", "-o", "ConnectTimeout=5",
+    ssh = [SSH, "-F", str(config), "-o", "BatchMode=yes", "-o", "ConnectTimeout=5",
            "-o", "StrictHostKeyChecking=yes", "-o", "ExitOnForwardFailure=yes"]
     effective = run(ssh + ["-G", alias], deadline).stdout
     require(len(effective.encode()) <= MAX_INPUT)
+    options = dict(line.split(" ", 1) for line in effective.splitlines() if " " in line)
+    require(options.get("knownhostscommand", "none") == "none"
+            and options.get("verifyhostkeydns", "false") in ("false", "no"))
+    ssh += ["-o", "UserKnownHostsFile=" + json.dumps(str(known_hosts)),
+            "-o", "GlobalKnownHostsFile=none", "-o", "KnownHostsCommand=none",
+            "-o", "VerifyHostKeyDNS=no", "-o", "UpdateHostKeys=no"]
     # A legacy socket, or a master for another alias/effective destination, is never reused.
-    identity = hashlib.sha256(json.dumps([str(namespace), alias, effective]).encode()).hexdigest()
-    parent = namespace.parent.lstat()
-    require(stat.S_ISDIR(parent.st_mode) and parent.st_uid == os.getuid() and not parent.st_mode & 0o077)
+    identity = hashlib.sha256(json.dumps([str(namespace), alias, effective, keys_digest]).encode()).hexdigest()
+    require_private_directory(namespace.parent)
     socket = namespace.parent / ("c-" + identity[:20])
     # OpenSSH appends a temporary suffix while creating its master socket atomically.
     require(len(os.fsencode(socket)) + 18 < 104)
     master = ssh + ["-S", str(socket)]
     # Control requests read no SSH config: only the explicitly requested forward is installed.
-    control = ["ssh", "-F", "none", "-S", str(socket)]
+    control = [SSH, "-F", "none", "-S", str(socket)]
     with tunnel_lock(root, deadline):
         ready = run(master + ["-O", "check", alias], deadline, check=False)
         if ready.returncode:
@@ -254,8 +324,8 @@ def forwarded_url(ssh_settings, config, root, deadline):
             probe.bind(("127.0.0.1", 0))
             port = probe.getsockname()[1]
         forward = "127.0.0.1:" + str(port) + ":127.0.0.1:8765"
-        run(control + ["-O", "forward", "-L", forward, alias], deadline)
         try:
+            run(control + ["-O", "forward", "-L", forward, alias], deadline)
             yield "http://127.0.0.1:" + str(port)
         finally:
             try:
@@ -309,9 +379,7 @@ def consult(event, config_path):
         root = absolute(settings["output_dir"])
         require_outside_git(root)
         root.mkdir(mode=0o700, parents=True, exist_ok=True)
-        mode = root.lstat()
-        require(stat.S_ISDIR(mode.st_mode) and mode.st_uid == os.getuid()
-                and not mode.st_mode & 0o077)
+        require_private_directory(root)
         session = event.get("session_id")
         require(isinstance(session, str) and 0 < len(session) <= 256)
         task = "codex-" + hashlib.sha256(session.encode()).hexdigest()[:32]

@@ -152,6 +152,12 @@ print(json.dumps({"command": shlex.join([
 ```
 
 Use the generated `command` value in the existing handler.
+For adapter updates, copy `codex_relay_start.py` from the reviewed repository
+revision, rather than maintaining a separate installation-only patch. Run
+`python3 -m unittest discover -s tests -p test_codex_relay_start.py -v` before
+installing an update. The lifecycle regression test checks all four event sources
+in both the persisted receipt and the context delivered to Codex. Review and
+trust the changed hook through the same normal Codex flow.
 Qualify that absolute interpreter path before installation. This Unix adapter
 uses protected system `/usr/bin/git` and `/usr/bin/ssh`, sets a fixed system PATH
 for child processes, and removes Git, Python, loader and developer-directory overrides.
@@ -166,9 +172,15 @@ runtime. No Eventools or teammate configuration is changed by this repository.
 For an enrolled repository, the hook generates a stable local task ID from the
 session ID. Each startup, resume, clear or compaction reconsults into a different
 mode `0700` directory. It reports the workspace, verified revision, accepted
-memory count and receipt path. Its developer context asks the assistant to read
+memory count, receipt path and actual `SessionStart` source (`startup`, `resume`,
+`clear` or `compact`). After validating the restored receipt, it atomically adds
+that source to the private `task-start.json` with mode `0600`. This is local
+runtime provenance: it does not change the pinned snapshot, verified pin, receipt
+schema or execution authority. Failure to persist the source makes the
+consultation unavailable; the hook never reports success with an unannotated
+receipt. Its developer context asks the assistant to read
 `task-start.json` before planning and treat all shared material as untrusted
-evidence. It does not inject source or memory statements as developer instructions.
+evidence. It does not inject received source code or memory statements as developer instructions.
 The output root must be outside Git checkouts, including linked worktrees and
 paths that enter a checkout through a parent symlink. A misplaced output root
 is rejected before creating or restoring private context.

@@ -161,15 +161,99 @@ class StartupTests(unittest.TestCase):
             result = subprocess.check_output(["/bin/sh", "-c", command], text=True)
         self.assertEqual(json.loads(result), ["--config", str(settings)])
 
-    def test_resume_and_compaction_reconsult_into_distinct_private_outputs(self):
-        self.invoke()
-        for source in ("resume", "compact", "clear"):
-            self.event["source"] = source
-            self.invoke()
+    def test_session_start_source_reaches_fresh_receipt_and_delivered_context(self):
+        for source in ("startup", "resume", "clear", "compact"):
+            with self.subTest(source=source):
+                self.event["source"] = source
+                result = self.invoke()
+                details = json.loads(result["hookSpecificOutput"]["additionalContext"].splitlines()[-1])
+                receipt_path = Path(details["receipt_path"])
+                receipt = startup.private_json(receipt_path, limit=startup.MAX_RECEIPT)
+                self.assertEqual(receipt["source"], source)
+                self.assertEqual(details["source"], source)
+                self.assertEqual(receipt["pin"], self.pin)
+                self.assertEqual(startup.private_json(receipt_path.parent / "verified-pin.json"), self.pin)
+                self.assertEqual(receipt["schema"], "casita-task-start.v1")
+                self.assertEqual(receipt["workspace"], "synthetic-team")
+                self.assertEqual(receipt["task_id"], details["task_id"])
+                self.assertIsNone(receipt["checkpoint"])
+                self.assertEqual(receipt["accepted_memory"], self.memory)
+                self.assertIs(receipt["instructions_are_data"], True)
+                self.assertIs(receipt["execution_authorized"], False)
+                self.assertNotIn("session_id", receipt)
+                self.assertEqual(receipt_path.stat().st_mode & 0o777, 0o600)
         self.assertEqual(len(set(self.outputs)), 4)
         self.assertTrue(all(p.stat().st_mode & 0o077 == 0 for p in self.outputs))
         tasks = [argv[argv.index("--task") + 1] for argv in self.commands]
         self.assertEqual(len(set(tasks)), 1)
+
+    def test_source_annotation_preserves_receipt_fields_and_overrides_received_source(self):
+        path = self.root / "task-start.json"
+        receipt = {"schema": "casita-task-start.v1", "pin": self.pin,
+                   "checkpoint": {"summary": "synthetic checkpoint"},
+                   "accepted_memory": self.memory, "future_metadata": {"synthetic": True},
+                   "source": "startup"}
+        self.write_private(path, receipt)
+        expected = {**receipt, "source": "resume"}
+        self.assertEqual(startup.record_receipt_source(path, receipt, "resume"), expected)
+        self.assertEqual(startup.private_json(path), expected)
+        self.assertEqual(receipt["source"], "startup")
+        self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+        self.assertFalse(path.with_name(path.name + ".source.tmp").exists())
+
+    def test_invalid_source_does_not_rewrite_receipt_or_contact_relay(self):
+        path = self.root / "task-start.json"
+        self.write_private(path, {"synthetic": True})
+        original = path.read_bytes()
+        for source in ("bogus", "", None, ["resume"]):
+            with self.subTest(source=source):
+                with self.assertRaises(startup.Unavailable):
+                    startup.record_receipt_source(path, {"synthetic": True}, source)
+                self.event["source"] = source
+                with self.assertRaises(startup.Unavailable):
+                    self.invoke()
+                self.assertEqual(path.read_bytes(), original)
+                self.assertEqual(self.commands, [])
+
+    def test_source_annotation_does_not_follow_existing_temporary_symlink(self):
+        path = self.root / "task-start.json"
+        self.write_private(path, {"synthetic": True})
+        original = path.read_bytes()
+        temporary = path.with_name(path.name + ".source.tmp")
+        temporary.symlink_to(self.credential)
+        credential = self.credential.read_bytes()
+        with self.assertRaises(FileExistsError):
+            startup.record_receipt_source(path, {"synthetic": True}, "resume")
+        self.assertEqual(path.read_bytes(), original)
+        self.assertEqual(self.credential.read_bytes(), credential)
+        self.assertTrue(temporary.is_symlink())
+
+    def test_source_write_failures_preserve_original_receipt_and_remove_temporary_file(self):
+        path = self.root / "task-start.json"
+        self.write_private(path, {"synthetic": True})
+        original = path.read_bytes()
+        for operation in ("fsync", "replace"):
+            with self.subTest(operation=operation), \
+                    patch.object(startup.os, operation, side_effect=OSError("synthetic write failure")):
+                with self.assertRaises(OSError):
+                    startup.record_receipt_source(path, {"synthetic": True}, "resume")
+                self.assertEqual(path.read_bytes(), original)
+                self.assertFalse(path.with_name(path.name + ".source.tmp").exists())
+
+    def test_source_write_failure_requires_fallback_and_removes_consultation(self):
+        with patch.object(startup.os, "replace", side_effect=OSError("synthetic write failure")):
+            result = self.invoke()
+        self.assertIn("unavailable", result["systemMessage"])
+        self.assertIn("explicit fallback", result["hookSpecificOutput"]["additionalContext"])
+        self.assertFalse(self.outputs[-1].exists())
+        self.assertNotIn("receipt_path", json.dumps(result))
+
+    def test_invalid_receipt_is_rejected_before_source_annotation(self):
+        self.bad_receipt = True
+        with patch.object(startup, "record_receipt_source") as annotate:
+            self.assertIn("unavailable", self.invoke()["systemMessage"])
+        annotate.assert_not_called()
+        self.assertFalse(self.outputs[-1].exists())
 
     def test_unrelated_repository_does_not_contact_relay_or_return_context(self):
         self.settings["repositories"] = [str(self.root / "other.git")]

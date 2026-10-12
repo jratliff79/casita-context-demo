@@ -537,10 +537,11 @@ class Backups(unittest.TestCase):
         for table in ('proposals', 'requests'):
             with sqlite3.connect(Path(config['state'])/'relay.sqlite') as db:
                 if table == 'proposals':
-                    db.execute('INSERT INTO proposals(id,payload) VALUES (?,?)', ('synthetic-id', '{'))
+                    db.execute('INSERT INTO proposals(id,payload) VALUES (?,?)', ('a'*64, '{'))
                 else:
-                    db.execute('INSERT INTO requests VALUES (?,?,?,?)', ('jp', 'synthetic-id', 'hash', '{'))
-            with self.subTest(table=table), tempfile.TemporaryDirectory(dir=self.root) as temp:
+                    db.execute('INSERT INTO requests VALUES (?,?,?,?)', ('jp', 'synthetic-id', 'a'*64, '{'))
+            with self.subTest(table=table), tempfile.TemporaryDirectory(dir=self.root) as temp, \
+                 patch.object(backup, 'verify_snapshots'):
                 with self.assertRaisesRegex(backup.BackupError, 'invalid persisted JSON'):
                     backup.capture(config, Path(temp)/'payload', run=lambda *args: None, ready=lambda c: None)
             with sqlite3.connect(Path(config['state'])/'relay.sqlite') as db:
@@ -629,6 +630,60 @@ class Backups(unittest.TestCase):
             with sqlite3.connect(Path(config['state'])/'relay.sqlite') as db:
                 db.execute("DELETE FROM members WHERE name != 'jp'")
                 db.execute('INSERT INTO members VALUES (?,?,1)', ('cj', 'b'*64))
+
+    def test_saved_proposal_schema_id_flag_and_source_binding(self):
+        config, pin, raw = self.capture_fixture()
+        snapshot = json.loads(raw); source = snapshot['tasks']['synthetic-task']['files'][0]
+        proposal = dict(author='cj', base_revision=1, created_at=snapshot['created_at'],
+                        task_id='synthetic-task', scope='workspace', source_revision='a'*40,
+                        entry_id='synthetic-memory', statement='Synthetic lesson',
+                        citation=dict(path=source['path'], sha256=source['sha256'],
+                                      start_line=1, end_line=1, excerpt=['SYNTHETIC NOTE']))
+        proposal_id = backup.record_digest(backup.record_canonical(proposal))
+        with sqlite3.connect(Path(config['state'])/'relay.sqlite') as db:
+            db.execute('INSERT INTO proposals VALUES (?,?,0)', (proposal_id, json.dumps(proposal)))
+            backup.verify_auxiliary_json(db)
+            for changed, accepted, wrong_id in ((proposal, 0, True), (proposal, 2, False),
+                                                (proposal, 1, False), ({}, 0, False),
+                                                (dict(proposal, source_revision='b'*40), 0, False)):
+                db.execute('DELETE FROM proposals')
+                identity = 'f'*64 if wrong_id else backup.record_digest(backup.record_canonical(changed))
+                db.execute('INSERT INTO proposals VALUES (?,?,?)', (identity, json.dumps(changed), accepted))
+                with self.subTest(changed=changed, accepted=accepted, wrong_id=wrong_id), \
+                     self.assertRaises((backup.BackupError, Rejected)):
+                    backup.verify_auxiliary_json(db)
+
+    def test_settings_require_one_valid_enabled_owner(self):
+        config, pin, raw = self.capture_fixture()
+        for owner, disabled, duplicate in (('missing-owner', False, False), ('jp', True, False),
+                                            ('jp', False, True), ('INVALID OWNER', False, False)):
+            with sqlite3.connect(Path(config['state'])/'relay.sqlite') as db:
+                db.execute('DELETE FROM settings')
+                db.execute('INSERT INTO settings VALUES (?,?)', ('synthetic-team', owner))
+                if duplicate:
+                    db.execute('INSERT INTO settings VALUES (?,?)', ('synthetic-team', owner))
+                db.execute('UPDATE members SET enabled=? WHERE name=?', (0 if disabled else 1, 'jp'))
+            with self.subTest(owner=owner, disabled=disabled, duplicate=duplicate), \
+                 tempfile.TemporaryDirectory(dir=self.root) as temp:
+                with self.assertRaises(backup.BackupError):
+                    backup.capture(config, Path(temp)/'payload', run=lambda *args: None,
+                                   ready=lambda c: None)
+
+    def test_cached_results_must_match_committed_events_and_revisions(self):
+        config, pin, raw = self.capture_fixture()
+        with sqlite3.connect(Path(config['state'])/'relay.sqlite') as db:
+            event = dict(kind='publish', author='jp', revision=1, pin=pin)
+            db.execute('INSERT INTO events(payload) VALUES (?)', (json.dumps(event),))
+            good = dict(pin=pin, cursor=1)
+            db.execute('INSERT INTO requests VALUES (?,?,?,?)',
+                       ('jp', 'synthetic-request', 'a'*64, json.dumps(good)))
+            backup.verify_auxiliary_json(db)
+            for result in (dict(pin=pin, cursor=999), dict(cursor=1),
+                           dict(good, unexpected=True),
+                           dict(pin=dict(pin, snapshot_sha256='f'*64), cursor=1)):
+                db.execute('UPDATE requests SET result=?', (json.dumps(result),))
+                with self.subTest(result=result), self.assertRaises(backup.BackupError):
+                    backup.verify_auxiliary_json(db)
 
     def test_cloud_upload_requires_sse_and_exact_server_checksum(self):
         archive = self.root/'archive'; archive.write_bytes(b'SYNTHETIC CIPHERTEXT')

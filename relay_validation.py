@@ -134,6 +134,21 @@ def accepted_memory(entry, revision, tasks):
     # identified by its original source commit/hash, not rebound to current files.
 
 
+def proposal(value):
+    fields = {"author", "base_revision", "created_at", "task_id", "scope",
+              "source_revision", "entry_id", "statement", "citation"}
+    require(isinstance(value, dict) and set(value) == fields
+            and type(value["base_revision"]) is int and value["base_revision"] >= 1
+            and identifier(value["author"]) and identifier(value["task_id"]),
+            "invalid proposal fields")
+    # Reuse exactly the accepted-memory proposal rules without inventing a
+    # second shape for pending proposals. Synthetic acceptance is data only.
+    entry = {**value, "accepted_by": value["author"], "accepted_at": value["created_at"],
+             "proposal_id": digest(canonical(value))}
+    accepted_memory(entry, value["base_revision"] + 1, {value["task_id"]: None})
+    return value
+
+
 def snapshot(value, workspace, revision):
     require(isinstance(value, dict) and set(value) == {
         "schema", "workspace", "revision", "parent_revision", "author", "created_at",

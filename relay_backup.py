@@ -24,7 +24,10 @@ import time
 import uuid
 from urllib.request import Request, ProxyHandler, HTTPRedirectHandler, build_opener
 
-from relay_validation import identifier, snapshot as validate_snapshot
+from relay_validation import (identifier, snapshot as validate_snapshot,
+                              proposal as validate_proposal, checkpoint as validate_checkpoint,
+                              citation as validate_citation, canonical as record_canonical,
+                              digest as record_digest)
 
 
 MAX_ENTRIES = 50_000
@@ -250,17 +253,79 @@ def verify_auxiliary_json(db):
         require(db.execute('select 1 from '+table+' where typeof('+column+") != 'text' or "
                            'length(cast('+column+' as blob)) > ? limit 1',
                            (SNAPSHOT_BYTES,)).fetchone() is None, 'write-path JSON exceeds byte limit')
+        if table == 'proposals':
+            require(db.execute("select 1 from proposals where typeof(id) != 'text' "
+                               "or length(cast(id as blob)) != 64 or typeof(accepted) != 'integer' "
+                               "or accepted not in (0,1) limit 1").fetchone() is None,
+                    'invalid saved proposal metadata')
+            rows = db.execute('select id,payload,accepted from proposals')
+        else:
+            require(db.execute("select 1 from requests where typeof(actor) != 'text' "
+                               "or length(cast(actor as blob)) > 64 or typeof(id) != 'text' "
+                               "or length(cast(id as blob)) > 64 or typeof(hash) != 'text' "
+                               "or length(cast(hash as blob)) != 64 limit 1").fetchone() is None,
+                    'invalid saved request metadata')
+            rows = db.execute('select actor,id,hash,result from requests')
         total = 0
-        for (encoded,) in db.execute('select '+column+' from '+table):
+        for row in rows:
+            encoded = row[1] if table == 'proposals' else row[3]
             total += len(encoded.encode())
             require(total <= MAX_METADATA_BYTES, 'write-path JSON exceeds metadata limit')
             decoded = decode_record(encoded)
-            if table == 'requests':
+            if table == 'proposals':
+                validate_proposal(decoded)
+                require(row[0] == record_digest(record_canonical(decoded)), 'saved proposal identity mismatch')
+                require(db.execute('select 1 from members where name=?', (decoded['author'],)).fetchone()
+                        is not None, 'unknown proposal author')
+                base = db.execute('select snapshot from revisions where revision=?',
+                                  (decoded['base_revision'],)).fetchone()
+                require(base is not None, 'missing proposal base snapshot')
+                context = decode_record(base[0]).get('tasks', {}).get(decoded['task_id'])
+                require(isinstance(context, dict) and context.get('source_revision') == decoded['source_revision'],
+                        'proposal source revision mismatch')
+                validate_checkpoint(context)
+                validate_citation(decoded['citation'], context)
+                if row[2]:
+                    accepted = db.execute('select snapshot from revisions where revision=?',
+                                          (decoded['base_revision'] + 1,)).fetchone()
+                    decision = decode_record(accepted[0]).get('decision') if accepted else None
+                    require(isinstance(decision, dict) and decision.get('proposal_id') == row[0],
+                            'accepted proposal has no matching decision')
+            else:
+                actor, request_id, request_hash = row[:3]
+                require(identifier(actor) and identifier(request_id)
+                        and re.fullmatch(r'[0-9a-f]{64}', request_hash), 'invalid saved request metadata')
                 require(type(decoded.get('cursor')) is int and decoded['cursor'] > 0,
                         'invalid saved request cursor')
-                if 'pin' in decoded:
+                event_row = db.execute('select payload from events where cursor=?',
+                                       (decoded['cursor'],)).fetchone()
+                require(event_row is not None, 'missing saved request event')
+                event = decode_record(event_row[0])
+                require(db.execute('select 1 from members where name=?', (actor,)).fetchone() is not None,
+                        'unknown saved request actor')
+                require(event.get('author') == actor, 'saved request actor mismatch')
+                if set(decoded) == {'pin', 'cursor'}:
                     validate_pin(decoded['pin'])
-
+                    revision = db.execute('select pin from revisions where revision=?',
+                                          (decoded['pin']['revision'],)).fetchone()
+                    require(revision is not None and decoded['pin'] == decode_record(revision[0])
+                            and event.get('kind') in ('publish', 'accept')
+                            and event.get('pin') == decoded['pin']
+                            and event.get('revision') == decoded['pin']['revision'], 'saved request pin mismatch')
+                else:
+                    require(set(decoded) == {'proposal_id', 'proposal', 'cursor'},
+                            'invalid saved request result schema')
+                    validate_proposal(decoded['proposal'])
+                    saved = db.execute('select payload from proposals where id=?',
+                                       (decoded['proposal_id'],)).fetchone()
+                    require(saved is not None and decode_record(saved[0]) == decoded['proposal'],
+                            'missing saved request proposal')
+                    require(decoded['proposal_id'] == record_digest(record_canonical(decoded['proposal']))
+                            and event.get('kind') == 'propose'
+                            and event.get('proposal_id') == decoded['proposal_id']
+                            and event.get('proposal') == decoded['proposal']
+                            and event.get('revision') == decoded['proposal']['base_revision']
+                            and decoded['proposal']['author'] == actor, 'saved request proposal mismatch')
 
 def verify_snapshots(db, state, binary, run=command):
     """Verify every referenced archive and object in the copied native store."""
@@ -378,8 +443,16 @@ def capture(config, payload, run=command, ready=health):
     try:
         require(db.execute('pragma integrity_check').fetchone()[0] == 'ok', 'SQLite integrity failed')
         verify_schema(db)
-        verify_auxiliary_json(db)
-        head = db.execute('select revision,pin from revisions order by revision desc limit 1').fetchone()
+        require(db.execute('select count(*) from settings').fetchone()[0] == 1,
+                'relay needs exactly one settings row')
+        require(db.execute("select 1 from settings where typeof(workspace) != 'text' "
+                           "or length(cast(workspace as blob)) > 64 or typeof(owner) != 'text' "
+                           "or length(cast(owner as blob)) > 64 limit 1").fetchone() is None,
+                'invalid relay settings metadata')
+        workspace, owner = db.execute('select workspace,owner from settings').fetchone()
+        require(identifier(workspace) and identifier(owner)
+                and db.execute('select 1 from members where name=? and enabled=1', (owner,)).fetchone()
+                is not None, 'relay owner must be an enabled member')
         cursor = verify_events(db)
         require(db.execute('select count(*) from members').fetchone()[0] <= 11,
                 'member index exceeds pilot limit')
@@ -394,8 +467,12 @@ def capture(config, payload, run=command, ready=health):
                     and type(enabled) is int and enabled in (0, 1), 'invalid relay member')
             members.append({'name': name, 'enabled': bool(enabled)})
         require(len(json.dumps(members).encode()) <= 2048, 'member metadata exceeds limit')
-        require(head is not None, 'no committed relay snapshot')
+        # Bound and validate referenced rows before auxiliary cross-lookups can
+        # materialize snapshot, event or pin JSON.
         verify_snapshots(db, payload / 'state', payload / 'linux-casita', run)
+        verify_auxiliary_json(db)
+        head = db.execute('select revision,pin from revisions order by revision desc limit 1').fetchone()
+        require(head is not None, 'no committed relay snapshot')
     finally:
         db.close()
     manifest = dict(schema='relay-private-recovery.v1', source_commit=config['source_commit'],

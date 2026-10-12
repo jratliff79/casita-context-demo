@@ -44,6 +44,17 @@ def main():
                         request_id='synthetic-publish-'+str(revision), expected_revision=revision,
                         checkpoint=context))
         pins.append(result['pin'])
+    cj_token = json.loads((state/'credentials/cj.json').read_text())['token']
+    proposal = service.handle(cj_token, 'propose', dict(
+        workspace='synthetic-team', request_id='synthetic-proposal', expected_revision=2,
+        task_id='synthetic-task', scope='workspace', entry_id='synthetic-memory',
+        statement='Synthetic backup qualification includes owner-reviewed memory.',
+        citation=dict(path='note.txt', sha256=relay.digest(text.encode()),
+                      start_line=1, end_line=1, excerpt=['SYNTHETIC NOTE'])))
+    result = service.handle(token, 'accept', dict(
+        workspace='synthetic-team', request_id='synthetic-accept', expected_revision=2,
+        proposal_id=proposal['proposal_id']))
+    pins.append(result['pin'])
     calls = []
     def run(*argv):
         if argv[0] == '/usr/bin/systemctl':
@@ -51,7 +62,7 @@ def main():
             return b''  # Explicit synthetic service boundary; native commands are real.
         return backup.command(*argv)
     manifest = backup.capture(config, spool/'staging-valid', run=run, ready=lambda c: None)
-    assert manifest['revision'] == 2 and manifest['pin'] == pins[-1]
+    assert manifest['revision'] == 3 and manifest['pin'] == pins[-1]
     assert calls == ['is-active', 'stop', 'start']
     # SQLite and current head remain valid while a historical archive is absent.
     historical = state/'snapshots'/(pins[0]['archive_sha256']+'.casitar')
@@ -65,7 +76,8 @@ def main():
     assert calls[-1] == 'start'
     backup.cleanup(spool)
     backup.write_json(root/'receipt.json', dict(schema='synthetic-backup-check.v1',
-                      native_capture_passed=True, historical_archive_rejected=True,
+                      native_capture_passed=True, proposal_acceptance_captured=True,
+                      historical_archive_rejected=True,
                       synthetic_service_only=True, aws_accessed=False))
     print('Synthetic native capture and historical archive rejection passed.')
 

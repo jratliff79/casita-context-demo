@@ -102,3 +102,10 @@ bound to their original source; later checkpoint changes do not rebind them. The
 native binary now requires full immutable `binary_pin` metadata as well; migrate
 hash-only binary configuration during qualification. Member count is capped at
 11 and per-row fields are bounded in SQL before loading them into the manifest.
+
+Pending proposal data uses the same shared schema as accepted memory. Verify the
+canonical proposal ID, accepted flag, author, base snapshot and original source
+citation; an accepted row must have its matching decision. Cached idempotency
+responses must match their committed event/revision or proposal. Settings must
+have exactly one bounded workspace/owner row whose valid owner is enabled in
+membership. These checks inspect copied data and do not mutate the live relay.

@@ -55,7 +55,8 @@ class Backups(unittest.TestCase):
         cloud = cloud or FakeCloud()
         return backup.backup(self.config, cloud, now=self.now,
                              make_capture=kwargs.get('capture', self.capture),
-                             make_archive=kwargs.get('encrypt', self.encrypt))
+                             make_archive=kwargs.get('encrypt', self.encrypt),
+                             clock=kwargs.get('clock', lambda: 0))
 
     def test_success_commits_only_after_both_uploads_and_removes_plaintext(self):
         cloud = FakeCloud()
@@ -154,7 +155,8 @@ class Backups(unittest.TestCase):
         inventory = self.root/'inventory'; backup.write_json(inventory, backup.inventory(app, 100_000))
         config = dict(app=str(app), binary=str(binary), binary_sha256=backup.sha256(binary),
                       runtime_inventory=str(inventory), max_bytes=1000,
-                      state=str(self.root/'missing'), service='synthetic.service', service_unit=str(binary))
+                      state=str(self.root/'missing'), service='synthetic.service', service_unit=str(binary),
+                      service_unit_pin=backup.file_pin(binary, 1000))
         calls = []
         with self.assertRaises(backup.BackupError):
             backup.capture(config, self.root/'payload', run=lambda *args: calls.append(args))
@@ -260,7 +262,8 @@ class Backups(unittest.TestCase):
         index = self.root/'inventory'; backup.write_json(index, backup.inventory(app, 100_000))
         config = dict(app=str(app), state=str(state), binary=str(binary),
                       binary_sha256=backup.sha256(binary), runtime_inventory=str(index),
-                      service_unit=str(unit), service='synthetic.service', max_bytes=1_000_000,
+                      service_unit=str(unit), service_unit_pin=backup.file_pin(unit, 1_000_000),
+                      service='synthetic.service', max_bytes=1_000_000,
                       source_commit='a'*40, casita_commit='b'*40)
         return config, pin, snapshot
 
@@ -455,6 +458,93 @@ class Backups(unittest.TestCase):
                 with sqlite3.connect(Path(config['state'])/'relay.sqlite') as db:
                     db.execute('DROP TABLE IF EXISTS '+table)
                     db.execute(backup.RELAY_SCHEMA[table])
+
+    def test_service_unit_bytes_or_modes_drifting_after_precheck_fail_capture(self):
+        config, pin, snapshot = self.capture_fixture()
+        unit = Path(config['service_unit'])
+        for mode_only in (False, True):
+            def drift(*args):
+                if args[:2] == ('/usr/bin/systemctl', 'start'):
+                    if mode_only:
+                        unit.chmod(0o644)
+                    else:
+                        unit.write_text('UNQUALIFIED SYNTHETIC UNIT')
+            with self.subTest(mode_only=mode_only), tempfile.TemporaryDirectory(dir=self.root) as temp:
+                with self.assertRaisesRegex(backup.BackupError, 'copied service unit pin mismatch'):
+                    backup.capture(config, Path(temp)/'payload', run=drift, ready=lambda c: None)
+                self.assertFalse((Path(temp)/'payload/recovery-manifest.json').exists())
+            unit.write_text('SYNTHETIC UNIT'); unit.chmod(0o600)
+        unit.chmod(0o644)
+        run = Mock()
+        with self.assertRaisesRegex(backup.BackupError, 'service unit pin mismatch'):
+            backup.capture(config, self.root/'never-created', run=run, ready=lambda c: None)
+        run.assert_not_called()
+
+    def test_slow_backup_publishes_elapsed_age_without_advancing_recovery_point(self):
+        cloud = FakeCloud()
+        clock = Mock(side_effect=[10, 7211])
+        result = self.run_backup(cloud, clock=clock)
+        self.assertEqual(cloud.metrics, [7201])
+        self.assertEqual(result['last_success'], self.now.timestamp())
+        self.assertEqual(backup.monitor(self.config, FakeCloud(), self.now.timestamp()+7201), 7201)
+
+    def test_extra_fields_float_and_boolean_revision_pins_fail_receiver_compatibility(self):
+        config, pin, snapshot = self.capture_fixture()
+        for malformed in (dict(pin, unexpected='field'), dict(pin, revision=1.0),
+                          dict(pin, revision=True)):
+            with sqlite3.connect(Path(config['state'])/'relay.sqlite') as db:
+                db.execute('UPDATE revisions SET pin=?', (json.dumps(malformed),))
+            with self.subTest(pin=malformed), tempfile.TemporaryDirectory(dir=self.root) as temp:
+                with self.assertRaisesRegex(backup.BackupError, 'snapshot pin schema'):
+                    backup.capture(config, Path(temp)/'payload', run=lambda *args: None,
+                                   ready=lambda c: None)
+
+    def test_invalid_event_past_readiness_page_and_event_metadata_bounds(self):
+        config, pin, snapshot = self.capture_fixture()
+        valid = json.dumps(dict(kind='publish', author='jp', revision=1))
+        with sqlite3.connect(Path(config['state'])/'relay.sqlite') as db:
+            db.executemany('INSERT INTO events(payload) VALUES (?)', [(valid,)]*101)
+            self.assertEqual(backup.verify_events(db), 101)
+            for malformed in ('{', '[]', json.dumps(dict(kind='publish', author='jp', revision=True)),
+                              json.dumps(dict(kind='publish', author='jp', revision=1, cursor=1))):
+                db.execute('UPDATE events SET payload=? WHERE cursor=101', (malformed,))
+                with self.subTest(event=malformed), self.assertRaises(backup.BackupError):
+                    backup.verify_events(db)
+            db.execute('UPDATE events SET payload=? WHERE cursor=101', (valid,))
+            with patch.object(backup, 'MAX_ENTRIES', 100), self.assertRaises(backup.BackupError):
+                backup.verify_events(db)
+            with patch.object(backup, 'MAX_METADATA_BYTES', 100), self.assertRaises(backup.BackupError):
+                backup.verify_events(db)
+        with sqlite3.connect(Path(config['state'])/'relay.sqlite') as db:
+            db.execute('UPDATE events SET payload=? WHERE cursor=101', ('{',))
+        with tempfile.TemporaryDirectory(dir=self.root) as temp:
+            with self.assertRaisesRegex(backup.BackupError, 'invalid persisted JSON'):
+                backup.capture(config, Path(temp)/'payload', run=lambda *args: None, ready=lambda c: None)
+
+    def test_corrupt_saved_proposal_or_idempotency_json_is_not_accepted(self):
+        config, pin, snapshot = self.capture_fixture()
+        for table in ('proposals', 'requests'):
+            with sqlite3.connect(Path(config['state'])/'relay.sqlite') as db:
+                if table == 'proposals':
+                    db.execute('INSERT INTO proposals(id,payload) VALUES (?,?)', ('synthetic-id', '{'))
+                else:
+                    db.execute('INSERT INTO requests VALUES (?,?,?,?)', ('jp', 'synthetic-id', 'hash', '{'))
+            with self.subTest(table=table), tempfile.TemporaryDirectory(dir=self.root) as temp:
+                with self.assertRaisesRegex(backup.BackupError, 'invalid persisted JSON'):
+                    backup.capture(config, Path(temp)/'payload', run=lambda *args: None, ready=lambda c: None)
+            with sqlite3.connect(Path(config['state'])/'relay.sqlite') as db:
+                db.execute('DELETE FROM '+table)
+
+    def test_digest_rejects_oversize_links_and_fifo_before_reading(self):
+        source = self.root/'source'; source.write_bytes(b'S'*10)
+        with self.assertRaises(backup.BackupError):
+            backup.sha256(source, 5)
+        fifo = self.root/'fifo'; os.mkfifo(fifo)
+        with self.assertRaises(backup.BackupError):
+            backup.sha256(fifo)
+        link = self.root/'link'; link.symlink_to(source)
+        with self.assertRaises(OSError):
+            backup.sha256(link)
 
     def test_cloud_upload_requires_sse_and_exact_server_checksum(self):
         archive = self.root/'archive'; archive.write_bytes(b'SYNTHETIC CIPHERTEXT')

@@ -28,6 +28,7 @@ def main():
     binary = args.casita.resolve()
     config = dict(state=str(state), app=str(app), spool=str(spool), binary=str(binary),
                   binary_sha256=backup.sha256(binary), service_unit=str(unit),
+                  service_unit_pin=backup.file_pin(unit, 100_000),
                   runtime_inventory=str(index), max_bytes=512*1024*1024,
                   service='synthetic.service', source_commit='a'*40, casita_commit='b'*40)
     relay.initialize(state, 'synthetic-team', 'jp', ['cj'])

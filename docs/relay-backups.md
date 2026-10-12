@@ -81,3 +81,15 @@ triggers, views or explicit indexes are rejected. Schema changes require an
 operator-reviewed controller/source requalification. Future, negative or nonfinite
 success timestamps make monitoring fail without publishing a fresh metric, letting
 the independent missing-data alarm cover clock skew and malformed status.
+
+The service unit also needs a full immutable `service_unit_pin` (file SHA256,
+size, mode, UID/GID and kind) in private configuration; check both original and
+copied unit before accepting a package. Digest reads reject links/special files
+and enforce byte limits. Copied revision pins must match the receiver's exact
+four-field schema with integer revisions and its snapshot/archive byte limits.
+Every copied event, proposal and saved request JSON object is checked with entry,
+individual-byte and aggregate metadata bounds, including events beyond the first
+readiness page. Event cursor/kind/author/revision metadata and saved request cursors
+must be valid. The completion metric includes elapsed monotonic time since the
+recorded backup start, rather than temporarily treating a slow recovery point as
+age zero. The periodic monitor continues using the recorded wall-clock timestamp.

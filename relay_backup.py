@@ -28,6 +28,8 @@ from urllib.request import Request, ProxyHandler, HTTPRedirectHandler, build_ope
 MAX_ENTRIES = 50_000
 MAX_METADATA_BYTES = 8 * 1024 * 1024
 RESERVE_BYTES = 256 * 1024 * 1024
+SNAPSHOT_BYTES = 400_000
+ARCHIVE_BYTES = 1_000_000
 
 # Exact pilot schema belongs to the pinned server, including write-path tables
 # and uniqueness/primary-key constraints. A future schema needs requalification.
@@ -50,12 +52,28 @@ def require(condition, message):
         raise BackupError(message)
 
 
-def sha256(path):
+def sha256(path, limit=None):
     h = hashlib.sha256()
-    with Path(path).open('rb') as stream:
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    with os.fdopen(fd, 'rb') as stream:
+        info = os.fstat(stream.fileno())
+        limit = info.st_size if limit is None else limit
+        require(stat.S_ISREG(info.st_mode) and info.st_size <= limit, 'unsafe digest input')
+        total = 0
         for block in iter(lambda: stream.read(1024 * 1024), b''):
+            total += len(block)
+            require(total <= limit, 'digest input exceeds byte limit')
             h.update(block)
+        require(total == info.st_size, 'digest input changed size')
     return h.hexdigest()
+
+
+def file_pin(path, limit):
+    path = Path(path)
+    info = path.lstat()
+    require(stat.S_ISREG(info.st_mode) and info.st_size <= limit, 'unsafe artifact input')
+    return dict(kind='file', mode=stat.S_IMODE(info.st_mode), uid=info.st_uid,
+                gid=info.st_gid, size=info.st_size, sha256=sha256(path, info.st_size))
 
 
 def private_json(path, owner=None):
@@ -119,7 +137,7 @@ def inventory(root, limit, exclude_cache=False, max_entries=MAX_ENTRIES,
         if stat.S_ISREG(info.st_mode):
             size += info.st_size
             require(size <= limit, 'input exceeds configured size limit')
-            item.update(size=info.st_size, sha256=sha256(path))
+            item.update(size=info.st_size, sha256=sha256(path, info.st_size))
         name = path.relative_to(root).as_posix()
         metadata_bytes += len(json.dumps({name: item}).encode()) + 2
         require(metadata_bytes <= max_metadata_bytes,
@@ -202,6 +220,46 @@ def health(config):
         require(response.status == 200, 'authenticated readiness failed')
 
 
+def decode_record(encoded):
+    try:
+        value = json.loads(encoded)
+    except (ValueError, TypeError):
+        raise BackupError('invalid persisted JSON') from None
+    require(isinstance(value, dict), 'invalid persisted JSON object')
+    return value
+
+
+def validate_pin(pin):
+    require(isinstance(pin, dict) and set(pin) == {
+                'revision', 'directory_key', 'snapshot_sha256', 'archive_sha256'}
+            and type(pin['revision']) is int and pin['revision'] > 0, 'invalid snapshot pin schema')
+    require(all(isinstance(pin[key], str) and re.fullmatch(r'[0-9a-f]{64}', pin[key])
+                for key in ('archive_sha256', 'snapshot_sha256')), 'invalid snapshot digest')
+    require(isinstance(pin['directory_key'], str)
+            and re.fullmatch(r'casita.directory.v1:[A-Za-z0-9_-]{43}', pin['directory_key']),
+            'invalid snapshot directory key')
+
+
+def verify_auxiliary_json(db):
+    # These columns are parsed by accept and idempotent writes after restoration.
+    for table, column in (('proposals', 'payload'), ('requests', 'result')):
+        require(db.execute('select count(*) from '+table).fetchone()[0] <= MAX_ENTRIES,
+                'write-path index exceeds entry limit')
+        require(db.execute('select 1 from '+table+' where typeof('+column+") != 'text' or "
+                           'length(cast('+column+' as blob)) > ? limit 1',
+                           (SNAPSHOT_BYTES,)).fetchone() is None, 'write-path JSON exceeds byte limit')
+        total = 0
+        for (encoded,) in db.execute('select '+column+' from '+table):
+            total += len(encoded.encode())
+            require(total <= MAX_METADATA_BYTES, 'write-path JSON exceeds metadata limit')
+            decoded = decode_record(encoded)
+            if table == 'requests':
+                require(type(decoded.get('cursor')) is int and decoded['cursor'] > 0,
+                        'invalid saved request cursor')
+                if 'pin' in decoded:
+                    validate_pin(decoded['pin'])
+
+
 def verify_snapshots(db, state, binary, run=command):
     """Verify every referenced archive and object in the copied native store."""
     store = state / 'store'
@@ -209,31 +267,28 @@ def verify_snapshots(db, state, binary, run=command):
     run(str(binary), '--repository', str(store), 'fsck', '--dry-run')
     require(db.execute('select count(*) from revisions').fetchone()[0] <= MAX_ENTRIES,
             'revision index exceeds limits')
-    require(db.execute('select 1 from revisions where length(cast(snapshot as blob)) > 1000000 '
+    require(db.execute("select 1 from revisions where typeof(snapshot) != 'text' or typeof(pin) != 'text' "
+                       "or length(cast(snapshot as blob)) > 400000 "
                        'or length(cast(pin as blob)) > 4096 limit 1').fetchone() is None,
             'revision index exceeds limits')
     count = 0
     for revision, snapshot, encoded_pin in db.execute('select revision,snapshot,pin from revisions'):
         count += 1
-        require(count <= MAX_ENTRIES and len(snapshot.encode()) <= 1_000_000
+        require(count <= MAX_ENTRIES and len(snapshot.encode()) <= SNAPSHOT_BYTES
                 and len(encoded_pin.encode()) <= 4096, 'revision index exceeds limits')
-        pin = json.loads(encoded_pin)
-        require(pin['revision'] == revision and type(revision) is int and revision > 0,
-                'revision pin mismatch')
-        require(all(isinstance(pin[key], str) and re.fullmatch(r'[0-9a-f]{64}', pin[key])
-                    for key in ('archive_sha256', 'snapshot_sha256')), 'invalid snapshot digest')
+        pin = decode_record(encoded_pin)
+        validate_pin(pin)
+        require(type(revision) is int and pin['revision'] == revision, 'revision pin mismatch')
+        decode_record(snapshot)
         require(hashlib.sha256(snapshot.encode()).hexdigest() == pin['snapshot_sha256'],
                 'snapshot index hash mismatch')
-        require(isinstance(pin['directory_key'], str)
-                and re.fullmatch(r'casita.directory.v1:[A-Za-z0-9_-]{43}', pin['directory_key']),
-                'invalid snapshot directory key')
         archive = state / 'snapshots' / (pin['archive_sha256'] + '.casitar')
         require(archive.is_file() and not archive.is_symlink()
-                and archive.stat().st_size <= 2_000_000
+                and archive.stat().st_size <= ARCHIVE_BYTES
                 and sha256(archive) == pin['archive_sha256'], 'referenced archive missing or damaged')
         report = json.loads(run(str(binary), 'archive', 'verify', str(archive), '--json',
-                                '--max-archive-bytes', '2000000', '--max-payload-bytes', '1000000',
-                                '--max-total-payload-bytes', '1000000',
+                                '--max-archive-bytes', str(ARCHIVE_BYTES), '--max-payload-bytes', str(SNAPSHOT_BYTES),
+                                '--max-total-payload-bytes', str(SNAPSHOT_BYTES),
                                 '--max-payloads', '100', '--max-records', '100'))
         require(report['validity'] == 'verified' and report['roots'] == [pin['directory_key']],
                 'archive root mismatch')
@@ -241,22 +296,45 @@ def verify_snapshots(db, state, binary, run=command):
             restored = Path(temp) / 'snapshot'
             run(str(binary), '--repository', str(store), 'checkout', pin['directory_key'],
                 str(restored), '--no-root')
-            files = inventory(restored, 1_000_000)
+            files = inventory(restored, SNAPSHOT_BYTES)
             require({k: v['sha256'] for k, v in files.items() if v['kind'] == 'file'}
                     == {'snapshot.json': pin['snapshot_sha256']}, 'native snapshot content mismatch')
     require(count > 0, 'no committed relay snapshot')
+
+
+def verify_events(db):
+    require(db.execute('select count(*) from events').fetchone()[0] <= MAX_ENTRIES,
+            'event index exceeds entry limit')
+    require(db.execute("select 1 from events where typeof(payload) != 'text' or length(cast(payload as blob)) > 400000 "
+                       'limit 1').fetchone() is None, 'event payload exceeds byte limit')
+    total, previous = 0, 0
+    for cursor, encoded in db.execute('select cursor,payload from events order by cursor'):
+        total += len(encoded.encode())
+        require(total <= MAX_METADATA_BYTES, 'event index exceeds metadata limit')
+        require(type(cursor) is int and cursor > previous, 'invalid event cursor')
+        event = decode_record(encoded)
+        require(isinstance(event, dict) and 'cursor' not in event
+                and event.get('kind') in ('publish', 'propose', 'accept')
+                and isinstance(event.get('author'), str)
+                and type(event.get('revision')) is int and event['revision'] > 0,
+                'invalid event payload')
+        previous = cursor
+    return previous
 
 
 def capture(config, payload, run=command, ready=health):
     state, app = Path(config['state']), Path(config['app'])
     binary = Path(config['binary'])
     disjoint_output(payload, state, app)
-    require(sha256(binary) == config['binary_sha256'], 'native binary pin mismatch')
+    require(sha256(binary, config['max_bytes']) == config['binary_sha256'], 'native binary pin mismatch')
+    unit = Path(config['service_unit'])
+    require(file_pin(unit, config['max_bytes']) == config['service_unit_pin'],
+            'service unit pin mismatch')
     expected = private_json(config['runtime_inventory'])
     actual = inventory(app, config['max_bytes'], exclude_cache=True)
     require(actual == expected,
             'runtime source pin mismatch')
-    fixed_bytes = binary.stat().st_size + Path(config['service_unit']).stat().st_size
+    fixed_bytes = binary.stat().st_size + unit.stat().st_size
     require(fixed_bytes < config['max_bytes'], 'runtime artifacts exceed size limit')
     run('/usr/bin/systemctl', 'is-active', '--quiet', config['service'])
     start = time.monotonic()
@@ -289,13 +367,16 @@ def capture(config, payload, run=command, ready=health):
     require(sha256(payload / 'linux-casita') == config['binary_sha256'],
             'copied native binary pin mismatch')
     remaining -= (payload / 'linux-casita').stat().st_size
-    bounded_copy(config['service_unit'], payload / 'context-relay.service', remaining)
+    bounded_copy(unit, payload / 'context-relay.service', remaining)
+    require(file_pin(payload / 'context-relay.service', remaining) == config['service_unit_pin'],
+            'copied service unit pin mismatch')
     db = sqlite3.connect('file:' + str(payload / 'state/relay.sqlite') + '?mode=ro', uri=True)
     try:
         require(db.execute('pragma integrity_check').fetchone()[0] == 'ok', 'SQLite integrity failed')
         verify_schema(db)
+        verify_auxiliary_json(db)
         head = db.execute('select revision,pin from revisions order by revision desc limit 1').fetchone()
-        cursor = db.execute('select coalesce(max(cursor),0) from events').fetchone()[0]
+        cursor = verify_events(db)
         members = [{'name': name, 'enabled': bool(enabled)} for name, enabled in
                    db.execute('select name,enabled from members order by name')]
         require(head is not None, 'no committed relay snapshot')
@@ -370,7 +451,8 @@ class Cloud:
                          + 'Context relay backup status', Message=message)
 
 
-def backup(config, cloud, now=None, make_capture=capture, make_archive=encrypt):
+def backup(config, cloud, now=None, make_capture=capture, make_archive=encrypt, clock=time.monotonic):
+    started = clock()
     now = now or dt.datetime.now(dt.timezone.utc)
     spool = Path(config['spool'])
     status_path = spool / 'status.json'
@@ -401,7 +483,7 @@ def backup(config, cloud, now=None, make_capture=capture, make_archive=encrypt):
         write_json(status_path, result)
         # Once S3 and the status file acknowledge success, telemetry cannot roll it back.
         try:
-            cloud.age(0)
+            cloud.age(max(0, clock() - started))
         except Exception:
             pass  # The separate monitor retries freshness publication.
         if previous.get('failed'):

@@ -428,10 +428,20 @@ def verify_transitions(db, requests):
             'history has unrecorded requests, revisions or proposals')
 
 
-def verify_snapshots(db, state, binary, run=command):
-    """Verify every referenced archive and object in the copied native store."""
+def verify_snapshots(db, state, binary, run=command, max_bytes=512 * 1024 * 1024):
+    """Verify a disposable store copy without modifying recovery payload bytes."""
     store = state / 'store'
     require(store.is_dir() and not store.is_symlink(), 'missing native store')
+    # Even fsck --dry-run and checkout write process-pin ledger files. Running
+    # them as the backup operator can create files inaccessible to the restored
+    # service user. Keep those writes out of the exact quiescent recovery copy.
+    with tempfile.TemporaryDirectory(prefix='staging-native-', dir=state.parent.parent) as temp:
+        verified_store = Path(temp) / 'store'
+        copy_tree(store, verified_store, max_bytes)
+        verify_snapshot_objects(db, state, binary, verified_store, run)
+
+
+def verify_snapshot_objects(db, state, binary, store, run):
     run(str(binary), '--repository', str(store), 'fsck', '--dry-run')
     require(db.execute('select count(*) from revisions').fetchone()[0] <= MAX_ENTRIES,
             'revision index exceeds limits')
@@ -593,7 +603,8 @@ def capture(config, payload, run=command, ready=health):
         require(len(json.dumps(members).encode()) <= 2048, 'member metadata exceeds limit')
         # Bound and validate referenced rows before auxiliary cross-lookups can
         # materialize snapshot, event or pin JSON.
-        verify_snapshots(db, payload / 'state', payload / 'linux-casita', run)
+        verify_snapshots(db, payload / 'state', payload / 'linux-casita', run,
+                         max_bytes=config['max_bytes'])
         requests = verify_auxiliary_json(db)
         verify_transitions(db, requests)
         head = db.execute('select revision,pin from revisions order by revision desc limit 1').fetchone()

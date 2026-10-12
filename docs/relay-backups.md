@@ -62,9 +62,13 @@ copies use bounded streams, including tree files and the native binary/unit, so
 an overlapping oversized replacement is rejected before exceeding the budget. On the
 copied state, check SQLite integrity, native store fsck, every revision's indexed
 snapshot hash and archive hash, native archive validity/root, and the checked-out
-snapshot hash. Never execute snapshot source. Native fsck may update the copied
-process-pin journal; record the final copied inventory after verification. The
-live store remains untouched by these native checks.
+snapshot hash. Never execute snapshot source. Native fsck and checkout can write
+process-pin ledger files even during verification. Run those commands against a
+separate bounded, disposable store copy so operator-owned files never enter the
+recovery payload. Remove that verification copy on success or failure; interrupted
+copies use the existing staging cleanup. The live store and the quiescent recovery
+copy remain untouched by these native checks. The existing two-copy free-space
+gate covers the payload and verification store before archive creation.
 
 Status writes fsync both the temporary file and the containing directory after
 rename. Under the spool lock, backup cleanup runs before constructing cloud

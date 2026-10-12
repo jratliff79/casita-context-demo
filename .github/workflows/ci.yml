@@ -154,6 +154,11 @@ jobs:
               shutil.copyfile(name, target)
           PY
           python -m py_compile output/ci-worktree/fixtures/source/verify.py
+      - name: Verify synthetic native relay backup capture
+        run: >-
+          python ci/verify-relay-backup.py
+          --casita output/casita-build/debug/casita
+          --output output/ci-relay-backup
       - name: Run uv quick start with fresh stores
         run: >-
           uv run --no-project --python 3.12 python output/ci-worktree/demo.py

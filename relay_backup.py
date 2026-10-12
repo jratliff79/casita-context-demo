@@ -12,6 +12,7 @@ import fcntl
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import shutil
 import sqlite3
@@ -21,6 +22,11 @@ import tempfile
 import time
 import uuid
 from urllib.request import Request, ProxyHandler, HTTPRedirectHandler, build_opener
+
+
+MAX_ENTRIES = 50_000
+MAX_METADATA_BYTES = 8 * 1024 * 1024
+RESERVE_BYTES = 256 * 1024 * 1024
 
 
 class BackupError(Exception):
@@ -65,24 +71,52 @@ def write_json(path, data):
         temporary.unlink(missing_ok=True)
 
 
-def inventory(root, limit, exclude_cache=False):
+def inventory(root, limit, exclude_cache=False, max_entries=MAX_ENTRIES,
+              max_metadata_bytes=MAX_METADATA_BYTES):
     root = Path(root)
-    result, size = {}, 0
+    result, size, metadata_bytes = {}, 0, 2
     require(root.is_dir() and not root.is_symlink(), 'unsafe input tree')
-    for path in [root, *sorted(root.rglob('*'))]:
-        if exclude_cache and '__pycache__' in path.relative_to(root).parts:
-            continue
+
+    def paths(folder):
+        # scandir is consumed incrementally, including wide trees of empty files.
+        with os.scandir(folder) as entries:
+            for entry in entries:
+                if exclude_cache and entry.name == '__pycache__':
+                    continue
+                path = Path(entry.path)
+                yield path
+                if entry.is_dir(follow_symlinks=False):
+                    yield from paths(path)
+
+    def bounded_paths():
+        yield root
+        yield from paths(root)
+
+    for path in bounded_paths():
+        require(len(result) < max_entries, 'input exceeds configured entry limit')
         info = path.lstat()
         require(stat.S_ISREG(info.st_mode) or stat.S_ISDIR(info.st_mode),
                 'links and special files are not backed up')
-        item = dict(kind='directory' if path.is_dir() else 'file',
+        item = dict(kind='directory' if stat.S_ISDIR(info.st_mode) else 'file',
                     mode=stat.S_IMODE(info.st_mode), uid=info.st_uid, gid=info.st_gid)
-        if path.is_file():
+        if stat.S_ISREG(info.st_mode):
             size += info.st_size
             require(size <= limit, 'input exceeds configured size limit')
             item.update(size=info.st_size, sha256=sha256(path))
-        result[path.relative_to(root).as_posix()] = item
+        name = path.relative_to(root).as_posix()
+        metadata_bytes += len(json.dumps({name: item}).encode()) + 2
+        require(metadata_bytes <= max_metadata_bytes,
+                'input exceeds inventory metadata limit')
+        result[name] = item
     return result
+
+
+def disjoint_output(output, *sources):
+    output = Path(output).resolve()
+    for source in sources:
+        source = Path(source).resolve()
+        require(output != source and output not in source.parents and source not in output.parents,
+                'staging and captured trees must not overlap')
 
 
 def copy_tree(source, destination, limit, exclude_cache=False):
@@ -100,7 +134,7 @@ def copy_tree(source, destination, limit, exclude_cache=False):
 
 def command(*args):
     # Never emit subprocess stderr: paths/content/errors may contain private data.
-    subprocess.run(args, check=True, capture_output=True, timeout=120)
+    return subprocess.run(args, check=True, capture_output=True, timeout=120).stdout
 
 
 def health(config):
@@ -116,21 +150,69 @@ def health(config):
         require(response.status == 200, 'authenticated readiness failed')
 
 
+def verify_snapshots(db, state, binary, run=command):
+    """Verify every referenced archive and object in the copied native store."""
+    store = state / 'store'
+    require(store.is_dir() and not store.is_symlink(), 'missing native store')
+    run(str(binary), '--repository', str(store), 'fsck', '--dry-run')
+    require(db.execute('select count(*) from revisions').fetchone()[0] <= MAX_ENTRIES,
+            'revision index exceeds limits')
+    require(db.execute('select 1 from revisions where length(cast(snapshot as blob)) > 1000000 '
+                       'or length(cast(pin as blob)) > 4096 limit 1').fetchone() is None,
+            'revision index exceeds limits')
+    count = 0
+    for revision, snapshot, encoded_pin in db.execute('select revision,snapshot,pin from revisions'):
+        count += 1
+        require(count <= MAX_ENTRIES and len(snapshot.encode()) <= 1_000_000
+                and len(encoded_pin.encode()) <= 4096, 'revision index exceeds limits')
+        pin = json.loads(encoded_pin)
+        require(pin['revision'] == revision and type(revision) is int and revision > 0,
+                'revision pin mismatch')
+        require(all(isinstance(pin[key], str) and re.fullmatch(r'[0-9a-f]{64}', pin[key])
+                    for key in ('archive_sha256', 'snapshot_sha256')), 'invalid snapshot digest')
+        require(hashlib.sha256(snapshot.encode()).hexdigest() == pin['snapshot_sha256'],
+                'snapshot index hash mismatch')
+        require(isinstance(pin['directory_key'], str)
+                and re.fullmatch(r'casita.directory.v1:[A-Za-z0-9_-]{43}', pin['directory_key']),
+                'invalid snapshot directory key')
+        archive = state / 'snapshots' / (pin['archive_sha256'] + '.casitar')
+        require(archive.is_file() and not archive.is_symlink()
+                and archive.stat().st_size <= 2_000_000
+                and sha256(archive) == pin['archive_sha256'], 'referenced archive missing or damaged')
+        report = json.loads(run(str(binary), 'archive', 'verify', str(archive), '--json',
+                                '--max-archive-bytes', '2000000', '--max-payload-bytes', '1000000',
+                                '--max-total-payload-bytes', '1000000',
+                                '--max-payloads', '100', '--max-records', '100'))
+        require(report['validity'] == 'verified' and report['roots'] == [pin['directory_key']],
+                'archive root mismatch')
+        with tempfile.TemporaryDirectory(prefix='staging-verify-', dir=state.parent.parent) as temp:
+            restored = Path(temp) / 'snapshot'
+            run(str(binary), '--repository', str(store), 'checkout', pin['directory_key'],
+                str(restored), '--no-root')
+            files = inventory(restored, 1_000_000)
+            require({k: v['sha256'] for k, v in files.items() if v['kind'] == 'file'}
+                    == {'snapshot.json': pin['snapshot_sha256']}, 'native snapshot content mismatch')
+    require(count > 0, 'no committed relay snapshot')
+
+
 def capture(config, payload, run=command, ready=health):
     state, app = Path(config['state']), Path(config['app'])
     binary = Path(config['binary'])
+    disjoint_output(payload, state, app)
     require(sha256(binary) == config['binary_sha256'], 'native binary pin mismatch')
     expected = private_json(config['runtime_inventory'])
     actual = inventory(app, config['max_bytes'], exclude_cache=True)
     require({k: v['sha256'] for k, v in actual.items() if v['kind'] == 'file'} == expected,
             'runtime source pin mismatch')
+    fixed_bytes = binary.stat().st_size + Path(config['service_unit']).stat().st_size
+    require(fixed_bytes < config['max_bytes'], 'runtime artifacts exceed size limit')
     run('/usr/bin/systemctl', 'is-active', '--quiet', config['service'])
     start = time.monotonic()
     try:
         # Finally starts the service even if stop/copy raises. ExecStopPost also
         # restarts it when this controller is killed before Python can clean up.
         run('/usr/bin/systemctl', 'stop', config['service'])
-        copy_tree(state, payload / 'state', config['max_bytes'])
+        state_inventory = copy_tree(state, payload / 'state', config['max_bytes'] - fixed_bytes)
     finally:
         run('/usr/bin/systemctl', 'start', config['service'])
     last = None
@@ -144,8 +226,14 @@ def capture(config, payload, run=command, ready=health):
             time.sleep(0.2)
     require(last is None, 'authenticated readiness failed')
     pause = round(time.monotonic() - start, 3)
-    copy_tree(app, payload / 'runtime-app', config['max_bytes'], exclude_cache=True)
+    state_bytes = sum(item.get('size', 0) for item in state_inventory.values())
+    copied = copy_tree(app, payload / 'runtime-app',
+                       config['max_bytes'] - fixed_bytes - state_bytes, exclude_cache=True)
+    require({k: v['sha256'] for k, v in copied.items() if v['kind'] == 'file'} == expected,
+            'copied runtime source pin mismatch')
     shutil.copy2(binary, payload / 'linux-casita')
+    require(sha256(payload / 'linux-casita') == config['binary_sha256'],
+            'copied native binary pin mismatch')
     shutil.copy2(config['service_unit'], payload / 'context-relay.service')
     db = sqlite3.connect('file:' + str(payload / 'state/relay.sqlite') + '?mode=ro', uri=True)
     try:
@@ -155,6 +243,7 @@ def capture(config, payload, run=command, ready=health):
         members = [{'name': name, 'enabled': bool(enabled)} for name, enabled in
                    db.execute('select name,enabled from members order by name')]
         require(head is not None, 'no committed relay snapshot')
+        verify_snapshots(db, payload / 'state', payload / 'linux-casita', run)
     finally:
         db.close()
     manifest = dict(schema='relay-private-recovery.v1', source_commit=config['source_commit'],
@@ -162,6 +251,8 @@ def capture(config, payload, run=command, ready=health):
                     revision=head[0], event_cursor=cursor, service_pause_seconds=pause,
                     members=members,
                     inventory=inventory(payload, config['max_bytes']))
+    require(len(json.dumps(manifest).encode()) <= MAX_METADATA_BYTES + 64 * 1024,
+            'recovery manifest exceeds metadata limit')
     write_json(payload / 'recovery-manifest.json', manifest)
     return manifest
 
@@ -232,7 +323,8 @@ def backup(config, cloud, now=None, make_capture=capture, make_archive=encrypt):
     stage = spool / ('staging-' + run_id)
     archive = spool / ('pending-' + run_id + '.age')
     try:
-        require(shutil.disk_usage(spool).free > config['max_bytes'] + 256 * 1024 * 1024,
+        disjoint_output(spool, config['state'], config['app'])
+        require(shutil.disk_usage(spool).free > 2 * config['max_bytes'] + RESERVE_BYTES,
                 'insufficient staging capacity')
         stage.mkdir(mode=0o700)
         phase = 'capture'
@@ -251,10 +343,16 @@ def backup(config, cloud, now=None, make_capture=capture, make_archive=encrypt):
                       ciphertext_bytes=archive.stat().st_size, revision=manifest['revision'],
                       event_cursor=manifest['event_cursor'], failed=False)
         write_json(status_path, result)
-        phase = 'heartbeat'
-        cloud.age(0)
+        # Once S3 and the status file acknowledge success, telemetry cannot roll it back.
+        try:
+            cloud.age(0)
+        except Exception:
+            pass  # The separate monitor retries freshness publication.
         if previous.get('failed'):
-            cloud.alert('Recovery: encrypted off-host backup completed. No context or credentials included in this alert.')
+            try:
+                cloud.alert('Recovery: encrypted off-host backup completed. No context or credentials included in this alert.')
+            except Exception:
+                pass  # Notification submission is independent of backup success.
         return result
     except Exception:
         # Do not report raw exceptions or paths to the cloud or journal.
@@ -300,6 +398,7 @@ def main():
     spool = Path(config['spool'])
     require(spool.is_dir() and not spool.is_symlink() and spool.stat().st_uid == 0
             and stat.S_IMODE(spool.stat().st_mode) == 0o700, 'unsafe spool directory')
+    disjoint_output(spool, config['state'], config['app'])
     with (spool / 'controller.lock').open('a') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         if args.operation == 'cleanup':

@@ -46,3 +46,22 @@ Qualification requires decrypting an actual downloaded cloud object, checking
 its full inventory and restoring native relay state in an isolated environment.
 Retain owner-only key escrow and separately rehearse a replacement host; neither
 an S3 upload nor a scheduled timer establishes full disaster recovery.
+
+The spool must be disjoint from both state and runtime trees, including resolved
+symlink aliases and either direction of containment. Reject overlap before cleanup
+or service quiescence. Reserve twice the payload byte limit plus 256 MiB for the
+plaintext, ciphertext and metadata/compression overhead. Inventories stream paths
+and stop at 50,000 entries or 8 MiB of metadata, including empty files/directories;
+the final manifest is also bounded. Exceeding a limit fails the backup.
+
+Recheck the copied runtime and native binary against their immutable pins. On the
+copied state, check SQLite integrity, native store fsck, every revision's indexed
+snapshot hash and archive hash, native archive validity/root, and the checked-out
+snapshot hash. Never execute snapshot source. Native fsck may update the copied
+process-pin journal; record the final copied inventory after verification. The
+live store remains untouched by these native checks.
+
+Once all required uploads and the local status file acknowledge success, a failed
+freshness metric or recovery notice cannot erase that success or its daily marker.
+The separate monitor retries freshness publication; recovery notices are best
+effort and their submission remains distinct from inbox delivery.

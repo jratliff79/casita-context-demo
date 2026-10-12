@@ -93,3 +93,12 @@ readiness page. Event cursor/kind/author/revision metadata and saved request cur
 must be valid. The completion metric includes elapsed monotonic time since the
 recorded backup start, rather than temporarily treating a slow recovery point as
 age zero. The periodic monitor continues using the recorded wall-clock timestamp.
+
+Install `relay_validation.py` beside the controller from the same reviewed source
+revision. The receiver and backup controller share data-only checkpoint/snapshot
+rules: snapshot envelope/workspace/revision, selected task files/hashes, accepted
+memory/citation metadata and decisions must be valid. Accepted citations remain
+bound to their original source; later checkpoint changes do not rebind them. The
+native binary now requires full immutable `binary_pin` metadata as well; migrate
+hash-only binary configuration during qualification. Member count is capped at
+11 and per-row fields are bounded in SQL before loading them into the manifest.

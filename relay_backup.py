@@ -24,6 +24,8 @@ import time
 import uuid
 from urllib.request import Request, ProxyHandler, HTTPRedirectHandler, build_opener
 
+from relay_validation import identifier, snapshot as validate_snapshot
+
 
 MAX_ENTRIES = 50_000
 MAX_METADATA_BYTES = 8 * 1024 * 1024
@@ -279,7 +281,8 @@ def verify_snapshots(db, state, binary, run=command):
         pin = decode_record(encoded_pin)
         validate_pin(pin)
         require(type(revision) is int and pin['revision'] == revision, 'revision pin mismatch')
-        decode_record(snapshot)
+        workspace = db.execute('select workspace from settings').fetchone()[0]
+        validate_snapshot(decode_record(snapshot), workspace, revision)
         require(hashlib.sha256(snapshot.encode()).hexdigest() == pin['snapshot_sha256'],
                 'snapshot index hash mismatch')
         archive = state / 'snapshots' / (pin['archive_sha256'] + '.casitar')
@@ -326,7 +329,8 @@ def capture(config, payload, run=command, ready=health):
     state, app = Path(config['state']), Path(config['app'])
     binary = Path(config['binary'])
     disjoint_output(payload, state, app)
-    require(sha256(binary, config['max_bytes']) == config['binary_sha256'], 'native binary pin mismatch')
+    require(file_pin(binary, config['max_bytes']) == config['binary_pin'],
+            'native binary pin mismatch')
     unit = Path(config['service_unit'])
     require(file_pin(unit, config['max_bytes']) == config['service_unit_pin'],
             'service unit pin mismatch')
@@ -364,7 +368,7 @@ def capture(config, payload, run=command, ready=health):
     runtime_bytes = sum(item.get('size', 0) for item in copied.values())
     remaining = config['max_bytes'] - state_bytes - runtime_bytes
     bounded_copy(binary, payload / 'linux-casita', remaining)
-    require(sha256(payload / 'linux-casita') == config['binary_sha256'],
+    require(file_pin(payload / 'linux-casita', remaining) == config['binary_pin'],
             'copied native binary pin mismatch')
     remaining -= (payload / 'linux-casita').stat().st_size
     bounded_copy(unit, payload / 'context-relay.service', remaining)
@@ -377,8 +381,19 @@ def capture(config, payload, run=command, ready=health):
         verify_auxiliary_json(db)
         head = db.execute('select revision,pin from revisions order by revision desc limit 1').fetchone()
         cursor = verify_events(db)
-        members = [{'name': name, 'enabled': bool(enabled)} for name, enabled in
-                   db.execute('select name,enabled from members order by name')]
+        require(db.execute('select count(*) from members').fetchone()[0] <= 11,
+                'member index exceeds pilot limit')
+        require(db.execute("select 1 from members where typeof(name) != 'text' "
+                           "or length(cast(name as blob)) > 64 or typeof(token_hash) != 'text' "
+                           "or length(cast(token_hash as blob)) != 64 or typeof(enabled) != 'integer' "
+                           "or enabled not in (0,1) limit 1").fetchone() is None,
+                'member metadata exceeds pilot limit')
+        members = []
+        for name, token_hash, enabled in db.execute('select name,token_hash,enabled from members order by name'):
+            require(identifier(name) and re.fullmatch(r'[0-9a-f]{64}', token_hash)
+                    and type(enabled) is int and enabled in (0, 1), 'invalid relay member')
+            members.append({'name': name, 'enabled': bool(enabled)})
+        require(len(json.dumps(members).encode()) <= 2048, 'member metadata exceeds limit')
         require(head is not None, 'no committed relay snapshot')
         verify_snapshots(db, payload / 'state', payload / 'linux-casita', run)
     finally:

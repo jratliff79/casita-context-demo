@@ -1,5 +1,6 @@
 """Synthetic backup failures; no AWS account, secret or live service required."""
 import datetime as dt
+import copy
 import json
 import os
 from pathlib import Path
@@ -13,6 +14,7 @@ from unittest.mock import patch
 from unittest.mock import Mock
 
 import relay_backup as backup
+from relay_validation import snapshot as validate_snapshot, Rejected
 
 
 class FakeCloud:
@@ -153,7 +155,7 @@ class Backups(unittest.TestCase):
         app = self.root/'app'; app.mkdir(); (app/'file').write_text('SYNTHETIC')
         binary = self.root/'binary'; binary.write_bytes(b'SYNTHETIC BINARY')
         inventory = self.root/'inventory'; backup.write_json(inventory, backup.inventory(app, 100_000))
-        config = dict(app=str(app), binary=str(binary), binary_sha256=backup.sha256(binary),
+        config = dict(app=str(app), binary=str(binary), binary_pin=backup.file_pin(binary, 1_000_000),
                       runtime_inventory=str(inventory), max_bytes=1000,
                       state=str(self.root/'missing'), service='synthetic.service', service_unit=str(binary),
                       service_unit_pin=backup.file_pin(binary, 1000))
@@ -248,7 +250,14 @@ class Backups(unittest.TestCase):
         app = self.root/'app'; app.mkdir(); (app/'file').write_text('SYNTHETIC')
         state = self.root/'state'; state.mkdir()
         (state/'snapshots').mkdir(); (state/'store').mkdir()
-        snapshot = '{"synthetic":true}'
+        text = 'SYNTHETIC NOTE\n'
+        snapshot = json.dumps(dict(schema='casita-context-relay.v1', workspace='synthetic-team',
+                     revision=1, parent_revision=0, author='jp', created_at='2026-01-02T03:00:00+00:00',
+                     tasks={'synthetic-task': dict(task_id='synthetic-task', summary='Synthetic fixture',
+                            completed=[], pending=[], blockers=[], source_revision='a'*40,
+                            files=[dict(path='note.txt', text=text,
+                                        sha256=backup.hashlib.sha256(text.encode()).hexdigest())])},
+                     memory=[], decision=None))
         archive = b'SYNTHETIC ARCHIVE'
         pin = dict(revision=1, directory_key='casita.directory.v1:'+'A'*43,
                    snapshot_sha256=backup.hashlib.sha256(snapshot.encode()).hexdigest(),
@@ -256,12 +265,14 @@ class Backups(unittest.TestCase):
         (state/'snapshots'/(pin['archive_sha256']+'.casitar')).write_bytes(archive)
         with sqlite3.connect(state/'relay.sqlite') as db:
             db.executescript(';'.join(backup.RELAY_SCHEMA.values()))
+            db.execute('INSERT INTO settings VALUES (?,?)', ('synthetic-team', 'jp'))
+            db.executemany('INSERT INTO members VALUES (?,?,1)', [('jp', 'a'*64), ('cj', 'b'*64)])
             db.execute('INSERT INTO revisions VALUES (?,?,?)', (1, snapshot, json.dumps(pin)))
         binary = self.root/'binary'; binary.write_bytes(b'SYNTHETIC BINARY')
         unit = self.root/'service'; unit.write_text('SYNTHETIC UNIT')
         index = self.root/'inventory'; backup.write_json(index, backup.inventory(app, 100_000))
         config = dict(app=str(app), state=str(state), binary=str(binary),
-                      binary_sha256=backup.sha256(binary), runtime_inventory=str(index),
+                      binary_pin=backup.file_pin(binary, 1_000_000), runtime_inventory=str(index),
                       service_unit=str(unit), service_unit_pin=backup.file_pin(unit, 1_000_000),
                       service='synthetic.service', max_bytes=1_000_000,
                       source_commit='a'*40, casita_commit='b'*40)
@@ -322,8 +333,8 @@ class Backups(unittest.TestCase):
 
     def test_manifest_limit_counts_formatted_bytes_before_writing(self):
         config, pin, snapshot = self.capture_fixture()
-        with sqlite3.connect(Path(config['state'])/'relay.sqlite') as db:
-            db.execute('INSERT INTO members VALUES (?,?,1)', ('S'*70_000, 'synthetic-token-hash'))
+        for number in range(300):
+            (Path(config['state'])/('S'*180+str(number))).touch()
         def run(*args):
             if 'verify' in args:
                 return json.dumps(dict(validity='verified', roots=[pin['directory_key']])).encode()
@@ -545,6 +556,79 @@ class Backups(unittest.TestCase):
         link = self.root/'link'; link.symlink_to(source)
         with self.assertRaises(OSError):
             backup.sha256(link)
+
+    def test_hash_consistent_semantically_invalid_snapshot_is_rejected(self):
+        config, pin, raw = self.capture_fixture()
+        good = json.loads(raw)
+        variants = [{}, dict(good, workspace='another-team'), dict(good, revision=True),
+                    dict(good, tasks={}), dict(good, memory='broken')]
+        wrong_checkpoint = copy.deepcopy(good)
+        wrong_checkpoint['tasks']['synthetic-task']['files'][0]['sha256'] = 'f'*64
+        variants.append(wrong_checkpoint)
+        for value in variants:
+            raw = json.dumps(value)
+            changed_pin = dict(pin, snapshot_sha256=backup.hashlib.sha256(raw.encode()).hexdigest())
+            with sqlite3.connect(Path(config['state'])/'relay.sqlite') as db:
+                db.execute('UPDATE revisions SET snapshot=?,pin=?', (raw, json.dumps(changed_pin)))
+            with self.subTest(snapshot=value), tempfile.TemporaryDirectory(dir=self.root) as temp:
+                with self.assertRaises(Rejected):
+                    backup.capture(config, Path(temp)/'payload', run=lambda *args: None,
+                                   ready=lambda c: None)
+
+    def test_shared_snapshot_rules_accept_original_citation_after_task_changes(self):
+        config, pin, raw = self.capture_fixture()
+        value = json.loads(raw); value.update(revision=2, parent_revision=1)
+        source = value['tasks']['synthetic-task']['files'][0]
+        proposal = dict(author='cj', base_revision=1, created_at=value['created_at'],
+                        task_id='synthetic-task', scope='workspace', source_revision='a'*40,
+                        entry_id='synthetic-memory', statement='Synthetic lesson',
+                        citation=dict(path=source['path'], sha256=source['sha256'],
+                                      start_line=1, end_line=1, excerpt=['SYNTHETIC NOTE']))
+        from relay_validation import canonical, digest
+        entry = dict(proposal, accepted_by='jp', accepted_at=value['created_at'],
+                     proposal_id=digest(canonical(proposal)))
+        value['memory'] = [entry]
+        value['tasks']['synthetic-task']['source_revision'] = 'b'*40
+        value['tasks']['synthetic-task']['files'] = [dict(path='new.txt', text='NEW', sha256=digest(b'NEW'))]
+        self.assertIs(validate_snapshot(value, 'synthetic-team', 2), value)
+        for field, bad in (('scope', 'invalid'), ('citation', {}), ('accepted_by', True)):
+            malformed = copy.deepcopy(value); malformed['memory'][0][field] = bad
+            with self.subTest(field=field), self.assertRaises(Rejected):
+                validate_snapshot(malformed, 'synthetic-team', 2)
+
+    def test_native_binary_mode_drift_is_rejected_before_and_after_copy(self):
+        config, pin, snapshot = self.capture_fixture()
+        binary = Path(config['binary']); binary.chmod(0o644)
+        run = Mock()
+        with self.assertRaisesRegex(backup.BackupError, 'native binary pin mismatch'):
+            backup.capture(config, self.root/'never-created', run=run, ready=lambda c: None)
+        run.assert_not_called(); binary.chmod(0o600)
+        def drift(*args):
+            if args[:2] == ('/usr/bin/systemctl', 'start'):
+                binary.chmod(0o777)
+        with tempfile.TemporaryDirectory(dir=self.root) as temp:
+            with self.assertRaisesRegex(backup.BackupError, 'copied native binary pin mismatch'):
+                backup.capture(config, Path(temp)/'payload', run=drift, ready=lambda c: None)
+
+    def test_member_count_and_metadata_are_bounded_before_rows_are_loaded(self):
+        config, pin, snapshot = self.capture_fixture()
+        with sqlite3.connect(Path(config['state'])/'relay.sqlite') as db:
+            db.executemany('INSERT INTO members VALUES (?,?,1)',
+                           [('synthetic-'+str(i), str(i).zfill(64)) for i in range(10)])
+        with tempfile.TemporaryDirectory(dir=self.root) as temp:
+            with self.assertRaisesRegex(backup.BackupError, 'member index exceeds'):
+                backup.capture(config, Path(temp)/'payload', run=lambda *args: None, ready=lambda c: None)
+        with sqlite3.connect(Path(config['state'])/'relay.sqlite') as db:
+            db.execute("DELETE FROM members WHERE name LIKE 'synthetic-%'")
+        for field, malformed in (('name', 'x'*65), ('token_hash', 'x'*65), ('enabled', 'x'*100_000)):
+            with sqlite3.connect(Path(config['state'])/'relay.sqlite') as db:
+                db.execute('UPDATE members SET '+field+'=? WHERE token_hash=?', (malformed, 'b'*64))
+            with self.subTest(field=field), tempfile.TemporaryDirectory(dir=self.root) as temp:
+                with self.assertRaisesRegex(backup.BackupError, 'member metadata exceeds'):
+                    backup.capture(config, Path(temp)/'payload', run=lambda *args: None, ready=lambda c: None)
+            with sqlite3.connect(Path(config['state'])/'relay.sqlite') as db:
+                db.execute("DELETE FROM members WHERE name != 'jp'")
+                db.execute('INSERT INTO members VALUES (?,?,1)', ('cj', 'b'*64))
 
     def test_cloud_upload_requires_sse_and_exact_server_checksum(self):
         archive = self.root/'archive'; archive.write_bytes(b'SYNTHETIC CIPHERTEXT')

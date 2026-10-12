@@ -5,6 +5,9 @@ import os
 from pathlib import Path
 import tempfile
 import sqlite3
+import stat
+import sys
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 from unittest.mock import Mock
@@ -336,6 +339,46 @@ class Backups(unittest.TestCase):
                 with self.assertRaisesRegex(backup.BackupError, 'manifest exceeds'):
                     backup.capture(config, second, run=run, ready=lambda c: None)
                 self.assertFalse((second/'recovery-manifest.json').exists())
+
+    def test_status_rename_fsyncs_parent_directory_before_return(self):
+        events = []
+        fsync, replace = backup.os.fsync, backup.os.replace
+        def record_fsync(fd):
+            kind = 'directory' if stat.S_ISDIR(os.fstat(fd).st_mode) else 'file'
+            events.append(kind)
+            fsync(fd)
+        def record_replace(*args):
+            events.append('rename')
+            replace(*args)
+        with patch.object(backup.os, 'fsync', side_effect=record_fsync), \
+             patch.object(backup.os, 'replace', side_effect=record_replace):
+            self.run_backup()
+        self.assertEqual(events, ['file', 'rename', 'directory'])
+        self.assertTrue(backup.private_json(self.root/'status.json')['last_success'])
+
+    def test_stale_plaintext_cleanup_does_not_depend_on_cloud_initialization(self):
+        stage = self.root/'staging-interrupted'; stage.mkdir()
+        (stage/'private-state').write_text('SYNTHETIC PRIVATE STATE')
+        archive = self.root/'pending-interrupted.age'; archive.write_text('SYNTHETIC PARTIAL')
+        original_stat = Path.stat
+        def fake_stat(path, *args, **kwargs):
+            if path == self.root:
+                return SimpleNamespace(st_uid=0, st_mode=stat.S_IFDIR | 0o700)
+            return original_stat(path, *args, **kwargs)
+        def fail_cloud(config):
+            self.assertFalse(stage.exists())
+            self.assertFalse(archive.exists())
+            raise RuntimeError('SYNTHETIC unavailable cloud dependency')
+        config = dict(self.config, service='context-relay.service')
+        with patch.object(backup.os, 'getuid', return_value=0), \
+             patch.object(backup, 'private_json', return_value=config), \
+             patch.object(Path, 'stat', fake_stat), \
+             patch.object(backup, 'Cloud', side_effect=fail_cloud), \
+             patch.object(sys, 'argv', ['relay_backup.py', 'backup', '--config', str(self.root/'config')]):
+            with self.assertRaisesRegex(RuntimeError, 'unavailable cloud dependency'):
+                backup.main()
+        self.assertFalse(stage.exists())
+        self.assertFalse(archive.exists())
 
     def test_cloud_upload_requires_sse_and_exact_server_checksum(self):
         archive = self.root/'archive'; archive.write_bytes(b'SYNTHETIC CIPHERTEXT')

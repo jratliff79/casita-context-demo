@@ -67,6 +67,11 @@ def write_json(path, data):
             stream.flush()
             os.fsync(stream.fileno())
         os.replace(temporary, path)
+        directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
     finally:
         temporary.unlink(missing_ok=True)
 
@@ -401,12 +406,12 @@ def main():
     disjoint_output(spool, config['state'], config['app'])
     with (spool / 'controller.lock').open('a') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
-        if args.operation == 'cleanup':
+        if args.operation in ('backup', 'cleanup'):
             cleanup(spool)
+        if args.operation == 'cleanup':
             return
         cloud = Cloud(config)
         if args.operation == 'backup':
-            cleanup(spool)
             result = backup(config, cloud)
             print('Encrypted off-host backup complete; revision ' + str(result['revision']))
         else:

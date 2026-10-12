@@ -61,6 +61,10 @@ snapshot hash. Never execute snapshot source. Native fsck may update the copied
 process-pin journal; record the final copied inventory after verification. The
 live store remains untouched by these native checks.
 
+Status writes fsync both the temporary file and the containing directory after
+rename. Under the spool lock, backup cleanup runs before constructing cloud
+clients, so missing AWS tooling cannot strand plaintext from an interrupted run.
+
 Once all required uploads and the local status file acknowledge success, a failed
 freshness metric or recovery notice cannot erase that success or its daily marker.
 The separate monitor retries freshness publication; recovery notices are best

@@ -109,3 +109,11 @@ citation; an accepted row must have its matching decision. Cached idempotency
 responses must match their committed event/revision or proposal. Settings must
 have exactly one bounded workspace/owner row whose valid owner is enabled in
 membership. These checks inspect copied data and do not mutate the live relay.
+
+Copied accepted-memory entries and decisions must name the configured workspace
+owner. New write events persist request ID/hash; cached results must bind to those
+fields and the exact canonical originating request hash. Legacy events remain
+verifiable by reconstructing publish/propose/accept requests from retained
+revision/proposal data. This avoids silently accepting swapped retry results
+without requiring a migration of existing event rows. Interrupted staging and
+partial ciphertext cleanup fsyncs the spool before returning or cloud setup.

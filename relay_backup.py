@@ -245,6 +245,36 @@ def validate_pin(pin):
             'invalid snapshot directory key')
 
 
+def verify_request_identity(db, request_id, request_hash, event, result):
+    # New events preserve identity explicitly. Older events can still be checked
+    # against the independently persisted hash by reconstructing the exact write.
+    if 'request_id' in event or 'request_hash' in event:
+        require(event.get('request_id') == request_id and event.get('request_hash') == request_hash,
+                'saved request event identity mismatch')
+    workspace = db.execute('select workspace from settings').fetchone()[0]
+    kind = event['kind']
+    common = dict(workspace=workspace, request_id=request_id)
+    if kind == 'propose':
+        proposal = result['proposal']
+        common['expected_revision'] = proposal['base_revision']
+        bodies = [{**common, **{key: proposal[key] for key in (
+            'task_id', 'scope', 'entry_id', 'statement', 'citation')}}]
+    else:
+        revision = result['pin']['revision']
+        snapshot = decode_record(db.execute('select snapshot from revisions where revision=?',
+                                           (revision,)).fetchone()[0])
+        require(snapshot['author'] == event['author'], 'saved request snapshot author mismatch')
+        common['expected_revision'] = revision - 1
+        if kind == 'publish':
+            bodies = ({**common, 'checkpoint': context} for context in snapshot['tasks'].values())
+        else:
+            decision = snapshot['decision']
+            require(isinstance(decision, dict), 'saved acceptance decision missing')
+            bodies = [{**common, 'proposal_id': decision['proposal_id']}]
+    require(any(record_digest(record_canonical(dict(operation=kind, body=body))) == request_hash
+                for body in bodies), 'saved request content hash mismatch')
+
+
 def verify_auxiliary_json(db):
     # These columns are parsed by accept and idempotent writes after restoration.
     for table, column in (('proposals', 'payload'), ('requests', 'result')):
@@ -326,6 +356,7 @@ def verify_auxiliary_json(db):
                             and event.get('proposal') == decoded['proposal']
                             and event.get('revision') == decoded['proposal']['base_revision']
                             and decoded['proposal']['author'] == actor, 'saved request proposal mismatch')
+                verify_request_identity(db, request_id, request_hash, event, decoded)
 
 def verify_snapshots(db, state, binary, run=command):
     """Verify every referenced archive and object in the copied native store."""
@@ -346,8 +377,11 @@ def verify_snapshots(db, state, binary, run=command):
         pin = decode_record(encoded_pin)
         validate_pin(pin)
         require(type(revision) is int and pin['revision'] == revision, 'revision pin mismatch')
-        workspace = db.execute('select workspace from settings').fetchone()[0]
-        validate_snapshot(decode_record(snapshot), workspace, revision)
+        workspace, owner = db.execute('select workspace,owner from settings').fetchone()
+        decoded = validate_snapshot(decode_record(snapshot), workspace, revision)
+        require(all(entry['accepted_by'] == owner for entry in decoded['memory'])
+                and (decoded['decision'] is None or decoded['decision']['accepted_by'] == owner),
+                'accepted memory must name the configured owner')
         require(hashlib.sha256(snapshot.encode()).hexdigest() == pin['snapshot_sha256'],
                 'snapshot index hash mismatch')
         archive = state / 'snapshots' / (pin['archive_sha256'] + '.casitar')
@@ -613,11 +647,22 @@ def monitor(config, cloud, now=None):
 
 def cleanup(spool):
     """Root-only fixed spool; also used after controller SIGKILL by systemd."""
-    for path in Path(spool).iterdir():
-        if path.name.startswith('staging-') and not path.is_symlink() and path.is_dir():
-            shutil.rmtree(path)
-        elif path.name.startswith('pending-') and not path.is_symlink() and path.is_file():
-            path.unlink()
+    removed = False
+    try:
+        for path in Path(spool).iterdir():
+            if path.name.startswith('staging-') and not path.is_symlink() and path.is_dir():
+                removed = True
+                shutil.rmtree(path)
+            elif path.name.startswith('pending-') and not path.is_symlink() and path.is_file():
+                removed = True
+                path.unlink()
+    finally:
+        if removed:
+            directory = os.open(str(spool), os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                os.fsync(directory)
+            finally:
+                os.close(directory)
 
 
 def main():

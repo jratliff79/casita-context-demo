@@ -232,6 +232,7 @@ class Relay:
                 db.execute("UPDATE proposals SET accepted=1 WHERE id=?", (body["proposal_id"],))
                 result = {"pin": pin}
             event = {"kind": operation, "author": actor, "created_at": now,
+                     "request_id": body["request_id"], "request_hash": request_hash,
                      "revision": revision if operation == "propose" else revision + 1, **result}
             db.execute("INSERT INTO events(payload) VALUES (?)", (canonical(event).decode(),))
             result = {**result, "cursor": db.execute("SELECT last_insert_rowid()").fetchone()[0]}

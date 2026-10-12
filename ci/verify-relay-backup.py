@@ -64,6 +64,15 @@ def main():
     manifest = backup.capture(config, spool/'staging-valid', run=run, ready=lambda c: None)
     assert manifest['revision'] == 3 and manifest['pin'] == pins[-1]
     assert calls == ['is-active', 'stop', 'start']
+    # Existing relay events predate the explicit request identity fields.
+    with relay.connect(state) as db:
+        for row in db.execute('SELECT cursor,payload FROM events').fetchall():
+            event = json.loads(row['payload'])
+            event.pop('request_id'); event.pop('request_hash')
+            db.execute('UPDATE events SET payload=? WHERE cursor=?',
+                       (relay.canonical(event).decode(), row['cursor']))
+    legacy = backup.capture(config, spool/'staging-legacy', run=run, ready=lambda c: None)
+    assert legacy['revision'] == 3 and legacy['pin'] == pins[-1]
     # SQLite and current head remain valid while a historical archive is absent.
     historical = state/'snapshots'/(pins[0]['archive_sha256']+'.casitar')
     historical.unlink()
@@ -77,6 +86,7 @@ def main():
     backup.cleanup(spool)
     backup.write_json(root/'receipt.json', dict(schema='synthetic-backup-check.v1',
                       native_capture_passed=True, proposal_acceptance_captured=True,
+                      legacy_request_identity_verified=True,
                       historical_archive_rejected=True,
                       synthetic_service_only=True, aws_accessed=False))
     print('Synthetic native capture and historical archive rejection passed.')

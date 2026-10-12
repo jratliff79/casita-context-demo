@@ -676,7 +676,10 @@ class Backups(unittest.TestCase):
             db.execute('INSERT INTO events(payload) VALUES (?)', (json.dumps(event),))
             good = dict(pin=pin, cursor=1)
             db.execute('INSERT INTO requests VALUES (?,?,?,?)',
-                       ('jp', 'synthetic-request', 'a'*64, json.dumps(good)))
+                       ('jp', 'synthetic-request', backup.record_digest(backup.record_canonical(dict(
+                           operation='publish', body=dict(workspace='synthetic-team',
+                           request_id='synthetic-request', expected_revision=0,
+                           checkpoint=json.loads(raw)['tasks']['synthetic-task'])))), json.dumps(good)))
             backup.verify_auxiliary_json(db)
             for result in (dict(pin=pin, cursor=999), dict(cursor=1),
                            dict(good, unexpected=True),
@@ -684,6 +687,73 @@ class Backups(unittest.TestCase):
                 db.execute('UPDATE requests SET result=?', (json.dumps(result),))
                 with self.subTest(result=result), self.assertRaises(backup.BackupError):
                     backup.verify_auxiliary_json(db)
+
+    def test_accepted_memory_must_name_configured_owner(self):
+        config, pin, raw = self.capture_fixture()
+        value = json.loads(raw); value.update(revision=2, parent_revision=1)
+        source = value['tasks']['synthetic-task']['files'][0]
+        proposal = dict(author='cj', base_revision=1, created_at=value['created_at'],
+                        task_id='synthetic-task', scope='workspace', source_revision='a'*40,
+                        entry_id='synthetic-memory', statement='Synthetic lesson',
+                        citation=dict(path=source['path'], sha256=source['sha256'],
+                                      start_line=1, end_line=1, excerpt=['SYNTHETIC NOTE']))
+        identity = backup.record_digest(backup.record_canonical(proposal))
+        value['memory'] = [dict(proposal, accepted_by='cj', accepted_at=value['created_at'],
+                               proposal_id=identity)]
+        for decision in (None, dict(proposal_id=identity, accepted_by='cj')):
+            value['decision'] = decision
+            raw = json.dumps(value)
+            changed_pin = dict(pin, revision=2, snapshot_sha256=backup.record_digest(raw.encode()))
+            with sqlite3.connect(Path(config['state'])/'relay.sqlite') as db:
+                db.execute('DELETE FROM revisions')
+                db.execute('INSERT INTO revisions VALUES (?,?,?)', (2, raw, json.dumps(changed_pin)))
+                with self.subTest(decision=decision), self.assertRaisesRegex(backup.BackupError, 'configured owner'):
+                    backup.verify_snapshots(db, Path(config['state']), Path(config['binary']), run=lambda *a: None)
+
+    def test_swapped_cached_results_reject_new_and_legacy_events(self):
+        config, pin, raw = self.capture_fixture()
+        snapshot = json.loads(raw); checkpoint = snapshot['tasks']['synthetic-task']
+        second = dict(snapshot, revision=2, parent_revision=1)
+        second_raw = json.dumps(second)
+        second_pin = dict(pin, revision=2, snapshot_sha256=backup.record_digest(second_raw.encode()))
+        with sqlite3.connect(Path(config['state'])/'relay.sqlite') as db:
+            db.execute('INSERT INTO revisions VALUES (?,?,?)', (2, second_raw, json.dumps(second_pin)))
+            for legacy in (False, True):
+                db.execute('DELETE FROM requests'); db.execute('DELETE FROM events')
+                results, identities = [], []
+                for index, current_pin in enumerate((pin, second_pin)):
+                    request_id = 'synthetic-request-'+str(index)
+                    request_hash = backup.record_digest(backup.record_canonical(dict(operation='publish', body=dict(
+                        workspace='synthetic-team', request_id=request_id, expected_revision=index,
+                        checkpoint=checkpoint))))
+                    event = dict(kind='publish', author='jp', revision=index+1, pin=current_pin)
+                    if not legacy:
+                        event.update(request_id=request_id, request_hash=request_hash)
+                    cursor = db.execute('INSERT INTO events(payload) VALUES (?)', (json.dumps(event),)).lastrowid
+                    result = dict(pin=current_pin, cursor=cursor)
+                    results.append(result); identities.append(request_id)
+                    db.execute('INSERT INTO requests VALUES (?,?,?,?)',
+                               ('jp', request_id, request_hash, json.dumps(result)))
+                backup.verify_auxiliary_json(db)
+                for request_id, result in zip(identities, reversed(results)):
+                    db.execute('UPDATE requests SET result=? WHERE id=?', (json.dumps(result), request_id))
+                with self.subTest(legacy=legacy), self.assertRaisesRegex(backup.BackupError, 'identity|content hash'):
+                    backup.verify_auxiliary_json(db)
+
+    def test_cleanup_fsyncs_spool_after_plaintext_removal(self):
+        stage = self.root/'staging-interrupted'; stage.mkdir()
+        (stage/'synthetic-plaintext').write_text('SYNTHETIC')
+        (self.root/'pending-interrupted.age').write_text('SYNTHETIC PARTIAL')
+        seen = []
+        fsync = backup.os.fsync
+        def record(fd):
+            self.assertFalse(stage.exists())
+            self.assertFalse((self.root/'pending-interrupted.age').exists())
+            self.assertTrue(stat.S_ISDIR(backup.os.fstat(fd).st_mode))
+            seen.append(fd); fsync(fd)
+        with patch.object(backup.os, 'fsync', side_effect=record):
+            backup.cleanup(self.root)
+        self.assertEqual(len(seen), 1)
 
     def test_cloud_upload_requires_sse_and_exact_server_checksum(self):
         archive = self.root/'archive'; archive.write_bytes(b'SYNTHETIC CIPHERTEXT')

@@ -11,6 +11,7 @@ import datetime as dt
 import fcntl
 import hashlib
 import json
+import math
 import os
 import re
 from pathlib import Path
@@ -27,6 +28,17 @@ from urllib.request import Request, ProxyHandler, HTTPRedirectHandler, build_ope
 MAX_ENTRIES = 50_000
 MAX_METADATA_BYTES = 8 * 1024 * 1024
 RESERVE_BYTES = 256 * 1024 * 1024
+
+# Exact pilot schema belongs to the pinned server, including write-path tables
+# and uniqueness/primary-key constraints. A future schema needs requalification.
+RELAY_SCHEMA = {
+    'settings': 'CREATE TABLE settings(workspace TEXT, owner TEXT)',
+    'members': 'CREATE TABLE members(name TEXT PRIMARY KEY, token_hash TEXT UNIQUE, enabled INTEGER)',
+    'revisions': 'CREATE TABLE revisions(revision INTEGER PRIMARY KEY, snapshot TEXT, pin TEXT)',
+    'proposals': 'CREATE TABLE proposals(id TEXT PRIMARY KEY, payload TEXT, accepted INTEGER DEFAULT 0)',
+    'events': 'CREATE TABLE events(cursor INTEGER PRIMARY KEY AUTOINCREMENT, payload TEXT)',
+    'requests': 'CREATE TABLE requests(actor TEXT, id TEXT, hash TEXT, result TEXT, PRIMARY KEY(actor,id))',
+}
 
 
 class BackupError(Exception):
@@ -124,10 +136,45 @@ def disjoint_output(output, *sources):
                 'staging and captured trees must not overlap')
 
 
+def bounded_copy(source, destination, limit):
+    """Reject oversized replacements before writing and cap every streamed write."""
+    fd = os.open(source, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    with os.fdopen(fd, 'rb') as stream:
+        info = os.fstat(stream.fileno())
+        require(stat.S_ISREG(info.st_mode) and info.st_size <= limit,
+                'copy input exceeds byte limit or is not regular')
+        total = 0
+        with Path(destination).open('xb') as output:
+            while True:
+                block = stream.read(min(1024 * 1024, limit - total + 1))
+                if not block:
+                    break
+                require(total + len(block) <= limit, 'copy input exceeds byte limit')
+                output.write(block)
+                total += len(block)
+            require(total == info.st_size, 'copy input changed size')
+            os.fchown(output.fileno(), info.st_uid, info.st_gid)
+            os.fchmod(output.fileno(), stat.S_IMODE(info.st_mode))
+    return str(destination)
+
+
+def verify_schema(db):
+    actual = dict(db.execute("select name,sql from sqlite_master where type='table' "
+                             "and name not like 'sqlite_%'"))
+    normalize = lambda sql: re.sub(r'\s+', '', sql).lower()
+    require({name: normalize(sql) for name, sql in actual.items()}
+            == {name: normalize(sql) for name, sql in RELAY_SCHEMA.items()},
+            'relay schema mismatch')
+    require(db.execute("select 1 from sqlite_master where type in ('trigger','view') or (type='index' and sql is not null) limit 1").fetchone()
+            is None, 'unexpected relay schema objects')
+
+
 def copy_tree(source, destination, limit, exclude_cache=False):
     """Caller quiesces all writers first. Verify bytes and original Linux metadata."""
     before = inventory(source, limit, exclude_cache)
     shutil.copytree(source, destination,
+                    copy_function=lambda src, dst: bounded_copy(
+                        src, dst, before[Path(src).relative_to(source).as_posix()]['size']),
                     ignore=shutil.ignore_patterns('__pycache__') if exclude_cache else None)
     for name, item in before.items():
         path = Path(destination) / name
@@ -207,7 +254,7 @@ def capture(config, payload, run=command, ready=health):
     require(sha256(binary) == config['binary_sha256'], 'native binary pin mismatch')
     expected = private_json(config['runtime_inventory'])
     actual = inventory(app, config['max_bytes'], exclude_cache=True)
-    require({k: v['sha256'] for k, v in actual.items() if v['kind'] == 'file'} == expected,
+    require(actual == expected,
             'runtime source pin mismatch')
     fixed_bytes = binary.stat().st_size + Path(config['service_unit']).stat().st_size
     require(fixed_bytes < config['max_bytes'], 'runtime artifacts exceed size limit')
@@ -234,15 +281,19 @@ def capture(config, payload, run=command, ready=health):
     state_bytes = sum(item.get('size', 0) for item in state_inventory.values())
     copied = copy_tree(app, payload / 'runtime-app',
                        config['max_bytes'] - fixed_bytes - state_bytes, exclude_cache=True)
-    require({k: v['sha256'] for k, v in copied.items() if v['kind'] == 'file'} == expected,
+    require(copied == expected,
             'copied runtime source pin mismatch')
-    shutil.copy2(binary, payload / 'linux-casita')
+    runtime_bytes = sum(item.get('size', 0) for item in copied.values())
+    remaining = config['max_bytes'] - state_bytes - runtime_bytes
+    bounded_copy(binary, payload / 'linux-casita', remaining)
     require(sha256(payload / 'linux-casita') == config['binary_sha256'],
             'copied native binary pin mismatch')
-    shutil.copy2(config['service_unit'], payload / 'context-relay.service')
+    remaining -= (payload / 'linux-casita').stat().st_size
+    bounded_copy(config['service_unit'], payload / 'context-relay.service', remaining)
     db = sqlite3.connect('file:' + str(payload / 'state/relay.sqlite') + '?mode=ro', uri=True)
     try:
         require(db.execute('pragma integrity_check').fetchone()[0] == 'ok', 'SQLite integrity failed')
+        verify_schema(db)
         head = db.execute('select revision,pin from revisions order by revision desc limit 1').fetchone()
         cursor = db.execute('select coalesce(max(cursor),0) from events').fetchone()[0]
         members = [{'name': name, 'enabled': bool(enabled)} for name, enabled in
@@ -377,7 +428,11 @@ def backup(config, cloud, now=None, make_capture=capture, make_archive=encrypt):
 
 def monitor(config, cloud, now=None):
     status = private_json(Path(config['spool']) / 'status.json')
-    age = max(0, (now or time.time()) - status.get('last_success', 0))
+    current = time.time() if now is None else now
+    success = status.get('last_success', 0)
+    require(type(success) in (int, float) and math.isfinite(success)
+            and 0 <= success <= current, 'invalid backup success timestamp')
+    age = current - success
     cloud.age(age)
     return age
 

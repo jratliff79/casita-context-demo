@@ -151,7 +151,7 @@ class Backups(unittest.TestCase):
     def test_controller_restarts_after_copy_error(self):
         app = self.root/'app'; app.mkdir(); (app/'file').write_text('SYNTHETIC')
         binary = self.root/'binary'; binary.write_bytes(b'SYNTHETIC BINARY')
-        inventory = self.root/'inventory'; backup.write_json(inventory, {'file': backup.sha256(app/'file')})
+        inventory = self.root/'inventory'; backup.write_json(inventory, backup.inventory(app, 100_000))
         config = dict(app=str(app), binary=str(binary), binary_sha256=backup.sha256(binary),
                       runtime_inventory=str(inventory), max_bytes=1000,
                       state=str(self.root/'missing'), service='synthetic.service', service_unit=str(binary))
@@ -253,15 +253,14 @@ class Backups(unittest.TestCase):
                    archive_sha256=backup.hashlib.sha256(archive).hexdigest())
         (state/'snapshots'/(pin['archive_sha256']+'.casitar')).write_bytes(archive)
         with sqlite3.connect(state/'relay.sqlite') as db:
-            db.executescript('CREATE TABLE revisions(revision INTEGER, snapshot TEXT, pin TEXT);'
-                             'CREATE TABLE events(cursor INTEGER); CREATE TABLE members(name TEXT,enabled INTEGER);')
+            db.executescript(';'.join(backup.RELAY_SCHEMA.values()))
             db.execute('INSERT INTO revisions VALUES (?,?,?)', (1, snapshot, json.dumps(pin)))
         binary = self.root/'binary'; binary.write_bytes(b'SYNTHETIC BINARY')
         unit = self.root/'service'; unit.write_text('SYNTHETIC UNIT')
-        index = self.root/'inventory'; backup.write_json(index, {'file': backup.sha256(app/'file')})
+        index = self.root/'inventory'; backup.write_json(index, backup.inventory(app, 100_000))
         config = dict(app=str(app), state=str(state), binary=str(binary),
                       binary_sha256=backup.sha256(binary), runtime_inventory=str(index),
-                      service_unit=str(unit), service='synthetic.service', max_bytes=100_000,
+                      service_unit=str(unit), service='synthetic.service', max_bytes=1_000_000,
                       source_commit='a'*40, casita_commit='b'*40)
         return config, pin, snapshot
 
@@ -321,7 +320,7 @@ class Backups(unittest.TestCase):
     def test_manifest_limit_counts_formatted_bytes_before_writing(self):
         config, pin, snapshot = self.capture_fixture()
         with sqlite3.connect(Path(config['state'])/'relay.sqlite') as db:
-            db.execute('INSERT INTO members VALUES (?,1)', ('S'*70_000,))
+            db.execute('INSERT INTO members VALUES (?,?,1)', ('S'*70_000, 'synthetic-token-hash'))
         def run(*args):
             if 'verify' in args:
                 return json.dumps(dict(validity='verified', roots=[pin['directory_key']])).encode()
@@ -379,6 +378,83 @@ class Backups(unittest.TestCase):
                 backup.main()
         self.assertFalse(stage.exists())
         self.assertFalse(archive.exists())
+
+    def test_runtime_mode_drift_is_rejected_before_and_after_copy(self):
+        config, pin, snapshot = self.capture_fixture()
+        for path in (Path(config['app']), Path(config['app'])/'file'):
+            original_mode = stat.S_IMODE(path.stat().st_mode)
+            original_hash = backup.sha256(Path(config['app'])/'file')
+            path.chmod(original_mode | 0o011)
+            run = Mock()
+            with tempfile.TemporaryDirectory(dir=self.root) as temp:
+                with self.assertRaisesRegex(backup.BackupError, 'runtime source pin'):
+                    backup.capture(config, Path(temp)/'payload', run=run, ready=lambda c: None)
+            run.assert_not_called()
+            path.chmod(original_mode)
+            def drift_after_precheck(*args):
+                if args[:2] == ('/usr/bin/systemctl', 'start'):
+                    path.chmod(original_mode | 0o011)
+            with tempfile.TemporaryDirectory(dir=self.root) as temp:
+                with self.assertRaisesRegex(backup.BackupError, 'copied runtime source pin'):
+                    backup.capture(config, Path(temp)/'payload', run=drift_after_precheck,
+                                   ready=lambda c: None)
+            self.assertEqual(backup.sha256(Path(config['app'])/'file'), original_hash)
+            path.chmod(original_mode)
+
+    def test_oversized_binary_replacement_does_not_fill_capture(self):
+        config, pin, snapshot = self.capture_fixture()
+        def replace_binary(*args):
+            if args[:2] == ('/usr/bin/systemctl', 'start'):
+                Path(config['binary']).write_bytes(b'S'*(config['max_bytes']+1))
+        with tempfile.TemporaryDirectory(dir=self.root) as temp:
+            payload = Path(temp)/'payload'
+            with self.assertRaisesRegex(backup.BackupError, 'copy input exceeds'):
+                backup.capture(config, payload, run=replace_binary, ready=lambda c: None)
+            self.assertFalse((payload/'linux-casita').exists())
+            self.assertLess(sum(p.stat().st_size for p in payload.rglob('*') if p.is_file()),
+                            config['max_bytes'])
+
+    def test_bounded_copy_stops_growth_after_initial_size_check(self):
+        source = self.root/'source'; source.write_bytes(b'S'*8)
+        target = self.root/'target'
+        original_fstat = backup.os.fstat
+        def grow(fd):
+            info = original_fstat(fd)
+            with source.open('ab') as stream:
+                stream.write(b'X'*10)
+            return info
+        with patch.object(backup.os, 'fstat', side_effect=grow):
+            with self.assertRaisesRegex(backup.BackupError, 'copy input exceeds'):
+                backup.bounded_copy(source, target, 8)
+        self.assertLessEqual(target.stat().st_size, 8)
+
+    def test_future_or_invalid_success_timestamp_never_publishes_fresh_metric(self):
+        cloud = FakeCloud()
+        for success in (self.now.timestamp()+1, 'invalid', float('nan'), float('inf'), -1, True):
+            backup.write_json(self.root/'status.json', {'last_success': success})
+            with self.subTest(success=success), self.assertRaisesRegex(backup.BackupError, 'timestamp'):
+                backup.monitor(self.config, cloud, self.now.timestamp())
+        self.assertEqual(cloud.metrics, [])
+        backup.write_json(self.root/'status.json', {'last_success': 0})
+        self.assertEqual(backup.monitor(self.config, cloud, now=0), 0)
+
+    def test_missing_or_altered_write_path_tables_fail_despite_sqlite_integrity(self):
+        config, pin, snapshot = self.capture_fixture()
+        for table in ('requests', 'proposals'):
+            for altered in (False, True):
+                with sqlite3.connect(Path(config['state'])/'relay.sqlite') as db:
+                    if altered:
+                        db.execute('ALTER TABLE '+table+' ADD COLUMN unexpected TEXT')
+                    else:
+                        db.execute('DROP TABLE '+table)
+                    self.assertEqual(db.execute('PRAGMA integrity_check').fetchone()[0], 'ok')
+                with self.subTest(table=table, altered=altered), tempfile.TemporaryDirectory(dir=self.root) as temp:
+                    with self.assertRaisesRegex(backup.BackupError, 'relay schema mismatch'):
+                        backup.capture(config, Path(temp)/'payload', run=lambda *args: None,
+                                       ready=lambda c: None)
+                with sqlite3.connect(Path(config['state'])/'relay.sqlite') as db:
+                    db.execute('DROP TABLE IF EXISTS '+table)
+                    db.execute(backup.RELAY_SCHEMA[table])
 
     def test_cloud_upload_requires_sse_and_exact_server_checksum(self):
         archive = self.root/'archive'; archive.write_bytes(b'SYNTHETIC CIPHERTEXT')

@@ -24,7 +24,7 @@ def main():
     (app / 'synthetic-runtime.txt').write_text('SYNTHETIC PINNED RUNTIME\n')
     unit = root / 'synthetic.service'; unit.write_text('SYNTHETIC UNIT\n')
     index = root / 'runtime.json'
-    backup.write_json(index, {'synthetic-runtime.txt': backup.sha256(app/'synthetic-runtime.txt')})
+    backup.write_json(index, backup.inventory(app, 100_000))
     binary = args.casita.resolve()
     config = dict(state=str(state), app=str(app), spool=str(spool), binary=str(binary),
                   binary_sha256=backup.sha256(binary), service_unit=str(unit),

@@ -54,7 +54,12 @@ plaintext, ciphertext and metadata/compression overhead. Inventories stream path
 and stop at 50,000 entries or 8 MiB of metadata, including empty files/directories;
 the final manifest is also bounded. Exceeding a limit fails the backup.
 
-Recheck the copied runtime and native binary against their immutable pins. On the
+The private runtime pin file must contain the full `inventory` mapping, including
+root/directories, file SHA256/size, modes and UID/GID. Hash-only pin files are
+rejected; qualify the runtime metadata before migrating an existing configuration.
+Recheck the copied runtime and native binary against their immutable pins. File
+copies use bounded streams, including tree files and the native binary/unit, so
+an overlapping oversized replacement is rejected before exceeding the budget. On the
 copied state, check SQLite integrity, native store fsck, every revision's indexed
 snapshot hash and archive hash, native archive validity/root, and the checked-out
 snapshot hash. Never execute snapshot source. Native fsck may update the copied
@@ -69,3 +74,10 @@ Once all required uploads and the local status file acknowledge success, a faile
 freshness metric or recovery notice cannot erase that success or its daily marker.
 The separate monitor retries freshness publication; recovery notices are best
 effort and their submission remains distinct from inbox delivery.
+
+The copied database must match the pinned pilot's full six-table SQL schema,
+including write-path columns and uniqueness/primary-key constraints; unexpected
+triggers, views or explicit indexes are rejected. Schema changes require an
+operator-reviewed controller/source requalification. Future, negative or nonfinite
+success timestamps make monitoring fail without publishing a fresh metric, letting
+the independent missing-data alarm cover clock skew and malformed status.

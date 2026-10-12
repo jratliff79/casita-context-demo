@@ -315,6 +315,28 @@ class Backups(unittest.TestCase):
                     result = backup.capture(config, Path(temp)/'payload', run=run, ready=lambda c: None)
                     self.assertEqual(result['pin'], pin)
 
+    def test_manifest_limit_counts_formatted_bytes_before_writing(self):
+        config, pin, snapshot = self.capture_fixture()
+        with sqlite3.connect(Path(config['state'])/'relay.sqlite') as db:
+            db.execute('INSERT INTO members VALUES (?,1)', ('S'*70_000,))
+        def run(*args):
+            if 'verify' in args:
+                return json.dumps(dict(validity='verified', roots=[pin['directory_key']])).encode()
+            if 'checkout' in args:
+                folder = Path(args[-2]); folder.mkdir()
+                (folder/'snapshot.json').write_text(snapshot)
+        with tempfile.TemporaryDirectory(dir=self.root) as temp:
+            first = Path(temp)/'first'
+            manifest = backup.capture(config, first, run=run, ready=lambda c: None)
+            written = (first/'recovery-manifest.json').stat().st_size
+            self.assertGreater(written, len(json.dumps(manifest).encode()) + 100)
+            # Leave room for compact JSON but less than the actual formatted file.
+            with patch.object(backup, 'MAX_METADATA_BYTES', written - 64*1024 - 100):
+                second = Path(temp)/'second'
+                with self.assertRaisesRegex(backup.BackupError, 'manifest exceeds'):
+                    backup.capture(config, second, run=run, ready=lambda c: None)
+                self.assertFalse((second/'recovery-manifest.json').exists())
+
     def test_cloud_upload_requires_sse_and_exact_server_checksum(self):
         archive = self.root/'archive'; archive.write_bytes(b'SYNTHETIC CIPHERTEXT')
         cloud = backup.Cloud.__new__(backup.Cloud)

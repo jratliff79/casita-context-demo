@@ -251,7 +251,7 @@ def capture(config, payload, run=command, ready=health):
                     revision=head[0], event_cursor=cursor, service_pause_seconds=pause,
                     members=members,
                     inventory=inventory(payload, config['max_bytes']))
-    require(len(json.dumps(manifest).encode()) <= MAX_METADATA_BYTES + 64 * 1024,
+    require(len(json.dumps(manifest, indent=2).encode()) + 1 <= MAX_METADATA_BYTES + 64 * 1024,
             'recovery manifest exceeds metadata limit')
     write_json(payload / 'recovery-manifest.json', manifest)
     return manifest

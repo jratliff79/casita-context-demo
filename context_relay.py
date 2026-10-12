@@ -22,78 +22,9 @@ from authentication import read_regular
 from demo import Casita, canonical, digest, file_map
 from git_review import git_environment, git_lines
 
-LIMIT = 400_000
-WIRE_LIMIT = 2_000_000
-SCHEMA = "casita-context-relay.v1"
-
-
-class Rejected(ValueError):
-    def __init__(self, message, status=400):
-        super().__init__(message)
-        self.status = status
-
-
-def require(ok, message, status=400):
-    if not ok:
-        raise Rejected(message, status)
-
-
-def identifier(value):
-    return isinstance(value, str) and re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,63}", value)
-
-
-def text(value, limit=2000):
-    return isinstance(value, str) and 0 < len(value) <= limit and "\x00" not in value
-
-
-def safe_path(value):
-    if not text(value, 250) or "\\" in value:
-        return False
-    path = PurePosixPath(value)
-    return (not path.is_absolute() and str(path) == value
-            and all(p not in (".", "..") and not p.startswith(".") for p in path.parts)
-            and path.suffix.lower() not in (".pem", ".key", ".p12", ".pfx")
-            and path.name.lower() not in ("credentials", "id_rsa", "id_ed25519"))
-
-
-def checkpoint(value):
-    require(isinstance(value, dict) and set(value) == {
-        "task_id", "summary", "completed", "pending", "blockers", "source_revision", "files"},
-        "invalid checkpoint fields")
-    require(identifier(value["task_id"]) and text(value["summary"]), "invalid task or summary")
-    require(isinstance(value["source_revision"], str)
-            and re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", value["source_revision"]),
-            "source revision must be a full Git commit")
-    for field in ("completed", "pending", "blockers"):
-        require(isinstance(value[field], list) and len(value[field]) <= 20
-                and all(text(v, 500) for v in value[field]), "invalid task progress")
-    files = value["files"]
-    require(isinstance(files, list) and 1 <= len(files) <= 20, "select one to twenty source files")
-    seen = set()
-    for source in files:
-        require(isinstance(source, dict) and set(source) == {"path", "text", "sha256"},
-                "invalid selected source")
-        require(safe_path(source["path"]) and source["path"] not in seen,
-                "invalid or duplicate selected path")
-        require(text(source["text"], 100_000)
-                and digest(source["text"].encode()) == source["sha256"], "source hash mismatch")
-        seen.add(source["path"])
-    require(len(canonical(value)) <= LIMIT, "checkpoint exceeds byte limit")
-    return value
-
-
-def citation(value, context):
-    require(isinstance(value, dict) and set(value) == {
-        "path", "sha256", "start_line", "end_line", "excerpt"}, "invalid citation")
-    source = next((s for s in context["files"] if s["path"] == value["path"]), None)
-    start, end = value["start_line"], value["end_line"]
-    require(source is not None and type(start) is int and type(end) is int,
-            "citation source or lines missing")
-    lines = git_lines(source["text"].encode("utf-8"))
-    require(1 <= start <= end <= len(lines) and end - start < 40
-            and value["sha256"] == source["sha256"]
-            and value["excerpt"] == lines[start - 1:end], "citation differs from selected source")
-
+from relay_validation import (LIMIT, WIRE_LIMIT, SCHEMA, Rejected, require,
+                              identifier, text, safe_path, checkpoint, citation,
+                              snapshot as validate_snapshot)
 
 @contextmanager
 def connect(state):
@@ -301,6 +232,7 @@ class Relay:
                 db.execute("UPDATE proposals SET accepted=1 WHERE id=?", (body["proposal_id"],))
                 result = {"pin": pin}
             event = {"kind": operation, "author": actor, "created_at": now,
+                     "request_id": body["request_id"], "request_hash": request_hash,
                      "revision": revision if operation == "propose" else revision + 1, **result}
             db.execute("INSERT INTO events(payload) VALUES (?)", (canonical(event).decode(),))
             result = {**result, "cursor": db.execute("SELECT last_insert_rowid()").fetchone()[0]}
@@ -411,14 +343,7 @@ def receive(response, binary, output):
         require(file_map(output / "received") == {"snapshot.json": pin["snapshot_sha256"]},
                 "snapshot content mismatch")
         snapshot = json.loads(read_regular(output / "received/snapshot.json", LIMIT))
-        require(snapshot["schema"] == SCHEMA and snapshot["revision"] == pin["revision"]
-                and snapshot["workspace"] == response["workspace"],
-                "snapshot metadata mismatch")
-        require(isinstance(snapshot["tasks"], dict) and 1 <= len(snapshot["tasks"]) <= 20,
-                "invalid workspace task index")
-        for task_id, context in snapshot["tasks"].items():
-            checkpoint(context)
-            require(context["task_id"] == task_id, "task index mismatch")
+        validate_snapshot(snapshot, response["workspace"], pin["revision"])
         (output / "verified-pin.json").write_bytes(canonical(pin))
         return snapshot
     except BaseException:

@@ -91,6 +91,14 @@ def private_json(path, owner=None):
         return json.load(stream)
 
 
+def fsync_directory(path):
+    directory = os.open(str(path), os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(directory)
+    finally:
+        os.close(directory)
+
+
 def write_json(path, data):
     path = Path(path)
     temporary = path.with_name(path.name + '.' + uuid.uuid4().hex + '.tmp')
@@ -102,11 +110,7 @@ def write_json(path, data):
             stream.flush()
             os.fsync(stream.fileno())
         os.replace(temporary, path)
-        directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
-        try:
-            os.fsync(directory)
-        finally:
-            os.close(directory)
+        fsync_directory(path.parent)
     finally:
         temporary.unlink(missing_ok=True)
 
@@ -421,7 +425,25 @@ def verify_events(db):
                 and type(event.get('revision')) is int and event['revision'] > 0,
                 'invalid event payload')
         previous = cursor
+    require(db.execute('select count(*) from sqlite_sequence').fetchone()[0] <= 1
+            and db.execute("select 1 from sqlite_sequence where typeof(name) != 'text' or name != 'events' "
+                           "or typeof(seq) != 'integer' or seq < 0 or seq >= 9223372036854775807 "
+                           'limit 1').fetchone() is None, 'invalid event sequence')
+    sequence = db.execute("select seq from sqlite_sequence where name='events'").fetchone()
+    require((sequence is None and previous == 0)
+            or (sequence is not None and sequence[0] == previous), 'inconsistent event sequence')
     return previous
+
+
+def verify_member_credential(state, name, token_hash, workspace):
+    path = state / 'credentials' / (name + '.json')
+    file_pin(path, 4096)  # Reject large/special inputs before JSON decoding.
+    credential = private_json(path, state.stat().st_uid)
+    require(isinstance(credential, dict) and set(credential) == {'workspace', 'token'}
+            and credential['workspace'] == workspace and isinstance(credential['token'], str)
+            and 30 <= len(credential['token']) <= 100
+            and record_digest(credential['token'].encode()) == token_hash,
+            'enabled member credential mismatch')
 
 
 def capture(config, payload, run=command, ready=health):
@@ -499,6 +521,8 @@ def capture(config, payload, run=command, ready=health):
         for name, token_hash, enabled in db.execute('select name,token_hash,enabled from members order by name'):
             require(identifier(name) and re.fullmatch(r'[0-9a-f]{64}', token_hash)
                     and type(enabled) is int and enabled in (0, 1), 'invalid relay member')
+            if enabled:
+                verify_member_credential(payload / 'state', name, token_hash, workspace)
             members.append({'name': name, 'enabled': bool(enabled)})
         require(len(json.dumps(members).encode()) <= 2048, 'member metadata exceeds limit')
         # Bound and validate referenced rows before auxiliary cross-lookups can
@@ -597,6 +621,7 @@ def backup(config, cloud, now=None, make_capture=capture, make_archive=encrypt, 
         make_archive(stage, archive, config['recipient'])
         # Delete plaintext before any remote upload. Always delete on failure too.
         shutil.rmtree(stage)
+        fsync_directory(spool)
         phase = 'upload'
         daily_date = now.date().isoformat()
         keys = object_keys(now, run_id, previous.get('daily_date') != daily_date)
@@ -632,6 +657,7 @@ def backup(config, cloud, now=None, make_capture=capture, make_archive=encrypt, 
         if stage.exists():
             shutil.rmtree(stage)
         archive.unlink(missing_ok=True)
+        fsync_directory(spool)
 
 
 def monitor(config, cloud, now=None):
@@ -658,11 +684,7 @@ def cleanup(spool):
                 path.unlink()
     finally:
         if removed:
-            directory = os.open(str(spool), os.O_RDONLY | os.O_DIRECTORY)
-            try:
-                os.fsync(directory)
-            finally:
-                os.close(directory)
+            fsync_directory(spool)
 
 
 def main():

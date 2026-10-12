@@ -266,7 +266,11 @@ class Backups(unittest.TestCase):
         with sqlite3.connect(state/'relay.sqlite') as db:
             db.executescript(';'.join(backup.RELAY_SCHEMA.values()))
             db.execute('INSERT INTO settings VALUES (?,?)', ('synthetic-team', 'jp'))
-            db.executemany('INSERT INTO members VALUES (?,?,1)', [('jp', 'a'*64), ('cj', 'b'*64)])
+            (state/'credentials').mkdir(mode=0o700)
+            for name in ('jp', 'cj'):
+                token = 'SYNTHETIC-CREDENTIAL-FOR-'+name+'-ONLY-0000'
+                db.execute('INSERT INTO members VALUES (?,?,1)', (name, backup.record_digest(token.encode())))
+                backup.write_json(state/'credentials'/(name+'.json'), dict(workspace='synthetic-team', token=token))
             db.execute('INSERT INTO revisions VALUES (?,?,?)', (1, snapshot, json.dumps(pin)))
         binary = self.root/'binary'; binary.write_bytes(b'SYNTHETIC BINARY')
         unit = self.root/'service'; unit.write_text('SYNTHETIC UNIT')
@@ -366,7 +370,7 @@ class Backups(unittest.TestCase):
         with patch.object(backup.os, 'fsync', side_effect=record_fsync), \
              patch.object(backup.os, 'replace', side_effect=record_replace):
             self.run_backup()
-        self.assertEqual(events, ['file', 'rename', 'directory'])
+        self.assertEqual(events, ['directory', 'file', 'rename', 'directory', 'directory'])
         self.assertTrue(backup.private_json(self.root/'status.json')['last_success'])
 
     def test_stale_plaintext_cleanup_does_not_depend_on_cloud_initialization(self):
@@ -621,15 +625,16 @@ class Backups(unittest.TestCase):
                 backup.capture(config, Path(temp)/'payload', run=lambda *args: None, ready=lambda c: None)
         with sqlite3.connect(Path(config['state'])/'relay.sqlite') as db:
             db.execute("DELETE FROM members WHERE name LIKE 'synthetic-%'")
+        token_hash = backup.record_digest(backup.private_json(Path(config['state'])/'credentials/cj.json')['token'].encode())
         for field, malformed in (('name', 'x'*65), ('token_hash', 'x'*65), ('enabled', 'x'*100_000)):
             with sqlite3.connect(Path(config['state'])/'relay.sqlite') as db:
-                db.execute('UPDATE members SET '+field+'=? WHERE token_hash=?', (malformed, 'b'*64))
+                db.execute('UPDATE members SET '+field+'=? WHERE token_hash=?', (malformed, token_hash))
             with self.subTest(field=field), tempfile.TemporaryDirectory(dir=self.root) as temp:
                 with self.assertRaisesRegex(backup.BackupError, 'member metadata exceeds'):
                     backup.capture(config, Path(temp)/'payload', run=lambda *args: None, ready=lambda c: None)
             with sqlite3.connect(Path(config['state'])/'relay.sqlite') as db:
                 db.execute("DELETE FROM members WHERE name != 'jp'")
-                db.execute('INSERT INTO members VALUES (?,?,1)', ('cj', 'b'*64))
+                db.execute('INSERT INTO members VALUES (?,?,1)', ('cj', token_hash))
 
     def test_saved_proposal_schema_id_flag_and_source_binding(self):
         config, pin, raw = self.capture_fixture()
@@ -754,6 +759,68 @@ class Backups(unittest.TestCase):
         with patch.object(backup.os, 'fsync', side_effect=record):
             backup.cleanup(self.root)
         self.assertEqual(len(seen), 1)
+
+    def test_enabled_member_credential_matches_workspace_and_token_hash(self):
+        config, pin, raw = self.capture_fixture()
+        state = Path(config['state']); path = state/'credentials/cj.json'
+        credential = backup.private_json(path)
+        token_hash = backup.record_digest(credential['token'].encode())
+        backup.verify_member_credential(state, 'cj', token_hash, 'synthetic-team')
+        for value in (dict(credential, workspace='wrong-workspace'),
+                      dict(credential, token='OTHER-SYNTHETIC-CREDENTIAL-000000'), {}):
+            backup.write_json(path, value)
+            with self.subTest(value=value), self.assertRaises(backup.BackupError):
+                backup.verify_member_credential(state, 'cj', token_hash, 'synthetic-team')
+        backup.write_json(path, credential)
+        with sqlite3.connect(state/'relay.sqlite') as db:
+            db.execute("UPDATE members SET token_hash=? WHERE name='cj'", ('f'*64,))
+        with tempfile.TemporaryDirectory(dir=self.root) as temp:
+            with self.assertRaisesRegex(backup.BackupError, 'credential mismatch'):
+                backup.capture(config, Path(temp)/'payload', run=lambda *a: None, ready=lambda c: None)
+        path.unlink()
+        with self.assertRaises(FileNotFoundError):
+            backup.verify_member_credential(state, 'cj', token_hash, 'synthetic-team')
+
+    def test_exhausted_or_inconsistent_event_sequence_is_rejected(self):
+        config, pin, raw = self.capture_fixture()
+        with sqlite3.connect(Path(config['state'])/'relay.sqlite') as db:
+            self.assertEqual(backup.verify_events(db), 0)
+            db.execute('INSERT INTO events(payload) VALUES (?)',
+                       (json.dumps(dict(kind='publish', author='jp', revision=1)),))
+            self.assertEqual(backup.verify_events(db), 1)
+            for sequence in (9223372036854775807, -1, 0, 'x'*100_000):
+                db.execute("UPDATE sqlite_sequence SET seq=? WHERE name='events'", (sequence,))
+                with self.subTest(sequence=sequence), self.assertRaisesRegex(backup.BackupError, 'event sequence'):
+                    backup.verify_events(db)
+            db.execute("UPDATE sqlite_sequence SET seq=1 WHERE name='events'")
+            db.execute('INSERT INTO sqlite_sequence VALUES (?,?)', ('unexpected', 1))
+            with self.assertRaisesRegex(backup.BackupError, 'event sequence'):
+                backup.verify_events(db)
+
+    def test_plaintext_removal_is_durable_before_upload_and_fsync_failure_blocks_upload(self):
+        cloud = FakeCloud(); boundaries = []
+        real = backup.fsync_directory
+        def record(path):
+            self.assertFalse(any(p.name.startswith('staging-') for p in self.root.iterdir()))
+            boundaries.append('durable'); real(path)
+        upload = cloud.upload
+        def checked_upload(*args):
+            self.assertTrue(boundaries)
+            upload(*args)
+        cloud.upload = checked_upload
+        with patch.object(backup, 'fsync_directory', side_effect=record):
+            self.run_backup(cloud)
+        cloud = FakeCloud(); calls = []
+        def fail_first(path):
+            calls.append(path)
+            if len(calls) == 1:
+                raise OSError('SYNTHETIC fsync failure')
+            real(path)
+        with patch.object(backup, 'fsync_directory', side_effect=fail_first):
+            with self.assertRaises(backup.BackupError):
+                self.run_backup(cloud)
+        self.assertEqual(cloud.keys, [])
+        self.assertEqual(backup.private_json(self.root/'status.json')['failure_phase'], 'encryption')
 
     def test_cloud_upload_requires_sse_and_exact_server_checksum(self):
         archive = self.root/'archive'; archive.write_bytes(b'SYNTHETIC CIPHERTEXT')

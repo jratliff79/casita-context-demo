@@ -117,3 +117,9 @@ verifiable by reconstructing publish/propose/accept requests from retained
 revision/proposal data. This avoids silently accepting swapped retry results
 without requiring a migration of existing event rows. Interrupted staging and
 partial ciphertext cleanup fsyncs the spool before returning or cloud setup.
+
+Every enabled member must have a bounded, private copied credential whose token
+hash and workspace match SQLite; revoked members do not need usable credentials.
+Event autoincrement state must be consistent with the last cursor and leave room
+for another event insert. Normal plaintext removal is fsynced before uploading,
+and failure/final cleanup also flushes removals to the spool directory.

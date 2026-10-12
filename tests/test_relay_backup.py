@@ -345,6 +345,53 @@ class Backups(unittest.TestCase):
                     result = backup.capture(config, Path(temp)/'payload', run=run, ready=lambda c: None)
                     self.assertEqual(result['pin'], pin)
 
+    def test_native_ledger_writes_never_enter_recovery_payload_and_scratch_is_removed(self):
+        config, pin, snapshot = self.capture_fixture()
+        state = Path(config['state'])
+        ledger = state/'store'/'synthetic-ledger'
+        ledger.write_bytes(b'SYNTHETIC QUIESCENT LEDGER')
+        ledger.chmod(0o600)
+        original = backup.inventory(state, config['max_bytes'])
+        for fail in (False, True):
+            stores = []
+            with self.subTest(fail=fail), tempfile.TemporaryDirectory(dir=self.root) as temp:
+                payload = Path(temp)/'payload'
+                def run(*args):
+                    if '--repository' in args:
+                        store = Path(args[args.index('--repository') + 1])
+                        stores.append(store)
+                        self.assertNotEqual(store, state/'store')
+                        self.assertNotEqual(store, payload/'state'/'store')
+                        (store/'synthetic-ledger').write_bytes(b'SYNTHETIC NATIVE MUTATION')
+                        (store/'synthetic-new-pin').write_bytes(b'SYNTHETIC OPERATOR PIN')
+                        if fail:
+                            raise backup.BackupError('synthetic native verification failure')
+                    if 'verify' in args:
+                        return json.dumps(dict(validity='verified', roots=[pin['directory_key']])).encode()
+                    if 'checkout' in args:
+                        restored = Path(args[-2]); restored.mkdir()
+                        (restored/'snapshot.json').write_text(snapshot)
+                if fail:
+                    with self.assertRaisesRegex(backup.BackupError, 'native verification failure'):
+                        backup.capture(config, payload, run=run, ready=lambda c: None)
+                else:
+                    backup.capture(config, payload, run=run, ready=lambda c: None)
+                self.assertTrue(stores)
+                self.assertTrue(all(not store.exists() for store in stores))
+                self.assertEqual(backup.inventory(payload/'state', config['max_bytes']), original)
+                self.assertEqual(backup.inventory(state, config['max_bytes']), original)
+
+    def test_native_verification_store_copy_obeys_byte_budget(self):
+        config, _, _ = self.capture_fixture()
+        state = Path(config['state'])
+        (state/'store'/'synthetic-oversized').write_bytes(b'x' * 101)
+        run = Mock()
+        with sqlite3.connect(state/'relay.sqlite') as db:
+            with self.assertRaisesRegex(backup.BackupError, 'size limit'):
+                backup.verify_snapshots(db, state, Path(config['binary']), run=run, max_bytes=100)
+        run.assert_not_called()
+        self.assertEqual(list(self.root.glob('staging-native-*')), [])
+
     def test_manifest_limit_counts_formatted_bytes_before_writing(self):
         config, pin, snapshot = self.capture_fixture()
         for number in range(300):

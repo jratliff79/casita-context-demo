@@ -123,3 +123,12 @@ hash and workspace match SQLite; revoked members do not need usable credentials.
 Event autoincrement state must be consistent with the last cursor and leave room
 for another event insert. Normal plaintext removal is fsynced before uploading,
 and failure/final cleanup also flushes removals to the spool directory.
+
+Captured history must have contiguous event cursors from 1, one originating
+request per event, and every saved revision/proposal represented by its operation.
+Validation compares each revision with its parent: publish changes at most its
+selected checkpoint and preserves memory; acceptance preserves tasks and changes
+only the proposed memory entry. Legacy publishes need one uniquely changed
+checkpoint, so an ambiguous legacy no-op is rejected rather than assigned an
+invented identity. New events carry the identity needed to qualify no-op writes.
+Historical rows are never rewritten to manufacture missing provenance.

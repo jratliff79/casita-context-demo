@@ -270,7 +270,16 @@ def verify_request_identity(db, request_id, request_hash, event, result):
         require(snapshot['author'] == event['author'], 'saved request snapshot author mismatch')
         common['expected_revision'] = revision - 1
         if kind == 'publish':
-            bodies = ({**common, 'checkpoint': context} for context in snapshot['tasks'].values())
+            parent = db.execute('select snapshot from revisions where revision=?', (revision - 1,)).fetchone()
+            require(revision == 1 or parent is not None, 'missing publish parent')
+            previous = decode_record(parent[0])['tasks'] if parent else {}
+            changed = [context for task, context in snapshot['tasks'].items()
+                       if previous.get(task) != context]
+            if 'request_id' not in event:
+                require(len(changed) == 1, 'legacy publish requires a unique changed checkpoint')
+            require(len(changed) <= 1, 'publish changed multiple tasks')
+            candidates = changed or snapshot['tasks'].values()
+            bodies = ({**common, 'checkpoint': context} for context in candidates)
         else:
             decision = snapshot['decision']
             require(isinstance(decision, dict), 'saved acceptance decision missing')
@@ -281,6 +290,7 @@ def verify_request_identity(db, request_id, request_hash, event, result):
 
 def verify_auxiliary_json(db):
     # These columns are parsed by accept and idempotent writes after restoration.
+    requests = {}
     for table, column in (('proposals', 'payload'), ('requests', 'result')):
         require(db.execute('select count(*) from '+table).fetchone()[0] <= MAX_ENTRIES,
                 'write-path index exceeds entry limit')
@@ -361,6 +371,62 @@ def verify_auxiliary_json(db):
                             and event.get('revision') == decoded['proposal']['base_revision']
                             and decoded['proposal']['author'] == actor, 'saved request proposal mismatch')
                 verify_request_identity(db, request_id, request_hash, event, decoded)
+                require(decoded['cursor'] not in requests, 'duplicate saved request cursor')
+                requests[decoded['cursor']] = decoded
+    return requests
+
+def verify_transitions(db, requests):
+    """Replay data-only operation semantics over the already bounded copied rows."""
+    revision, current, proposals, count = 0, None, set(), 0
+    for cursor, raw in db.execute('select cursor,payload from events order by cursor'):
+        count += 1
+        require(cursor in requests, 'event has no originating request')
+        event = decode_record(raw)
+        request = requests[cursor]
+        kind = event['kind']
+        if kind == 'propose':
+            proposal = request['proposal']
+            require(current is not None and event['revision'] == revision
+                    and proposal['base_revision'] == revision
+                    and event.get('created_at') == proposal['created_at']
+                    and event['author'] == proposal['author']
+                    and request['proposal_id'] not in proposals, 'invalid proposal transition')
+            proposals.add(request['proposal_id'])
+            continue
+        require(event['revision'] == revision + 1, 'invalid revision transition')
+        row = db.execute('select snapshot from revisions where revision=?', (revision + 1,)).fetchone()
+        require(row is not None, 'missing transition snapshot')
+        value = decode_record(row[0])
+        require(value['author'] == event['author'] and value['created_at'] == event.get('created_at'),
+                'transition author or timestamp mismatch')
+        tasks = current['tasks'] if current else {}
+        memory = current['memory'] if current else []
+        if kind == 'publish':
+            require(set(tasks) <= set(value['tasks'])
+                    and sum(tasks.get(task) != checkpoint for task, checkpoint in value['tasks'].items()) <= 1
+                    and value['memory'] == memory and value['decision'] is None,
+                    'publish changed unrelated context')
+        else:
+            decision = value['decision']
+            require(isinstance(decision, dict) and decision['proposal_id'] in proposals,
+                    'acceptance has no preceding proposal')
+            saved = db.execute('select payload,accepted from proposals where id=?', (decision['proposal_id'],)).fetchone()
+            require(saved is not None and saved[1] == 1, 'acceptance proposal is not marked accepted')
+            proposal = decode_record(saved[0])
+            require(proposal['base_revision'] == revision and value['tasks'] == tasks,
+                    'acceptance changed tasks or used a stale proposal')
+            retained = [entry for entry in memory if not (
+                entry['entry_id'] == proposal['entry_id'] and entry['scope'] == proposal['scope']
+                and (entry['scope'] == 'workspace' or entry['task_id'] == proposal['task_id']))]
+            accepted = dict(proposal, accepted_by=event['author'], accepted_at=value['created_at'],
+                            proposal_id=decision['proposal_id'])
+            require(value['memory'] == retained + [accepted], 'acceptance changed unrelated memory')
+        revision, current = revision + 1, value
+    require(count == len(requests)
+            and revision == db.execute('select count(*) from revisions').fetchone()[0]
+            and len(proposals) == db.execute('select count(*) from proposals').fetchone()[0],
+            'history has unrecorded requests, revisions or proposals')
+
 
 def verify_snapshots(db, state, binary, run=command):
     """Verify every referenced archive and object in the copied native store."""
@@ -417,7 +483,7 @@ def verify_events(db):
     for cursor, encoded in db.execute('select cursor,payload from events order by cursor'):
         total += len(encoded.encode())
         require(total <= MAX_METADATA_BYTES, 'event index exceeds metadata limit')
-        require(type(cursor) is int and cursor > previous, 'invalid event cursor')
+        require(type(cursor) is int and cursor == previous + 1, 'invalid event cursor')
         event = decode_record(encoded)
         require(isinstance(event, dict) and 'cursor' not in event
                 and event.get('kind') in ('publish', 'propose', 'accept')
@@ -528,7 +594,8 @@ def capture(config, payload, run=command, ready=health):
         # Bound and validate referenced rows before auxiliary cross-lookups can
         # materialize snapshot, event or pin JSON.
         verify_snapshots(db, payload / 'state', payload / 'linux-casita', run)
-        verify_auxiliary_json(db)
+        requests = verify_auxiliary_json(db)
+        verify_transitions(db, requests)
         head = db.execute('select revision,pin from revisions order by revision desc limit 1').fetchone()
         require(head is not None, 'no committed relay snapshot')
     finally:

@@ -272,6 +272,16 @@ class Backups(unittest.TestCase):
                 db.execute('INSERT INTO members VALUES (?,?,1)', (name, backup.record_digest(token.encode())))
                 backup.write_json(state/'credentials'/(name+'.json'), dict(workspace='synthetic-team', token=token))
             db.execute('INSERT INTO revisions VALUES (?,?,?)', (1, snapshot, json.dumps(pin)))
+            request_id = 'synthetic-initial'
+            request_hash = backup.record_digest(backup.record_canonical(dict(operation='publish', body=dict(
+                workspace='synthetic-team', request_id=request_id, expected_revision=0,
+                checkpoint=json.loads(snapshot)['tasks']['synthetic-task']))))
+            event = dict(kind='publish', author='jp', revision=1, pin=pin,
+                         created_at=json.loads(snapshot)['created_at'],
+                         request_id=request_id, request_hash=request_hash)
+            db.execute('INSERT INTO events(payload) VALUES (?)', (json.dumps(event),))
+            db.execute('INSERT INTO requests VALUES (?,?,?,?)',
+                       ('jp', request_id, request_hash, json.dumps(dict(pin=pin, cursor=1))))
         binary = self.root/'binary'; binary.write_bytes(b'SYNTHETIC BINARY')
         unit = self.root/'service'; unit.write_text('SYNTHETIC UNIT')
         index = self.root/'inventory'; backup.write_json(index, backup.inventory(app, 100_000))
@@ -518,6 +528,8 @@ class Backups(unittest.TestCase):
         config, pin, snapshot = self.capture_fixture()
         valid = json.dumps(dict(kind='publish', author='jp', revision=1))
         with sqlite3.connect(Path(config['state'])/'relay.sqlite') as db:
+            db.execute('DELETE FROM requests'); db.execute('DELETE FROM events')
+            db.execute("DELETE FROM sqlite_sequence WHERE name='events'")
             db.executemany('INSERT INTO events(payload) VALUES (?)', [(valid,)]*101)
             self.assertEqual(backup.verify_events(db), 101)
             for malformed in ('{', '[]', json.dumps(dict(kind='publish', author='jp', revision=True)),
@@ -677,6 +689,8 @@ class Backups(unittest.TestCase):
     def test_cached_results_must_match_committed_events_and_revisions(self):
         config, pin, raw = self.capture_fixture()
         with sqlite3.connect(Path(config['state'])/'relay.sqlite') as db:
+            db.execute('DELETE FROM requests'); db.execute('DELETE FROM events')
+            db.execute("DELETE FROM sqlite_sequence WHERE name='events'")
             event = dict(kind='publish', author='jp', revision=1, pin=pin)
             db.execute('INSERT INTO events(payload) VALUES (?)', (json.dumps(event),))
             good = dict(pin=pin, cursor=1)
@@ -718,19 +732,21 @@ class Backups(unittest.TestCase):
     def test_swapped_cached_results_reject_new_and_legacy_events(self):
         config, pin, raw = self.capture_fixture()
         snapshot = json.loads(raw); checkpoint = snapshot['tasks']['synthetic-task']
-        second = dict(snapshot, revision=2, parent_revision=1)
+        second = copy.deepcopy(snapshot); second.update(revision=2, parent_revision=1)
+        second['tasks']['synthetic-task']['summary'] = 'Synthetic second revision'
         second_raw = json.dumps(second)
         second_pin = dict(pin, revision=2, snapshot_sha256=backup.record_digest(second_raw.encode()))
         with sqlite3.connect(Path(config['state'])/'relay.sqlite') as db:
             db.execute('INSERT INTO revisions VALUES (?,?,?)', (2, second_raw, json.dumps(second_pin)))
             for legacy in (False, True):
                 db.execute('DELETE FROM requests'); db.execute('DELETE FROM events')
+                db.execute("DELETE FROM sqlite_sequence WHERE name='events'")
                 results, identities = [], []
                 for index, current_pin in enumerate((pin, second_pin)):
                     request_id = 'synthetic-request-'+str(index)
                     request_hash = backup.record_digest(backup.record_canonical(dict(operation='publish', body=dict(
                         workspace='synthetic-team', request_id=request_id, expected_revision=index,
-                        checkpoint=checkpoint))))
+                        checkpoint=(checkpoint if index == 0 else second['tasks']['synthetic-task'])))))
                     event = dict(kind='publish', author='jp', revision=index+1, pin=current_pin)
                     if not legacy:
                         event.update(request_id=request_id, request_hash=request_hash)
@@ -784,6 +800,8 @@ class Backups(unittest.TestCase):
     def test_exhausted_or_inconsistent_event_sequence_is_rejected(self):
         config, pin, raw = self.capture_fixture()
         with sqlite3.connect(Path(config['state'])/'relay.sqlite') as db:
+            db.execute('DELETE FROM requests'); db.execute('DELETE FROM events')
+            db.execute("DELETE FROM sqlite_sequence WHERE name='events'")
             self.assertEqual(backup.verify_events(db), 0)
             db.execute('INSERT INTO events(payload) VALUES (?)',
                        (json.dumps(dict(kind='publish', author='jp', revision=1)),))
@@ -821,6 +839,104 @@ class Backups(unittest.TestCase):
                 self.run_backup(cloud)
         self.assertEqual(cloud.keys, [])
         self.assertEqual(backup.private_json(self.root/'status.json')['failure_phase'], 'encryption')
+
+    def test_legacy_publish_hash_must_name_the_unique_changed_task(self):
+        config, pin, raw = self.capture_fixture()
+        previous = json.loads(raw); previous.update(revision=2, parent_revision=1)
+        other = copy.deepcopy(previous['tasks']['synthetic-task']); other['task_id'] = 'synthetic-other'
+        previous['tasks']['synthetic-other'] = other
+        current = copy.deepcopy(previous); current.update(revision=3, parent_revision=2)
+        current['tasks']['synthetic-task']['summary'] = 'Synthetic change to first task'
+        result = dict(pin=dict(pin, revision=3), cursor=3)
+        event = dict(kind='publish', author='jp', revision=3)
+        def request_hash(checkpoint):
+            return backup.record_digest(backup.record_canonical(dict(operation='publish', body=dict(
+                workspace='synthetic-team', request_id='synthetic-third', expected_revision=2,
+                checkpoint=checkpoint))))
+        with sqlite3.connect(Path(config['state'])/'relay.sqlite') as db:
+            for revision, value in ((2, previous), (3, current)):
+                db.execute('INSERT INTO revisions VALUES (?,?,?)', (revision, json.dumps(value), '{}'))
+            with self.assertRaisesRegex(backup.BackupError, 'content hash'):
+                backup.verify_request_identity(db, 'synthetic-third', request_hash(other), event, result)
+            backup.verify_request_identity(db, 'synthetic-third',
+                                           request_hash(current['tasks']['synthetic-task']), event, result)
+            unchanged = copy.deepcopy(previous); unchanged.update(revision=3, parent_revision=2)
+            db.execute('UPDATE revisions SET snapshot=? WHERE revision=3', (json.dumps(unchanged),))
+            with self.assertRaisesRegex(backup.BackupError, 'unique changed checkpoint'):
+                backup.verify_request_identity(db, 'synthetic-third', request_hash(other), event, result)
+            # Explicit identity permits a valid no-op from the current producer.
+            event.update(request_id='synthetic-third', request_hash=request_hash(other))
+            backup.verify_request_identity(db, 'synthetic-third', request_hash(other), event, result)
+
+    def test_missing_middle_event_rejects_even_with_matching_final_sequence(self):
+        config, pin, raw = self.capture_fixture()
+        with sqlite3.connect(Path(config['state'])/'relay.sqlite') as db:
+            for revision in (2, 3):
+                db.execute('INSERT INTO events(payload) VALUES (?)',
+                           (json.dumps(dict(kind='publish', author='jp', revision=revision)),))
+            db.execute('DELETE FROM events WHERE cursor=2')
+            self.assertEqual(db.execute("SELECT seq FROM sqlite_sequence WHERE name='events'").fetchone()[0], 3)
+            with self.assertRaisesRegex(backup.BackupError, 'event cursor'):
+                backup.verify_events(db)
+
+    def test_publish_transition_rejects_unrelated_task_or_memory_changes(self):
+        config, pin, raw = self.capture_fixture()
+        previous = json.loads(raw)
+        current = copy.deepcopy(previous); current.update(revision=2, parent_revision=1)
+        current['tasks']['synthetic-task']['summary'] = 'Synthetic authorized update'
+        with sqlite3.connect(Path(config['state'])/'relay.sqlite') as db:
+            first = backup.verify_auxiliary_json(db)
+            db.execute('INSERT INTO revisions VALUES (?,?,?)', (2, json.dumps(current), '{}'))
+            db.execute('INSERT INTO events(payload) VALUES (?)', (json.dumps(dict(
+                kind='publish', author='jp', revision=2, created_at=current['created_at'])),))
+            requests = {**first, 2: {}}
+            backup.verify_transitions(db, requests)
+            for field in ('tasks', 'memory'):
+                value = copy.deepcopy(current)
+                if field == 'tasks':
+                    other = copy.deepcopy(value['tasks']['synthetic-task']); other['task_id'] = 'synthetic-other'
+                    value['tasks']['synthetic-other'] = other
+                else:
+                    value['memory'] = ['SYNTHETIC unauthorized memory']
+                db.execute('UPDATE revisions SET snapshot=? WHERE revision=2', (json.dumps(value),))
+                with self.subTest(field=field), self.assertRaisesRegex(backup.BackupError, 'unrelated context'):
+                    backup.verify_transitions(db, requests)
+
+    def test_acceptance_transition_preserves_tasks_and_unrelated_memory(self):
+        config, pin, raw = self.capture_fixture()
+        previous = json.loads(raw); source = previous['tasks']['synthetic-task']['files'][0]
+        proposal = dict(author='cj', base_revision=1, created_at=previous['created_at'],
+                        task_id='synthetic-task', scope='workspace', source_revision='a'*40,
+                        entry_id='synthetic-memory', statement='Synthetic lesson',
+                        citation=dict(path=source['path'], sha256=source['sha256'],
+                                      start_line=1, end_line=1, excerpt=['SYNTHETIC NOTE']))
+        identity = backup.record_digest(backup.record_canonical(proposal))
+        current = copy.deepcopy(previous); current.update(revision=2, parent_revision=1,
+            decision=dict(proposal_id=identity, accepted_by='jp'),
+            memory=[dict(proposal, accepted_by='jp', accepted_at=previous['created_at'], proposal_id=identity)])
+        with sqlite3.connect(Path(config['state'])/'relay.sqlite') as db:
+            first = backup.verify_auxiliary_json(db)
+            db.execute('INSERT INTO proposals VALUES (?,?,1)', (identity, json.dumps(proposal)))
+            db.execute('INSERT INTO events(payload) VALUES (?)', (json.dumps(dict(
+                kind='propose', author='cj', revision=1, created_at=proposal['created_at'])),))
+            db.execute('INSERT INTO events(payload) VALUES (?)', (json.dumps(dict(
+                kind='accept', author='jp', revision=2, created_at=current['created_at'])),))
+            db.execute('INSERT INTO revisions VALUES (?,?,?)', (2, json.dumps(current), '{}'))
+            requests = {**first, 2: dict(proposal=proposal, proposal_id=identity), 3: {}}
+            backup.verify_transitions(db, requests)
+            db.execute('UPDATE proposals SET accepted=0')
+            with self.assertRaisesRegex(backup.BackupError, 'marked accepted'):
+                backup.verify_transitions(db, requests)
+            db.execute('UPDATE proposals SET accepted=1')
+            for field in ('tasks', 'memory'):
+                value = copy.deepcopy(current)
+                if field == 'tasks':
+                    value['tasks']['synthetic-task']['summary'] = 'Synthetic unauthorized task change'
+                else:
+                    value['memory'].append('SYNTHETIC unauthorized memory')
+                db.execute('UPDATE revisions SET snapshot=? WHERE revision=2', (json.dumps(value),))
+                with self.subTest(field=field), self.assertRaisesRegex(backup.BackupError, 'changed tasks|unrelated memory'):
+                    backup.verify_transitions(db, requests)
 
     def test_cloud_upload_requires_sse_and_exact_server_checksum(self):
         archive = self.root/'archive'; archive.write_bytes(b'SYNTHETIC CIPHERTEXT')

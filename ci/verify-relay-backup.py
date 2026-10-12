@@ -42,7 +42,7 @@ def main():
     for revision in range(2):
         result = service.handle(token, 'publish', dict(workspace='synthetic-team',
                         request_id='synthetic-publish-'+str(revision), expected_revision=revision,
-                        checkpoint=context))
+                        checkpoint=dict(context, summary='Synthetic capture revision '+str(revision))))
         pins.append(result['pin'])
     cj_token = json.loads((state/'credentials/cj.json').read_text())['token']
     proposal = service.handle(cj_token, 'propose', dict(
@@ -73,6 +73,13 @@ def main():
                        (relay.canonical(event).decode(), row['cursor']))
     legacy = backup.capture(config, spool/'staging-legacy', run=run, ready=lambda c: None)
     assert legacy['revision'] == 3 and legacy['pin'] == pins[-1]
+    # A new event with explicit identity can prove a legitimate no-op publish.
+    noop = service.handle(token, 'publish', dict(workspace='synthetic-team',
+        request_id='synthetic-noop', expected_revision=3,
+        checkpoint=dict(context, summary='Synthetic capture revision 1')))
+    pins.append(noop['pin'])
+    current = backup.capture(config, spool/'staging-noop', run=run, ready=lambda c: None)
+    assert current['revision'] == 4 and current['pin'] == pins[-1]
     # SQLite and current head remain valid while a historical archive is absent.
     historical = state/'snapshots'/(pins[0]['archive_sha256']+'.casitar')
     historical.unlink()
@@ -86,7 +93,7 @@ def main():
     backup.cleanup(spool)
     backup.write_json(root/'receipt.json', dict(schema='synthetic-backup-check.v1',
                       native_capture_passed=True, proposal_acceptance_captured=True,
-                      legacy_request_identity_verified=True,
+                      legacy_request_identity_verified=True, explicit_noop_publish_verified=True,
                       historical_archive_rejected=True,
                       synthetic_service_only=True, aws_accessed=False))
     print('Synthetic native capture and historical archive rejection passed.')

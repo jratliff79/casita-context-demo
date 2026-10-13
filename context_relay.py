@@ -19,6 +19,7 @@ import time
 from urllib.parse import urlsplit
 from urllib.request import Request, build_opener, ProxyHandler, HTTPRedirectHandler
 
+from relay_readiness import request_proof, response_proof
 from authentication import read_regular
 from demo import Casita, canonical, digest, file_map
 from git_review import git_environment, git_lines
@@ -205,23 +206,24 @@ class Relay:
         require(isinstance(body, dict), "body must be a JSON object")
         with connect(self.state) as db:
             if operation == "readiness":
-                require(set(body) == {"workspace"} and body["workspace"] == self.workspace,
-                        "invalid readiness request", 403)
                 try:
                     credential = readiness_credential(self.state)
                 except Exception:
                     raise Rejected("readiness identity unavailable", 401) from None
-                require(isinstance(token, str) and 30 <= len(token) <= 100
-                        and credential["workspace"] == self.workspace
-                        and secrets.compare_digest(digest(token.encode()), digest(credential["token"].encode())),
+                require(isinstance(token, str) and re.fullmatch(r"[0-9a-f]{64}", token)
+                        and secrets.compare_digest(token, request_proof(credential["token"], body)),
                         "unauthorized", 401)
-                require(db.execute("SELECT 1 FROM members WHERE token_hash=?", (digest(token.encode()),)).fetchone()
+                # Authenticate first: a bogus proof must not disclose the workspace.
+                require(set(body) == {"nonce"} and credential["workspace"] == self.workspace
+                        and isinstance(body["nonce"], str) and re.fullmatch(r"[0-9a-f]{64}", body["nonce"]),
+                        "invalid readiness request", 403)
+                require(db.execute("SELECT 1 FROM members WHERE token_hash=?",
+                                   (digest(credential["token"].encode()),)).fetchone()
                         is None, "readiness identity must be separate from member credentials", 401)
-                # This path returns no event history, archives, members or context,
-                # and never accepts a normal owner/member credential as a fallback.
                 require(db.execute("SELECT workspace FROM settings").fetchone()["workspace"] == self.workspace,
                         "workspace unavailable", 503)
-                return {"ready": True}
+                return {"ready": True, "nonce": body["nonce"],
+                        "proof": response_proof(credential["token"], self.workspace, body["nonce"])}
             # Reload membership every request, including reads and idempotent retries.
             actor = self.authenticate(db, token)
             require(body.get("workspace") == self.workspace, "workspace unavailable", 403)
@@ -348,10 +350,11 @@ def serve(relay, port):
                         "unknown endpoint", 404)
                 require(self.path != "/readiness" or length <= 512, "readiness request exceeds byte limit", 413)
                 auth = self.headers.get("Authorization", "")
-                require(auth.startswith("Bearer "), "unauthorized", 401)
+                prefix = "RelayReadiness " if self.path == "/readiness" else "Bearer "
+                require(auth.startswith(prefix), "unauthorized", 401)
                 raw = self.rfile.read(length)
                 require(len(raw) == length, "incomplete body")
-                result = relay.handle(auth[7:], self.path[1:], json.loads(raw))
+                result = relay.handle(auth[len(prefix):], self.path[1:], json.loads(raw))
                 status = 200
             except Rejected as error:
                 status, result = error.status, {"error": str(error)}

@@ -4,6 +4,7 @@ import hashlib
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import json
 import os
+import secrets
 from pathlib import Path
 import tempfile
 import threading
@@ -11,6 +12,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
 
+from relay_readiness import request_proof, response_proof
 import context_relay
 import relay_monitor as monitor
 
@@ -26,20 +28,27 @@ class MonitorTests(unittest.TestCase):
         self.spool = self.root / 'spool'
         self.spool.mkdir()
         os.chmod(self.credential, 0o600)
+        stats = SimpleNamespace(f_blocks=100000, f_bavail=50000, f_frsize=4096, f_files=100000, f_favail=50000)
+        sampler = patch.object(monitor.os, 'statvfs', return_value=stats)
+        sampler.start()
+        self.addCleanup(sampler.stop)
         self.config = dict(state=str(self.state), spool=str(self.spool), credential=str(self.credential), port=8765,
                            backup_max_bytes=1024, free_percent=15, inodes_free_percent=10,
                            region='us-west-2', namespace='Synthetic/Relay', relay_name='synthetic')
 
     def server(self, status=200, response=None, headers=None):
         observations = []
+        identity = json.loads(self.credential.read_bytes())
         class Handler(BaseHTTPRequestHandler):
             def do_POST(handler):
-                observations.append(json.loads(handler.rfile.read(int(handler.headers['Content-Length']))))
+                body = json.loads(handler.rfile.read(int(handler.headers['Content-Length'])))
+                observations.append({'body':body, 'authorization':handler.headers['Authorization']})
                 handler.send_response(status)
                 for name, value in (headers or {}).items(): handler.send_header(name, value)
                 handler.end_headers()
                 handler.wfile.write(response if response is not None else json.dumps(
-                    {'ready': True}).encode())
+                    {'ready': True, 'nonce': body['nonce'],
+                     'proof': response_proof(identity['token'], identity['workspace'], body['nonce'])}).encode())
             def log_message(self, *args): pass
         server = HTTPServer(('127.0.0.1', 0), Handler)
         thread = threading.Thread(target=server.serve_forever); thread.start()
@@ -50,7 +59,11 @@ class MonitorTests(unittest.TestCase):
     def test_readiness_requests_no_event_payload_and_rejects_invalid_response(self):
         seen = self.server()
         monitor.readiness(self.config)
-        self.assertEqual(seen, [{'workspace': 'synthetic-team'}])
+        identity = json.loads(self.credential.read_bytes())
+        self.assertNotIn('workspace', seen[0]['body'])
+        self.assertEqual(len(seen[0]['body']['nonce']), 64)
+        self.assertNotIn(identity['token'], seen[0]['authorization'])
+        self.assertEqual(seen[0]['authorization'], 'RelayReadiness ' + request_proof(identity['token'], seen[0]['body']))
         for raw in (b'{}', b'x'*257, b'{"events":["private"],"next_cursor":1}',
                     b'{"ready":1}', b'{"ready":true,"private":1}'):
             with self.subTest(raw=raw):
@@ -160,7 +173,10 @@ class MonitorTests(unittest.TestCase):
         credential = json.loads(self.credential.read_bytes())
         member = json.loads((self.state / 'credentials/jp.json').read_bytes())
         before = hashlib.sha256((self.state / 'relay.sqlite').read_bytes()).hexdigest()
-        self.assertEqual(service.handle(credential['token'], 'readiness', {'workspace':'synthetic-team'}), {'ready':True})
+        body = {'nonce':secrets.token_hex(32)}
+        result = service.handle(request_proof(credential['token'], body), 'readiness', body)
+        self.assertEqual(result, {'ready':True, 'nonce':body['nonce'],
+                         'proof':response_proof(credential['token'], credential['workspace'], body['nonce'])})
         for operation in ('context', 'updates', 'publish', 'propose', 'accept'):
             with self.subTest(operation=operation), self.assertRaises(context_relay.Rejected) as rejected:
                 service.handle(credential['token'], operation, {'workspace':'synthetic-team'})
@@ -174,6 +190,41 @@ class MonitorTests(unittest.TestCase):
         with self.assertRaises(context_relay.Rejected):
             service.handle(credential['token'], 'readiness', {'workspace':'synthetic-team'})
         self.assertEqual(service.handle(member['token'], 'updates', {'workspace':'synthetic-team','after':0})['events'], [])
+
+    def test_rogue_static_listener_and_replayed_response_cannot_report_readiness(self):
+        self.server(response=b'{"ready":true}')
+        self.assertEqual(monitor.sample(self.config)['Readiness'], 0)
+        identity = json.loads(self.credential.read_bytes())
+        old_nonce = '0' * 64
+        replay = json.dumps({'ready':True, 'nonce':old_nonce,
+            'proof':response_proof(identity['token'], identity['workspace'], old_nonce)}).encode()
+        self.server(response=replay)
+        with patch.object(monitor.secrets, 'token_hex', return_value='1'*64):
+            self.assertEqual(monitor.sample(self.config)['Readiness'], 0)
+        reflected = {'nonce':'1'*64}
+        self.server(response=json.dumps({'ready':True,'nonce':'1'*64,
+            'proof':request_proof(identity['token'], reflected)}).encode())
+        with patch.object(monitor.secrets, 'token_hex', return_value='1'*64):
+            self.assertEqual(monitor.sample(self.config)['Readiness'], 0)
+
+    def test_bogus_proofs_do_not_disclose_workspace_and_scope_secret_is_not_bearer(self):
+        class Index(context_relay.Relay):
+            def __init__(service, state):
+                service.state = state
+                service.workspace, service.owner = 'synthetic-team', 'jp'
+        service = Index(self.state)
+        identity = json.loads(self.credential.read_bytes())
+        for workspace in ('synthetic-team','other'):
+            body = {'workspace':workspace, 'nonce':secrets.token_hex(32)}
+            for invalid in ('0'*64, identity['token']):
+                with self.assertRaises(context_relay.Rejected) as rejected:
+                    service.handle(invalid, 'readiness', body)
+                self.assertEqual(rejected.exception.status, 401)
+                self.assertEqual(str(rejected.exception), 'unauthorized')
+        body = {'workspace':'other', 'nonce':secrets.token_hex(32)}
+        with self.assertRaises(context_relay.Rejected) as rejected:
+            service.handle(request_proof(identity['token'],body),'readiness',body)
+        self.assertEqual(rejected.exception.status, 403)
 
     def test_readiness_provision_never_overwrites_or_borrows_a_member_token(self):
         before = self.credential.read_bytes()

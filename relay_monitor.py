@@ -7,10 +7,13 @@ import math
 import os
 from pathlib import Path
 import re
+import secrets
 import sqlite3
 import stat
 import time
 from urllib.request import Request, build_opener, HTTPRedirectHandler, ProxyHandler
+
+from relay_readiness import request_proof, response_proof
 
 RESERVE_BYTES = 256 * 1024 * 1024
 MAX_ENTRIES = 50_000
@@ -77,16 +80,22 @@ def readiness(config):
             re.fullmatch(r'[a-zA-Z0-9][a-zA-Z0-9._-]{0,79}', credential['workspace']))
     require(isinstance(credential['token'], str) and
             re.fullmatch(r'[A-Za-z0-9_-]{30,100}', credential['token']))
+    nonce = secrets.token_hex(32)
+    body = {'nonce': nonce}
     request = Request('http://127.0.0.1:' + str(config['port']) + '/readiness',
-                      data=json.dumps({'workspace': credential['workspace']}).encode(),
-                      headers={'Authorization': 'Bearer ' + credential['token'],
+                      data=json.dumps(body).encode(),
+                      headers={'Authorization': 'RelayReadiness ' + request_proof(credential['token'], body),
                                'Content-Type': 'application/json'})
     with build_opener(ProxyHandler({}), NoRedirect()).open(request, timeout=3) as response:
         require(response.status == 200)
         raw = response.read(257)
         require(len(raw) <= 256)
         result = json.loads(raw)
-        require(isinstance(result, dict) and set(result) == {'ready'} and result['ready'] is True)
+        require(isinstance(result, dict) and set(result) == {'ready', 'nonce', 'proof'}
+                and result['ready'] is True and result['nonce'] == nonce
+                and isinstance(result['proof'], str) and re.fullmatch(r'[0-9a-f]{64}', result['proof'])
+                and secrets.compare_digest(result['proof'], response_proof(
+                    credential['token'], credential['workspace'], nonce)))
 
 
 def filesystem(config, field='state'):

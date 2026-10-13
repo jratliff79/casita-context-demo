@@ -3,12 +3,16 @@
 import argparse
 import json
 import os
+import secrets
 from pathlib import Path
 import sys
+import threading
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from relay_readiness import request_proof, response_proof
 import context_relay as relay
 import relay_backup as backup
+import relay_monitor as monitor
 
 
 def main():
@@ -69,7 +73,10 @@ def main():
     restored_state = spool / 'staging-valid/state'
     restored = relay.Relay(restored_state, binary)
     assert relay.readiness_credential(restored_state) == readiness_identity
-    assert restored.handle(readiness_identity['token'], 'readiness', {'workspace':'synthetic-team'}) == {'ready':True}
+    body = {'nonce':secrets.token_hex(32)}
+    response = restored.handle(request_proof(readiness_identity['token'], body), 'readiness', body)
+    assert response == {'ready':True, 'nonce':body['nonce'],
+                        'proof':response_proof(readiness_identity['token'], 'synthetic-team', body['nonce'])}
     for operation in ('context', 'updates', 'publish', 'propose', 'accept'):
         try:
             restored.handle(readiness_identity['token'], operation, {'workspace':'synthetic-team'})
@@ -77,6 +84,21 @@ def main():
             assert error.status == 401
         else:
             raise AssertionError('restored readiness credential escaped scope')
+    http = relay.serve(restored, 0)
+    thread = threading.Thread(target=http.serve_forever)
+    thread.start()
+    before = backup.inventory(restored_state, 512*1024*1024)
+    try:
+        observations = monitor.sample(dict(state=str(restored_state), spool=str(spool),
+            credential=str(restored_state/'monitoring/readiness.json'), port=http.server_port,
+            backup_max_bytes=512*1024*1024, free_percent=15, inodes_free_percent=10,
+            region='us-west-2', namespace='Synthetic/Relay', relay_name='synthetic'))
+        assert observations['Readiness'] == 1
+        if sys.platform == 'linux':
+            assert observations['MonitorComplete'] == 1 and set(observations) == set(monitor.METRICS)
+        assert backup.inventory(restored_state, 512*1024*1024) == before
+    finally:
+        http.shutdown(); thread.join(); http.server_close()
     # Existing relay events predate the explicit request identity fields.
     with relay.connect(state) as db:
         for row in db.execute('SELECT cursor,payload FROM events').fetchall():
@@ -107,6 +129,9 @@ def main():
     backup.write_json(root/'receipt.json', dict(schema='synthetic-backup-check.v1',
                       native_capture_passed=True, proposal_acceptance_captured=True,
                       readiness_identity_restore_and_scope_passed=True,
+                      authenticated_native_readiness_passed=True,
+                      native_monitor_complete=bool(observations['MonitorComplete']),
+                      monitor_observation_platform=sys.platform,
                       legacy_request_identity_verified=True, explicit_noop_publish_verified=True,
                       historical_archive_rejected=True,
                       synthetic_service_only=True, aws_accessed=False))

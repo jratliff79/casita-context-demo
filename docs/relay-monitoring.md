@@ -2,7 +2,8 @@
 
 `relay_monitor.py` samples an explicitly configured local relay. It checks the
 server's authenticated `/readiness` endpoint with a separate readiness-only token.
-That endpoint returns only a boolean: it cannot read context, archives or events,
+That endpoint returns a readiness boolean with fresh challenge proofs; it cannot
+read context, archives or events,
 or publish, propose or accept updates. Readiness qualifies authentication and
 SQLite access, not native restoration or every write operation. The monitor
 rejects ordinary member credentials, redirects and oversized/malformed responses.
@@ -10,7 +11,9 @@ State and backup-spool filesystem observations, bounded allocated state bytes an
 read-only SQLite counts are independent collectors. A failed collector sets
 `MonitorComplete=0` and omits its metrics; readiness failure does not hide storage.
 
-The server must include the readiness-scope implementation before installation.
+Install the pinned `relay_readiness.py` protocol helper beside both server and
+monitor scripts. The server must include the readiness-scope implementation
+before installation.
 For an explicitly authorized state, provision as its owner:
 
 ```sh
@@ -44,7 +47,12 @@ Create a private, mode-0600 configuration outside Git, with these fields:
 
 `credential` must refer to that dedicated scoped credential, owned by the state
 owner with mode 0600. Never reuse an owner/member credential. It stays private and
-only travels in the loopback readiness request. Hide ordinary member credentials
+is never sent to the listener. Each request carries a fresh 256-bit nonce and a
+request HMAC; the response must match a separate response HMAC bound to that nonce
+and the configured workspace. Request and response domains differ, preventing
+reflection; captured old responses cannot satisfy a fresh challenge. Neither the
+secret nor the workspace name is transmitted. Authentication precedes request
+scope validation, so bogus proofs cannot enumerate workspace names. Hide ordinary member credentials
 from the monitoring process with the deployment's filesystem sandbox. Choose
 generic operator labels, never context, task IDs, member names or secrets.
 
@@ -93,6 +101,8 @@ The visible inventory rejects links/special files, scans at most 50,000 entries 
 seconds, opens directories without following links, and never reads state payload
 files or invokes Casita. SQLite counts are read-only and bounded by a progress
 handler. Deploy under a read-only filesystem sandbox and a total process deadline;
-a growing or changing tree can invalidate a sample. A future WAL deployment may
+a growing or changing tree can invalidate a sample. Filesystems with undefined
+or inconsistent inode totals produce incomplete telemetry, not a fabricated healthy
+inode percentage; qualify the target filesystem. A future WAL deployment may
 need separate read-only SQLite qualification. There is no pruning, restart,
 publication, deployment, background installation or credential rotation here.

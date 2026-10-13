@@ -15,6 +15,28 @@ import relay_backup as backup
 import relay_monitor as monitor
 
 
+def observe_native_monitor(restored, spool):
+    http = relay.serve(restored, 0)
+    thread = threading.Thread(target=http.serve_forever, name="native-monitor-qualification")
+    try:
+        thread.start()
+        before = backup.inventory(restored.state, 512*1024*1024)
+        observations = monitor.sample(dict(state=str(restored.state), spool=str(spool),
+            credential=str(restored.state/'monitoring/readiness.json'), port=http.server_port,
+            backup_max_bytes=512*1024*1024, free_percent=15, inodes_free_percent=10,
+            region='us-west-2', namespace='Synthetic/Relay', relay_name='synthetic'))
+        assert observations['Readiness'] == 1
+        if sys.platform == 'linux':
+            assert observations['MonitorComplete'] == 1 and set(observations) == set(monitor.METRICS)
+        assert backup.inventory(restored.state, 512*1024*1024) == before
+        return observations
+    finally:
+        if thread.is_alive():
+            http.shutdown()
+            thread.join()
+        http.server_close()
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--casita', type=Path, required=True)
@@ -84,21 +106,7 @@ def main():
             assert error.status == 401
         else:
             raise AssertionError('restored readiness credential escaped scope')
-    http = relay.serve(restored, 0)
-    thread = threading.Thread(target=http.serve_forever)
-    thread.start()
-    before = backup.inventory(restored_state, 512*1024*1024)
-    try:
-        observations = monitor.sample(dict(state=str(restored_state), spool=str(spool),
-            credential=str(restored_state/'monitoring/readiness.json'), port=http.server_port,
-            backup_max_bytes=512*1024*1024, free_percent=15, inodes_free_percent=10,
-            region='us-west-2', namespace='Synthetic/Relay', relay_name='synthetic'))
-        assert observations['Readiness'] == 1
-        if sys.platform == 'linux':
-            assert observations['MonitorComplete'] == 1 and set(observations) == set(monitor.METRICS)
-        assert backup.inventory(restored_state, 512*1024*1024) == before
-    finally:
-        http.shutdown(); thread.join(); http.server_close()
+    observations = observe_native_monitor(restored, spool)
     # Existing relay events predate the explicit request identity fields.
     with relay.connect(state) as db:
         for row in db.execute('SELECT cursor,payload FROM events').fetchall():

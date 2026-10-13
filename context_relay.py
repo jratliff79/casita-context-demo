@@ -29,12 +29,20 @@ from relay_validation import (LIMIT, WIRE_LIMIT, SCHEMA, Rejected, require,
                               snapshot as validate_snapshot)
 
 @contextmanager
-def connect(state):
-    db = sqlite3.connect(str(state / "relay.sqlite"), timeout=10)
+def connect(state, readonly=False):
+    state = Path(state)
+    if readonly:
+        path = state / "relay.sqlite"
+        require(stat.S_ISREG(path.lstat().st_mode), "invalid readiness database", 503)
+        db = sqlite3.connect((state.resolve() / "relay.sqlite").as_uri() + "?mode=ro", uri=True, timeout=10)
+    else:
+        db = sqlite3.connect(str(state / "relay.sqlite"), timeout=10)
     db.row_factory = sqlite3.Row
-    db.execute("PRAGMA foreign_keys = ON")
-    db.execute("PRAGMA synchronous = FULL")
     try:
+        if readonly:
+            db.execute("PRAGMA query_only = ON")
+        db.execute("PRAGMA foreign_keys = ON")
+        db.execute("PRAGMA synchronous = FULL")
         with db:
             yield db
     finally:
@@ -93,8 +101,9 @@ def provision_readiness(state):
     state = Path(state)
     require(stat.S_ISDIR(state.lstat().st_mode) and state.stat().st_uid == os.getuid(),
             "provision as the state owner")
-    with connect(state) as db:
+    with connect(state, readonly=True) as db:
         workspace = db.execute("SELECT workspace FROM settings").fetchone()["workspace"]
+        require(identifier(workspace), "invalid readiness workspace")
         token = secrets.token_urlsafe(32)
         require(db.execute("SELECT 1 FROM members WHERE token_hash=?", (digest(token.encode()),)).fetchone()
                 is None, "readiness identity must be separate from member credentials")
@@ -104,11 +113,30 @@ def provision_readiness(state):
     require(stat.S_ISDIR(info.st_mode) and info.st_uid == os.getuid()
             and stat.S_IMODE(info.st_mode) == 0o700, "invalid monitoring directory")
     path = folder / "readiness.json"
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
-    with os.fdopen(fd, "wb") as stream:
-        stream.write(canonical({"workspace": workspace, "token": token, "scope": "relay-readiness.v1"}))
-        stream.flush()
-        os.fsync(stream.fileno())
+    # Publish only a fully written/fsynced file; hard-link publication preserves
+    # no-overwrite semantics. Roll back our destination on any pre-success error.
+    fd, temporary_name = tempfile.mkstemp(prefix=".readiness-", dir=folder)
+    temporary = Path(temporary_name)
+    published = False
+    try:
+        with os.fdopen(fd, "wb") as stream:
+            stream.write(canonical({"workspace": workspace, "token": token, "scope": "relay-readiness.v1"}))
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.link(temporary, path, follow_symlinks=False)
+        published = True
+        temporary.unlink()
+        flush_readiness_directory(folder)
+        flush_readiness_directory(state)
+    except BaseException:
+        if published:
+            path.unlink()
+        temporary.unlink(missing_ok=True)
+        flush_readiness_directory(folder)
+        raise
+
+
+def flush_readiness_directory(folder):
     fd = os.open(folder, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     try:
         os.fsync(fd)
@@ -204,7 +232,7 @@ class Relay:
 
     def handle(self, token, operation, body):
         require(isinstance(body, dict), "body must be a JSON object")
-        with connect(self.state) as db:
+        with connect(self.state, readonly=(operation == "readiness")) as db:
             if operation == "readiness":
                 try:
                     credential = readiness_credential(self.state)

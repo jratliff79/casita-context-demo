@@ -24,7 +24,10 @@ python3 context_relay.py revoke-readiness --state "$RELAY_STATE"
 
 Provisioning creates `monitoring/readiness.json` with mode 0600 in a private
 0700 directory. It never inserts a member token, alters the SQLite schema or
-overwrites an existing credential. The complete-state backup includes this file;
+overwrites an existing credential. Provisioning writes/fsyncs a private temporary
+file before publishing it without replacement, flushes both directory levels,
+and removes its new files on failure so a retry can succeed. Readiness opens
+SQLite without creating a missing database. The complete-state backup includes this file;
 isolated native capture/restore qualification checks its scope after recovery.
 These commands do not authorize a production server upgrade or provisioning.
 

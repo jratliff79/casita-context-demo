@@ -226,6 +226,58 @@ class MonitorTests(unittest.TestCase):
             service.handle(request_proof(identity['token'],body),'readiness',body)
         self.assertEqual(rejected.exception.status, 403)
 
+    def test_missing_readiness_database_is_not_created(self):
+        class Index(context_relay.Relay):
+            def __init__(service, state):
+                service.state = state
+                service.workspace, service.owner = 'synthetic-team', 'jp'
+        identity = json.loads(self.credential.read_bytes())
+        body = {'nonce':secrets.token_hex(32)}
+        database = self.state / 'relay.sqlite'
+        database.unlink()
+        with self.assertRaises(Exception):
+            Index(self.state).handle(request_proof(identity['token'],body),'readiness',body)
+        self.assertFalse(database.exists())
+        self.assertFalse((self.state / 'relay.sqlite-journal').exists())
+        before = self.credential.read_bytes()
+        with self.assertRaises(Exception):context_relay.provision_readiness(self.state)
+        self.assertFalse(database.exists())
+        self.assertEqual(self.credential.read_bytes(),before)
+
+    def test_failed_provisioning_cleans_new_files_and_retry_succeeds(self):
+        context_relay.revoke_readiness(self.state)
+        real_fsync = context_relay.os.fsync
+        for failure_call in (1,2,3):
+            calls = 0
+            def failed(fd):
+                nonlocal calls
+                calls += 1
+                if calls == failure_call:
+                    raise OSError('synthetic durability failure')
+                return real_fsync(fd)
+            with self.subTest(failure_call=failure_call):
+                with patch.object(context_relay.os,'fsync',side_effect=failed), self.assertRaises(OSError):
+                    context_relay.provision_readiness(self.state)
+                self.assertFalse(self.credential.exists())
+                self.assertEqual(list(self.credential.parent.iterdir()), [])
+                context_relay.provision_readiness(self.state)
+                self.assertEqual(context_relay.readiness_credential(self.state)['scope'],'relay-readiness.v1')
+                context_relay.revoke_readiness(self.state)
+
+    def test_native_monitor_inventory_failure_stops_thread_and_closes_socket(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('synthetic_backup_qualification',
+            Path(__file__).resolve().parents[1] / 'ci/verify-relay-backup.py')
+        script = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(script)
+        service = SimpleNamespace(state=self.state)
+        server = context_relay.serve(service,0)
+        with patch.object(script.relay,'serve',return_value=server), \
+             patch.object(script.backup,'inventory',side_effect=script.backup.BackupError('synthetic limit')):
+            with self.assertRaises(script.backup.BackupError):script.observe_native_monitor(service,self.spool)
+        self.assertEqual(server.socket.fileno(),-1)
+        self.assertFalse(any(t.name=='native-monitor-qualification' and t.is_alive() for t in threading.enumerate()))
+
     def test_readiness_provision_never_overwrites_or_borrows_a_member_token(self):
         before = self.credential.read_bytes()
         with self.assertRaises(FileExistsError): context_relay.provision_readiness(self.state)

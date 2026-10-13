@@ -1,21 +1,37 @@
 # Read-only relay health and storage monitoring
 
-`relay_monitor.py` samples an explicitly configured local relay. It checks an
-authenticated loopback `/updates` request beyond the largest event cursor, so the
-response contains no event history. It rejects redirects and oversized or malformed
-responses. Filesystem available bytes and free inodes, bounded allocated state
-bytes, and read-only SQLite revision/event counts are sampled independently.
-A readiness failure does not hide disk observations; a failed storage collector
-sets `MonitorComplete=0` and omits that collector's metrics. Readiness qualifies
-authentication and the updates path, not native archive restoration or every
-publication/acceptance operation.
+`relay_monitor.py` samples an explicitly configured local relay. It checks the
+server's authenticated `/readiness` endpoint with a separate readiness-only token.
+That endpoint returns only a boolean: it cannot read context, archives or events,
+or publish, propose or accept updates. Readiness qualifies authentication and
+SQLite access, not native restoration or every write operation. The monitor
+rejects ordinary member credentials, redirects and oversized/malformed responses.
+State and backup-spool filesystem observations, bounded allocated state bytes and
+read-only SQLite counts are independent collectors. A failed collector sets
+`MonitorComplete=0` and omits its metrics; readiness failure does not hide storage.
+
+The server must include the readiness-scope implementation before installation.
+For an explicitly authorized state, provision as its owner:
+
+```sh
+python3 context_relay.py provision-readiness --state "$RELAY_STATE"
+# Revoke separately; subsequent readiness requests fail, ordinary members stay active:
+python3 context_relay.py revoke-readiness --state "$RELAY_STATE"
+```
+
+Provisioning creates `monitoring/readiness.json` with mode 0600 in a private
+0700 directory. It never inserts a member token, alters the SQLite schema or
+overwrites an existing credential. The complete-state backup includes this file;
+isolated native capture/restore qualification checks its scope after recovery.
+These commands do not authorize a production server upgrade or provisioning.
 
 Create a private, mode-0600 configuration outside Git, with these fields:
 
 ```json
 {
   "state": "/var/lib/context-relay",
-  "credential": "/var/lib/context-relay/credentials/monitor.json",
+  "spool": "/var/backups/context-relay/scheduled",
+  "credential": "/var/lib/context-relay/monitoring/readiness.json",
   "port": 8765,
   "backup_max_bytes": 536870912,
   "free_percent": 15,
@@ -26,11 +42,11 @@ Create a private, mode-0600 configuration outside Git, with these fields:
 }
 ```
 
-`credential` must refer to a provisioned member credential owned by the state
-owner with mode 0600. This example does not create that member. The credential
-stays in the private file and only travels in the authenticated loopback request.
-The namespace and relay label must be operator-selected generic labels, never
-context, task IDs, member names or secrets.
+`credential` must refer to that dedicated scoped credential, owned by the state
+owner with mode 0600. Never reuse an owner/member credential. It stays private and
+only travels in the loopback readiness request. Hide ordinary member credentials
+from the monitoring process with the deployment's filesystem sandbox. Choose
+generic operator labels, never context, task IDs, member names or secrets.
 
 ```sh
 python3 relay_monitor.py --config "$RELAY_MONITOR_CONFIG"
@@ -41,7 +57,7 @@ python3 relay_monitor.py --config "$RELAY_MONITOR_CONFIG" --publish
 Without `--publish`, the command prints only numeric observations and does not
 access AWS. Cloud submission requires a separately authorized deployment and
 billing decision. Dedicated credentials should allow only `PutMetricData` in the
-approved namespace; the monitor cannot create alarms or alter access. The nine
+approved namespace; the monitor cannot create alarms or alter access. The twelve
 custom metrics have a single static `Relay` dimension. No context, file names,
 credentials, workspace identity or raw diagnostics enter metrics or stdout.
 Do not put private paths or credentials in command-line arguments other than the
@@ -51,22 +67,29 @@ alarmed, so a dead host, stopped timer or expired cloud credential cannot look h
 
 A five-minute deployment should separately alarm on `Readiness < 1`,
 `MonitorComplete < 1` and `StoragePressure > 0`, using two consecutive breaching
-periods and missing data as breaching. Brief backup quiescence can fail one
-readiness sample. Alarm lookback, timer accuracy, request timeouts and delivery
+periods and missing data as breaching. Authorize notification actions and labelled
+email tests explicitly. Publish periodic healthy samples before creating alarms;
+create with actions disabled and verify `OK` before enabling authorized actions.
+Brief backup quiescence can fail one readiness sample. Alarm lookback, timer accuracy, request timeouts and delivery
 mean this is not a precise detection deadline. Test failure, recovery and missing
 telemetry in isolation before production installation; AWS acknowledgements do
 not establish inbox delivery.
 
-`StoragePressure` is true when free bytes reach the backup controller's two-copy
-reserve (`2 * backup_max_bytes + 256 MiB`), configured free-percent threshold, or
-free-inode-percent threshold. Keep `backup_max_bytes` synchronized with the actual
+`StoragePressure` is true when available spool bytes reach the backup controller's
+two-copy reserve (`2 * backup_max_bytes + 256 MiB`) on the configured `spool` filesystem,
+or either mount reaches its configured free-percent/inode-percent threshold.
+State and spool capacity are measured separately; a small healthy state mount
+does not inherit the spool's byte reserve. Failed spool sampling cannot report
+`StoragePressure=0`. Keep `backup_max_bytes` synchronized with the actual
 backup configuration. The monitor does not predict archive compression or
 reserve additional space for an unbounded publication. Record a measured baseline
 before choosing thresholds. Display `StateAllocatedBytes` and retained counts over
-time for growth review; this is sampled allocated space, not a quiescent inventory,
+time for growth review. State allocation excludes the ordinary `credentials/`
+subtree that the deployment hides from this process; it includes monitoring state.
+This is sampled visible allocation, not a quiescent full-state inventory,
 deduplication result, capacity forecast or concurrent-load qualification.
 
-The inventory rejects links/special files, scans at most 50,000 entries for ten
+The visible inventory rejects links/special files, scans at most 50,000 entries for ten
 seconds, opens directories without following links, and never reads state payload
 files or invokes Casita. SQLite counts are read-only and bounded by a progress
 handler. Deploy under a read-only filesystem sandbox and a total process deadline;

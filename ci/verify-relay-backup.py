@@ -32,6 +32,8 @@ def main():
                   runtime_inventory=str(index), max_bytes=512*1024*1024,
                   service='synthetic.service', source_commit='a'*40, casita_commit='b'*40)
     relay.initialize(state, 'synthetic-team', 'jp', ['cj'])
+    relay.provision_readiness(state)
+    readiness_identity = relay.readiness_credential(state)
     service = relay.Relay(state, binary)
     token = json.loads((state/'credentials/jp.json').read_text())['token']
     text = 'SYNTHETIC NOTE\n'
@@ -64,6 +66,17 @@ def main():
     manifest = backup.capture(config, spool/'staging-valid', run=run, ready=lambda c: None)
     assert manifest['revision'] == 3 and manifest['pin'] == pins[-1]
     assert calls == ['is-active', 'stop', 'start']
+    restored_state = spool / 'staging-valid/state'
+    restored = relay.Relay(restored_state, binary)
+    assert relay.readiness_credential(restored_state) == readiness_identity
+    assert restored.handle(readiness_identity['token'], 'readiness', {'workspace':'synthetic-team'}) == {'ready':True}
+    for operation in ('context', 'updates', 'publish', 'propose', 'accept'):
+        try:
+            restored.handle(readiness_identity['token'], operation, {'workspace':'synthetic-team'})
+        except relay.Rejected as error:
+            assert error.status == 401
+        else:
+            raise AssertionError('restored readiness credential escaped scope')
     # Existing relay events predate the explicit request identity fields.
     with relay.connect(state) as db:
         for row in db.execute('SELECT cursor,payload FROM events').fetchall():
@@ -93,6 +106,7 @@ def main():
     backup.cleanup(spool)
     backup.write_json(root/'receipt.json', dict(schema='synthetic-backup-check.v1',
                       native_capture_passed=True, proposal_acceptance_captured=True,
+                      readiness_identity_restore_and_scope_passed=True,
                       legacy_request_identity_verified=True, explicit_noop_publish_verified=True,
                       historical_archive_rejected=True,
                       synthetic_service_only=True, aws_accessed=False))

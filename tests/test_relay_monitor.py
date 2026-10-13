@@ -21,9 +21,12 @@ class MonitorTests(unittest.TestCase):
         self.root = Path(temp.name)
         self.state = self.root / 'state'
         context_relay.initialize(self.state, 'synthetic-team', 'jp', ['cj'])
-        self.credential = self.state / 'credentials/jp.json'
+        context_relay.provision_readiness(self.state)
+        self.credential = self.state / 'monitoring/readiness.json'
+        self.spool = self.root / 'spool'
+        self.spool.mkdir()
         os.chmod(self.credential, 0o600)
-        self.config = dict(state=str(self.state), credential=str(self.credential), port=8765,
+        self.config = dict(state=str(self.state), spool=str(self.spool), credential=str(self.credential), port=8765,
                            backup_max_bytes=1024, free_percent=15, inodes_free_percent=10,
                            region='us-west-2', namespace='Synthetic/Relay', relay_name='synthetic')
 
@@ -36,7 +39,7 @@ class MonitorTests(unittest.TestCase):
                 for name, value in (headers or {}).items(): handler.send_header(name, value)
                 handler.end_headers()
                 handler.wfile.write(response if response is not None else json.dumps(
-                    {'events': [], 'next_cursor': monitor.CURSOR}).encode())
+                    {'ready': True}).encode())
             def log_message(self, *args): pass
         server = HTTPServer(('127.0.0.1', 0), Handler)
         thread = threading.Thread(target=server.serve_forever); thread.start()
@@ -47,9 +50,9 @@ class MonitorTests(unittest.TestCase):
     def test_readiness_requests_no_event_payload_and_rejects_invalid_response(self):
         seen = self.server()
         monitor.readiness(self.config)
-        self.assertEqual(seen, [{'workspace': 'synthetic-team', 'after': monitor.CURSOR}])
+        self.assertEqual(seen, [{'workspace': 'synthetic-team'}])
         for raw in (b'{}', b'x'*257, b'{"events":["private"],"next_cursor":1}',
-                    b'{"events":[],"next_cursor":true}'):
+                    b'{"ready":1}', b'{"ready":true,"private":1}'):
             with self.subTest(raw=raw):
                 self.server(response=raw)
                 with self.assertRaises(Exception): monitor.readiness(self.config)
@@ -102,7 +105,10 @@ class MonitorTests(unittest.TestCase):
         self.config['port']=server.server_port
         self.assertEqual(monitor.sample(self.config)['Readiness'],1)
         credential=json.loads(self.credential.read_bytes());credential['token']='x'*40
-        self.credential.write_text(json.dumps(credential))
+        invalid = self.root / 'invalid-readiness.json'
+        invalid.write_text(json.dumps(credential))
+        invalid.chmod(0o600)
+        self.config['credential'] = str(invalid)
         self.assertEqual(monitor.sample(self.config)['Readiness'],0)
 
     def test_disk_and_inode_pressure_and_reserved_backup_space(self):
@@ -110,12 +116,80 @@ class MonitorTests(unittest.TestCase):
         for changes, expected in (({},0),({'f_bavail':150},1),({'f_favail':100},1),
                                   ({'f_bavail':257,'f_frsize':1024**2},0)):
             with self.subTest(changes=changes), patch.object(monitor.os,'statvfs',return_value=SimpleNamespace(**(base|changes))):
-                self.assertEqual(monitor.filesystem(self.config)['StoragePressure'],expected)
+                self.assertEqual(monitor.storage_pressure(self.config, {**monitor.filesystem(self.config), **monitor.filesystem(self.config, 'spool')}),expected)
         self.config['backup_max_bytes']=200*1024**2
         with patch.object(monitor.os,'statvfs',return_value=SimpleNamespace(**base)):
-            self.assertEqual(monitor.filesystem(self.config)['StoragePressure'],1)
+            self.assertEqual(monitor.storage_pressure(self.config, {**monitor.filesystem(self.config), **monitor.filesystem(self.config, 'spool')}),1)
         with patch.object(monitor.os,'statvfs',return_value=SimpleNamespace(**(base|{'f_files':0}))):
             with self.assertRaises(monitor.MonitorError): monitor.filesystem(self.config)
+
+    def test_backup_reserve_uses_separate_spool_filesystem(self):
+        self.config['spool'] = str(self.root / 'spool')
+        state = SimpleNamespace(f_blocks=1000, f_bavail=500, f_frsize=1024**2, f_files=1000, f_favail=500)
+        spool = SimpleNamespace(f_blocks=10000, f_bavail=1, f_frsize=1024**2, f_files=1000, f_favail=500)
+        def observation(path):
+            return state if str(path) == self.config['state'] else spool
+        with patch.object(monitor.os, 'statvfs', side_effect=observation), patch.object(monitor, 'readiness'):
+            result = monitor.sample(self.config)
+        self.assertEqual(result['StoragePressure'], 1)
+        self.assertEqual(result['SpoolAvailableDiskBytes'], 1024**2)
+
+    def test_state_mount_does_not_inherit_spool_reserve_and_failure_is_visible(self):
+        state = SimpleNamespace(f_blocks=100, f_bavail=50, f_frsize=1024**2, f_files=1000, f_favail=500)
+        spool = SimpleNamespace(f_blocks=10000, f_bavail=5000, f_frsize=1024**2, f_files=1000, f_favail=500)
+        def observation(path):
+            return state if str(path) == self.config['state'] else spool
+        with patch.object(monitor.os, 'statvfs', side_effect=observation), patch.object(monitor, 'readiness'):
+            self.assertEqual(monitor.sample(self.config)['StoragePressure'], 0)
+        def failed_spool(path):
+            if str(path) == self.config['spool']:
+                raise OSError('private path')
+            return state
+        with patch.object(monitor.os, 'statvfs', side_effect=failed_spool), patch.object(monitor, 'readiness'):
+            result = monitor.sample(self.config)
+        self.assertEqual(result['MonitorComplete'], 0)
+        self.assertIn('AvailableDiskBytes', result)
+        self.assertNotIn('StoragePressure', result)
+
+    def test_readiness_scope_cannot_read_or_write_member_api_and_revocation_reloads(self):
+        class Index(context_relay.Relay):
+            def __init__(service, state):
+                service.state = state
+                service.workspace, service.owner = 'synthetic-team', 'jp'
+        service = Index(self.state)
+        credential = json.loads(self.credential.read_bytes())
+        member = json.loads((self.state / 'credentials/jp.json').read_bytes())
+        before = hashlib.sha256((self.state / 'relay.sqlite').read_bytes()).hexdigest()
+        self.assertEqual(service.handle(credential['token'], 'readiness', {'workspace':'synthetic-team'}), {'ready':True})
+        for operation in ('context', 'updates', 'publish', 'propose', 'accept'):
+            with self.subTest(operation=operation), self.assertRaises(context_relay.Rejected) as rejected:
+                service.handle(credential['token'], operation, {'workspace':'synthetic-team'})
+            self.assertEqual(rejected.exception.status, 401)
+        with self.assertRaises(context_relay.Rejected):
+            service.handle(member['token'], 'readiness', {'workspace':'synthetic-team'})
+        with self.assertRaises(context_relay.Rejected):
+            service.handle(credential['token'], 'readiness', {'workspace':'other'})
+        self.assertEqual(before, hashlib.sha256((self.state / 'relay.sqlite').read_bytes()).hexdigest())
+        context_relay.revoke_readiness(self.state)
+        with self.assertRaises(context_relay.Rejected):
+            service.handle(credential['token'], 'readiness', {'workspace':'synthetic-team'})
+        self.assertEqual(service.handle(member['token'], 'updates', {'workspace':'synthetic-team','after':0})['events'], [])
+
+    def test_readiness_provision_never_overwrites_or_borrows_a_member_token(self):
+        before = self.credential.read_bytes()
+        with self.assertRaises(FileExistsError): context_relay.provision_readiness(self.state)
+        self.assertEqual(before, self.credential.read_bytes())
+        token = json.loads((self.state / 'credentials/jp.json').read_bytes())['token']
+        context_relay.revoke_readiness(self.state)
+        with patch.object(context_relay.secrets, 'token_urlsafe', return_value=token):
+            with self.assertRaises(context_relay.Rejected): context_relay.provision_readiness(self.state)
+        self.assertFalse(self.credential.exists())
+
+    def test_monitor_rejects_ordinary_member_credential_even_on_successful_http(self):
+        self.server()
+        self.config['credential'] = str(self.state / 'credentials/jp.json')
+        os.chmod(self.config['credential'], 0o600)
+        self.assertEqual(monitor.sample(self.config)['Readiness'], 0)
 
     def test_inventory_is_bounded_and_never_follows_links(self):
         (self.state/'bad-link').symlink_to(self.credential)

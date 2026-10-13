@@ -12,7 +12,6 @@ import stat
 import time
 from urllib.request import Request, build_opener, HTTPRedirectHandler, ProxyHandler
 
-CURSOR = 2 ** 63 - 1
 RESERVE_BYTES = 256 * 1024 * 1024
 MAX_ENTRIES = 50_000
 METRICS = {
@@ -20,6 +19,8 @@ METRICS = {
     'AvailableDiskBytes': 'Bytes', 'DiskFreePercent': 'Percent',
     'InodesFreePercent': 'Percent', 'StateAllocatedBytes': 'Bytes',
     'RetainedRevisions': 'Count', 'RetainedEvents': 'Count',
+    'SpoolAvailableDiskBytes': 'Bytes', 'SpoolDiskFreePercent': 'Percent',
+    'SpoolInodesFreePercent': 'Percent',
 }
 
 
@@ -45,10 +46,10 @@ def private_json(path, owner):
 
 def validate_config(config):
     require(isinstance(config, dict) and set(config) == {
-        'state', 'credential', 'port', 'backup_max_bytes', 'free_percent',
+        'state', 'spool', 'credential', 'port', 'backup_max_bytes', 'free_percent',
         'inodes_free_percent', 'region', 'namespace', 'relay_name',
     })
-    for name in ('state', 'credential'):
+    for name in ('state', 'spool', 'credential'):
         require(isinstance(config[name], str) and Path(config[name]).is_absolute())
     require(type(config['port']) is int and 1 <= config['port'] <= 65535)
     require(type(config['backup_max_bytes']) is int and 0 < config['backup_max_bytes'] <= 2 ** 40)
@@ -67,17 +68,17 @@ class NoRedirect(HTTPRedirectHandler):
 
 
 def readiness(config):
-    # Asking beyond the highest representable cursor avoids loading event content.
-    # No member name, selected context or credential leaves the loopback request.
+    # A separate server-enforced readiness scope cannot read context or write state.
     owner = Path(config['state']).stat().st_uid
     credential = private_json(config['credential'], owner)
-    require(isinstance(credential, dict) and set(credential) == {'workspace', 'token'})
+    require(isinstance(credential, dict) and set(credential) == {'workspace', 'token', 'scope'}
+            and credential['scope'] == 'relay-readiness.v1')
     require(isinstance(credential['workspace'], str) and
             re.fullmatch(r'[a-zA-Z0-9][a-zA-Z0-9._-]{0,79}', credential['workspace']))
     require(isinstance(credential['token'], str) and
             re.fullmatch(r'[A-Za-z0-9_-]{30,100}', credential['token']))
-    request = Request('http://127.0.0.1:' + str(config['port']) + '/updates',
-                      data=json.dumps({'workspace': credential['workspace'], 'after': CURSOR}).encode(),
+    request = Request('http://127.0.0.1:' + str(config['port']) + '/readiness',
+                      data=json.dumps({'workspace': credential['workspace']}).encode(),
                       headers={'Authorization': 'Bearer ' + credential['token'],
                                'Content-Type': 'application/json'})
     with build_opener(ProxyHandler({}), NoRedirect()).open(request, timeout=3) as response:
@@ -85,24 +86,26 @@ def readiness(config):
         raw = response.read(257)
         require(len(raw) <= 256)
         result = json.loads(raw)
-        require(isinstance(result, dict) and set(result) == {'events', 'next_cursor'}
-                and result['events'] == [] and type(result['next_cursor']) is int
-                and result['next_cursor'] == CURSOR)
+        require(isinstance(result, dict) and set(result) == {'ready'} and result['ready'] is True)
 
 
-def filesystem(config):
-    info = os.statvfs(config['state'])
+def filesystem(config, field='state'):
+    info = os.statvfs(config[field])
     require(info.f_blocks > 0 and info.f_frsize > 0 and
             0 <= info.f_bavail <= info.f_blocks and info.f_files > 0 and
             0 <= info.f_favail <= info.f_files)
-    free = info.f_bavail * info.f_frsize
-    percent = 100 * info.f_bavail / info.f_blocks
-    inodes = 100 * info.f_favail / info.f_files
-    # Preserve the backup controller's two-copy staging reserve, even on small disks.
-    pressure = (free <= 2 * config['backup_max_bytes'] + RESERVE_BYTES or
-                percent <= config['free_percent'] or inodes <= config['inodes_free_percent'])
-    return {'AvailableDiskBytes': free, 'DiskFreePercent': percent,
-            'InodesFreePercent': inodes, 'StoragePressure': int(pressure)}
+    prefix = '' if field == 'state' else 'Spool'
+    return {prefix + 'AvailableDiskBytes': info.f_bavail * info.f_frsize,
+            prefix + 'DiskFreePercent': 100 * info.f_bavail / info.f_blocks,
+            prefix + 'InodesFreePercent': 100 * info.f_favail / info.f_files}
+
+
+def storage_pressure(config, result):
+    # Match relay_backup's reserve on the spool, not an unrelated state mount.
+    return int(result['SpoolAvailableDiskBytes'] <= 2 * config['backup_max_bytes'] + RESERVE_BYTES or
+               any(result[prefix + 'DiskFreePercent'] <= config['free_percent'] or
+                   result[prefix + 'InodesFreePercent'] <= config['inodes_free_percent']
+                   for prefix in ('', 'Spool')))
 
 
 def state_size(config, clock=time.monotonic):
@@ -119,6 +122,8 @@ def state_size(config, clock=time.monotonic):
         allocated += info.st_blocks * 512
         with os.scandir(fd) as children:
             for child in children:
+                if fd == root_fd and child.name == 'credentials':
+                    continue  # Deployment hides ordinary member credentials from the monitor.
                 info = child.stat(follow_symlinks=False)
                 require(stat.S_ISDIR(info.st_mode) or stat.S_ISREG(info.st_mode))
                 if stat.S_ISDIR(info.st_mode):
@@ -131,11 +136,11 @@ def state_size(config, clock=time.monotonic):
                     entries += 1
                     require(entries <= MAX_ENTRIES and clock() - started <= 10)
                     allocated += info.st_blocks * 512
-    fd = os.open(state, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    root_fd = os.open(state, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     try:
-        visit(fd)
+        visit(root_fd)
     finally:
-        os.close(fd)
+        os.close(root_fd)
     return {'StateAllocatedBytes': allocated}
 
 
@@ -162,11 +167,16 @@ def sample(config):
     except Exception:
         # No raw errors, HTTP bodies, credentials or filenames in diagnostics.
         pass
-    for collector in (filesystem, state_size, counts):
+    for collector in (lambda: filesystem(config), lambda: filesystem(config, 'spool'),
+                      lambda: state_size(config), lambda: counts(config)):
         try:
-            result.update(collector(config))
+            result.update(collector())
         except Exception:
             result['MonitorComplete'] = 0
+    try:
+        result['StoragePressure'] = storage_pressure(config, result)
+    except KeyError:
+        result['MonitorComplete'] = 0
     return result
 
 

@@ -220,6 +220,11 @@ jobs:
         run: >-
           uv run --no-project --python 3.12 python context_relay_demo.py
           --casita output/casita-build/debug/casita --output output/live-context-relay
+      - name: Verify bounded two-process synthetic relay load
+        run: >-
+          uv run --no-project --python 3.12 python relay_load.py
+          --casita output/casita-build/debug/casita --output output/relay-load
+          --rounds 2 --tasks 2 --payload-bytes 1024
       - name: Restore synthetic build artifacts without rebuilding
         run: |
           uv run --no-project --python 3.12 python artifacts.py --casita output/casita-build/debug/casita --output output/build-artifacts

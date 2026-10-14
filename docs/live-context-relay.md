@@ -264,3 +264,8 @@ the real JP/CJ task-start and handoff are verified.
 For an explicitly opted-in deployment, the [read-only health and storage monitor](relay-monitoring.md)
 provides scoped readiness, separate state/spool pressure and retained-state
 measurements. Its readiness credential requires the reviewed server upgrade. Its synthetic checks do not qualify live alarms or concurrent capacity.
+
+The [two-client load harness](relay-load.md) measures a bounded synthetic
+contention workload, HTTP/native restore latency, process resources and retained
+state growth on a fresh Linux relay. Local results do not establish deployed
+pilot capacity.

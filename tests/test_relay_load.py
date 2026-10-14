@@ -1,0 +1,147 @@
+import io
+import fcntl
+import json
+import os
+from pathlib import Path
+import tempfile
+import unittest
+from unittest.mock import patch
+from urllib.error import HTTPError
+
+import relay_load as load
+
+
+class LoadTests(unittest.TestCase):
+    def test_nearest_rank_tail_and_empty_samples(self):
+        result = load.latency_summary([{"milliseconds": n} for n in range(1, 21)])
+        self.assertEqual(result["p50_ms"], 10)
+        self.assertEqual(result["p95_ms"], 19)
+        self.assertEqual(result["max_ms"], 20)
+        with self.assertRaisesRegex(ValueError, "no latency"):
+            load.latency_summary([])
+
+    def test_fixture_payload_bounds_and_versions_are_distinct(self):
+        first = load.fixture("task-alpha", 0, 4096)
+        second = load.fixture("task-alpha", 1, 4096)
+        self.assertEqual(len(first["files"][0]["text"].encode()), 4096)
+        self.assertTrue(first["files"][0]["text"].startswith("SYNTHETIC"))
+        self.assertNotEqual(first["files"][0]["sha256"], second["files"][0]["sha256"])
+        self.assertEqual(first, load.fixture("task-alpha", 0, 4096))
+
+    def test_only_publish_conflicts_are_expected_and_not_retried(self):
+        for operation, code, expected in (("publish", 409, True), ("context", 409, False),
+                                          ("publish", 503, False), ("publish", 401, False)):
+            rows = []
+            error = HTTPError("http://127.0.0.1:1", code, "synthetic failure", {}, None)
+            with self.subTest(operation=operation, code=code), patch.object(
+                    load, "client", side_effect=error) as request:
+                if expected:
+                    self.assertEqual(load.timed_request(rows, "unused", "unused", operation, {}),
+                                     (409, None))
+                else:
+                    with self.assertRaises(HTTPError):
+                        load.timed_request(rows, "unused", "unused", operation, {})
+                self.assertEqual(request.call_count, 1)
+                self.assertEqual(rows[0]["status"], code)
+
+    def test_storage_deduplicates_allocated_hardlinks_and_refuses_symlinks(self):
+        with tempfile.TemporaryDirectory() as temp:
+            folder = Path(temp)
+            source = folder / "source"
+            source.write_bytes(b"synthetic" * 1024)
+            os.link(source, folder / "copy")
+            result = load.storage(folder)
+            self.assertEqual(result["allocated_bytes"],
+                             (source.stat().st_blocks + folder.stat().st_blocks) * 512)
+            self.assertEqual(result["logical_file_bytes"], source.stat().st_size * 2)
+            (folder / "link").symlink_to(source)
+            with self.assertRaisesRegex(ValueError, "symlink"):
+                load.storage(folder)
+
+    @unittest.skipUnless(load.platform.system() == "Linux", "requires Linux /proc")
+    def test_invalid_or_existing_output_does_not_initialize_state(self):
+        with tempfile.TemporaryDirectory() as temp, patch.object(load, "initialize") as initialize:
+            for kwargs in ({"rounds": 0}, {"tasks": 21}, {"payload_bytes": 16001},
+                           {"sample_interval": 0}, {"sample_interval": float("nan")}):
+                with self.subTest(kwargs=kwargs), self.assertRaises(ValueError):
+                    load.run("/bin/true", Path(temp) / "new", **kwargs)
+            with self.assertRaises(FileExistsError):
+                load.run("/bin/true", Path(temp))
+            initialize.assert_not_called()
+
+    def run_worker(self, events, scopes):
+        with tempfile.TemporaryDirectory() as temp:
+            folder = Path(temp)
+            (folder / "1.go").touch()
+            config = {"output": temp, "credential": "unused", "name": "beta",
+                      "gates": temp, "cursor": 8, "payload_bytes": 256,
+                      "url": "unused", "binary": "unused"}
+            path = folder / "config.json"
+            path.write_text(json.dumps(config))
+            responses = [HTTPError("unused", 409, "conflict", {}, None),
+                         {"revision": 7, "pin": {"revision": 7}}, events,
+                         {"events": [], "next_cursor": 9}]
+            selected = {"checkpoint": {}, "accepted_memory": [{"scope": s} for s in scopes]}
+            stream = io.StringIO()
+            with patch.object(load.sys, "stdin", io.StringIO(
+                    '{"round":1,"expected_revision":6}\n')), patch.object(load.sys, "stdout", stream), \
+                    patch.object(load, "client", side_effect=responses) as request, \
+                    patch.object(load, "receive", return_value={}), \
+                    patch.object(load, "task_start", return_value=selected):
+                load.worker(path)
+            return json.loads(stream.getvalue()), request.call_count
+
+    def test_worker_conflict_still_restores_and_catches_up_without_retry(self):
+        result, requests = self.run_worker({"events": [{"cursor": 9, "kind": "publish",
+                                                       "revision": 7, "pin": {"revision": 7}}],
+                                            "next_cursor": 9}, ["workspace"])
+        self.assertEqual(result["publish_status"], 409)
+        self.assertEqual(result["cursor"], 9)
+        self.assertEqual(requests, 4)
+
+    def test_worker_rejects_skipped_events_and_task_memory_leakage(self):
+        with self.assertRaisesRegex(ValueError, "noncontiguous"):
+            self.run_worker({"events": [{"cursor": 10, "kind": "publish"}], "next_cursor": 10},
+                            ["workspace"])
+        with self.assertRaisesRegex(ValueError, "task memory selection"):
+            self.run_worker({"events": [{"cursor": 9, "kind": "publish"}], "next_cursor": 9},
+                            ["workspace", "task"])
+        with self.assertRaisesRegex(ValueError, "event snapshot pin differs"):
+            self.run_worker({"events": [{"cursor": 9, "kind": "publish", "revision": 7,
+                                          "pin": {"revision": 6}}], "next_cursor": 9},
+                            ["workspace"])
+
+    @unittest.skipUnless(load.platform.system() == "Linux", "requires Linux /proc")
+    def test_native_start_failure_emits_no_success_receipt_and_releases_lock(self):
+        with tempfile.TemporaryDirectory() as temp:
+            output = Path(temp) / "failed"
+            with self.assertRaisesRegex(ValueError, "child process exited"):
+                load.run("/bin/false", output, rounds=1, tasks=2, payload_bytes=256)
+            self.assertFalse((output / "receipt.json").exists())
+            self.assertFalse(json.loads((output / "failure.json").read_bytes())["ok"])
+            with (output / "relay/server.lock").open("rb") as lock:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+    def test_proc_stat_accounts_for_waited_children_and_command_parentheses(self):
+        fields = ["0"] * 22
+        for index, value in ((11, "10"), (12, "20"), (13, "30"), (14, "40"), (21, "5")):
+            fields[index] = value
+        with patch.object(Path, "read_text", return_value="1 (synthetic (command)) " + " ".join(fields)), \
+                patch.object(load.os, "sysconf", side_effect=lambda name: {
+                    "SC_CLK_TCK": 100, "SC_PAGE_SIZE": 4096}[name]):
+            usage = load.proc_usage(1)
+        self.assertEqual(usage["cpu_seconds_including_waited_children"], 1)
+        self.assertEqual(usage["rss_bytes"], 20480)
+
+    def test_resource_sampler_propagates_measurement_failure(self):
+        process = type("SyntheticProcess", (), {"pid": 1})()
+        sampler = load.Sampler({"server": process}, .01)
+        with patch.object(load, "tree_rss", side_effect=PermissionError("synthetic denied")):
+            sampler.thread.start()
+            sampler.thread.join(timeout=2)
+            with self.assertRaises(PermissionError):
+                sampler.stop()
+
+
+if __name__ == "__main__":
+    unittest.main()

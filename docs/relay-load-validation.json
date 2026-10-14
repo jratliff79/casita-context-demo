@@ -1,0 +1,370 @@
+{
+  "build": {
+    "cargo": "cargo 1.99.0 (5f94df478 2026-08-27)",
+    "cargo_lock_sha256": "b501acdc69574ec7f1daf4fa597cc570e891d7fef764e53238f9c5a0adb20664",
+    "casita_source_revision": "9d7a2f42b14d86189662e21241f72a55ccb42cb6",
+    "profile": "dev, unoptimized with debuginfo",
+    "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)"
+  },
+  "checks": {
+    "harness_regressions_passed": 10,
+    "native_core_demo_passed": true,
+    "native_smoke_rounds_passed": 2,
+    "test_source_sha256": "b5bc82c79b5a0610f4fad184e41f26c2d8c821e3a8cb75c714a96ebaa31d8122",
+    "unit_interpreter": "Python 3.14.7",
+    "unit_tests_passed": 389
+  },
+  "evidence_format": "Reviewed numeric summaries; full per-round receipts remain in ignored output/",
+  "limits": [
+    "No production capacity or resize conclusion",
+    "No SSH/network-device latency measurement",
+    "No retention or pruning; all server revisions retained",
+    "Synthetic payload hashes differ but remain compressible ASCII",
+    "Sampled RSS can miss short native-process peaks; it is not unique physical memory",
+    "No think time inside each round; barrier-coordinated closed-loop workload"
+  ],
+  "pins": {
+    "casita_binary_sha256": "dc5b07464177dd566d6a59c603454db6f98e02e8e2bb1b3ec3ba92d5c6da23fa",
+    "source_sha256": {
+      "context_relay.py": "151b29895865e0f3bb292f0b7b9222c2ffbaf59a0e178055761e788c26155ce1",
+      "demo.py": "6e4f8d34c17657986a2bcf4f56cb95ded5d714bcac471534291ccd1fe8df88ae",
+      "relay_load.py": "25c60e29b905df35f59133430f32e421151b05363da435714b652db4a7cfe02d",
+      "relay_readiness.py": "8655ff1d2ca34adf54e8f0e6a5bf3452d11a312c63ece41699ce276ae0bc918a",
+      "relay_validation.py": "17bd64cc7e1ce41aafae80e64103a3d412d4e20b76c5d44245726afefcbf16ae"
+    }
+  },
+  "recorded_at": "2026-10-14T05:39:51.818392+00:00",
+  "runs": {
+    "large": {
+      "environment": {
+        "logical_cpu_count": 16,
+        "machine": "x86_64",
+        "physical_memory_bytes": 33356304384,
+        "python": "3.14.7",
+        "system": "Linux"
+      },
+      "measurement": {
+        "client_artifacts": {
+          "alpha": {
+            "allocated_bytes": 103796736,
+            "files": 362,
+            "logical_file_bytes": 104386912
+          },
+          "beta": {
+            "allocated_bytes": 103796736,
+            "files": 362,
+            "logical_file_bytes": 104386909
+          }
+        },
+        "client_cycle_latency": {
+          "count": 40,
+          "max_ms": 1897.9499919951195,
+          "mean_ms": 1567.4964983751124,
+          "min_ms": 1316.0725199995795,
+          "p50_ms": 1542.0698340021772,
+          "p95_ms": 1879.2288700060453
+        },
+        "cpu_scope": "process plus waited native children; load window includes client startup, coordinator pacing and storage scans",
+        "elapsed_seconds": 32.192818160998286,
+        "http_latency": {
+          "context_200": {
+            "count": 40,
+            "max_ms": 25.725847997819073,
+            "mean_ms": 18.262733574738377,
+            "min_ms": 9.437721004360355,
+            "p50_ms": 19.128722007735632,
+            "p95_ms": 23.488349994295277
+          },
+          "publish_200": {
+            "count": 20,
+            "max_ms": 1277.7467270061607,
+            "mean_ms": 984.257346198865,
+            "min_ms": 783.6119099956704,
+            "p50_ms": 943.9709980069892,
+            "p95_ms": 1263.7456020020181
+          },
+          "publish_409": {
+            "count": 20,
+            "max_ms": 1280.2299979957752,
+            "mean_ms": 985.8896734993323,
+            "min_ms": 784.8794530000305,
+            "p50_ms": 945.3640280116815,
+            "p95_ms": 1266.1816979962168
+          },
+          "updates_200": {
+            "count": 80,
+            "max_ms": 18.20403400051873,
+            "mean_ms": 11.241233686996566,
+            "min_ms": 6.631436990574002,
+            "p50_ms": 11.048663000110537,
+            "p95_ms": 13.654129987116903
+          }
+        },
+        "memory_scope": "sampled summed RSS of each process and its live descendants; shared pages may be counted twice",
+        "native_restore_latency": {
+          "count": 40,
+          "max_ms": 580.3789880010299,
+          "mean_ms": 540.7931880010437,
+          "min_ms": 494.7847199946409,
+          "p50_ms": 547.5294450006913,
+          "p95_ms": 575.6510939972941
+        },
+        "percentiles": "nearest-rank; small samples are descriptive, not an SLA",
+        "resources": {
+          "alpha": {
+            "cpu_seconds_including_waited_children": 9.82,
+            "sampled_peak_tree_rss_bytes": 139796480
+          },
+          "beta": {
+            "cpu_seconds_including_waited_children": 9.72,
+            "sampled_peak_tree_rss_bytes": 141746176
+          },
+          "server": {
+            "cpu_seconds_including_waited_children": 18.58,
+            "sampled_peak_tree_rss_bytes": 181604352
+          }
+        },
+        "restore_scope": "fresh-store init, archive verify/import, checkout, fsck and snapshot verification",
+        "retained_allocated_growth_bytes": 16138240,
+        "rounds_per_second": 0.6212565765438353,
+        "rss_sample_count": 635,
+        "rss_sample_interval_seconds": 0.05,
+        "storage_after": {
+          "archives": {
+            "allocated_bytes": 10821632,
+            "files": 42,
+            "logical_file_bytes": 10694203
+          },
+          "counts": {
+            "events": 44,
+            "proposals": 2,
+            "requests": 44,
+            "revisions": 42
+          },
+          "native_store": {
+            "allocated_bytes": 9306112,
+            "files": 291,
+            "logical_file_bytes": 8900299
+          },
+          "total": {
+            "allocated_bytes": 30937088,
+            "files": 337,
+            "logical_file_bytes": 30395824
+          }
+        },
+        "storage_before": {
+          "archives": {
+            "allocated_bytes": 4186112,
+            "files": 22,
+            "logical_file_bytes": 4108589
+          },
+          "counts": {
+            "events": 24,
+            "proposals": 2,
+            "requests": 24,
+            "revisions": 22
+          },
+          "native_store": {
+            "allocated_bytes": 6414336,
+            "files": 151,
+            "logical_file_bytes": 6222630
+          },
+          "total": {
+            "allocated_bytes": 14798848,
+            "files": 177,
+            "logical_file_bytes": 14521597
+          }
+        }
+      },
+      "production_tested": false,
+      "raw_receipt": "output/load-large-reviewed-20261013/receipt.json",
+      "receipt_sha256": "d4337712de643d0399e78c04ad067cfc69e69fb256497420937976979d5ab6f7",
+      "received_source_executed": false,
+      "recorded_at": "2026-10-14T05:39:08.024913+00:00",
+      "remote_devices_tested": false,
+      "verification": {
+        "acknowledged_history_counts": true,
+        "contiguous_event_catchup": true,
+        "exact_final_checkpoints": true,
+        "same_pin_each_round": true,
+        "task_memory_filtering": true
+      },
+      "workload": {
+        "accepted_memory_entries": 2,
+        "commits": 20,
+        "expected_conflicts": 20,
+        "payload_bytes_per_task": 16000,
+        "publish_attempts": 40,
+        "rounds": 20,
+        "tasks": 20
+      }
+    },
+    "small": {
+      "environment": {
+        "logical_cpu_count": 16,
+        "machine": "x86_64",
+        "physical_memory_bytes": 33356304384,
+        "python": "3.14.7",
+        "system": "Linux"
+      },
+      "measurement": {
+        "client_artifacts": {
+          "alpha": {
+            "allocated_bytes": 87904256,
+            "files": 342,
+            "logical_file_bytes": 88585402
+          },
+          "beta": {
+            "allocated_bytes": 87904256,
+            "files": 342,
+            "logical_file_bytes": 88585399
+          }
+        },
+        "client_cycle_latency": {
+          "count": 40,
+          "max_ms": 901.5030040027341,
+          "mean_ms": 824.0276338008698,
+          "min_ms": 725.6705570034683,
+          "p50_ms": 837.3859749990515,
+          "p95_ms": 891.2747790018329
+        },
+        "cpu_scope": "process plus waited native children; load window includes client startup, coordinator pacing and storage scans",
+        "elapsed_seconds": 17.04914835600357,
+        "http_latency": {
+          "context_200": {
+            "count": 40,
+            "max_ms": 20.217350000166334,
+            "mean_ms": 11.490938174028997,
+            "min_ms": 7.001334000960924,
+            "p50_ms": 11.51458099775482,
+            "p95_ms": 16.281850999803282
+          },
+          "publish_200": {
+            "count": 20,
+            "max_ms": 454.31635998829734,
+            "mean_ms": 377.1361902494391,
+            "min_ms": 292.2072920046048,
+            "p50_ms": 381.58349100558553,
+            "p95_ms": 433.9210119942436
+          },
+          "publish_409": {
+            "count": 20,
+            "max_ms": 455.17034399381373,
+            "mean_ms": 377.14698814743315,
+            "min_ms": 293.1745629903162,
+            "p50_ms": 382.6773219916504,
+            "p95_ms": 424.6189069963293
+          },
+          "updates_200": {
+            "count": 80,
+            "max_ms": 20.776291989022866,
+            "mean_ms": 9.74036476272886,
+            "min_ms": 6.083986008889042,
+            "p50_ms": 9.572713999659754,
+            "p95_ms": 16.12520799972117
+          }
+        },
+        "memory_scope": "sampled summed RSS of each process and its live descendants; shared pages may be counted twice",
+        "native_restore_latency": {
+          "count": 40,
+          "max_ms": 442.4942449986702,
+          "mean_ms": 415.4718136007432,
+          "min_ms": 347.2696639946662,
+          "p50_ms": 420.3260989888804,
+          "p95_ms": 431.7936450097477
+        },
+        "percentiles": "nearest-rank; small samples are descriptive, not an SLA",
+        "resources": {
+          "alpha": {
+            "cpu_seconds_including_waited_children": 6.99,
+            "sampled_peak_tree_rss_bytes": 135426048
+          },
+          "beta": {
+            "cpu_seconds_including_waited_children": 7.0,
+            "sampled_peak_tree_rss_bytes": 137650176
+          },
+          "server": {
+            "cpu_seconds_including_waited_children": 6.01,
+            "sampled_peak_tree_rss_bytes": 157200384
+          }
+        },
+        "restore_scope": "fresh-store init, archive verify/import, checkout, fsck and snapshot verification",
+        "retained_allocated_growth_bytes": 1265664,
+        "rounds_per_second": 1.1730791229203736,
+        "rss_sample_count": 337,
+        "rss_sample_interval_seconds": 0.05,
+        "storage_after": {
+          "archives": {
+            "allocated_bytes": 507904,
+            "files": 26,
+            "logical_file_bytes": 484941
+          },
+          "counts": {
+            "events": 28,
+            "proposals": 2,
+            "requests": 28,
+            "revisions": 26
+          },
+          "native_store": {
+            "allocated_bytes": 4792320,
+            "files": 159,
+            "logical_file_bytes": 4614496
+          },
+          "total": {
+            "allocated_bytes": 5885952,
+            "files": 189,
+            "logical_file_bytes": 5677143
+          }
+        },
+        "storage_before": {
+          "archives": {
+            "allocated_bytes": 98304,
+            "files": 6,
+            "logical_file_bytes": 86897
+          },
+          "counts": {
+            "events": 8,
+            "proposals": 2,
+            "requests": 8,
+            "revisions": 6
+          },
+          "native_store": {
+            "allocated_bytes": 4366336,
+            "files": 39,
+            "logical_file_bytes": 4380268
+          },
+          "total": {
+            "allocated_bytes": 4620288,
+            "files": 49,
+            "logical_file_bytes": 4614791
+          }
+        }
+      },
+      "production_tested": false,
+      "raw_receipt": "output/load-small-reviewed-20261013/receipt.json",
+      "receipt_sha256": "363b320d8ded422b6b230317f7d44e5acea2887049e24d529cfd2ef3628b2287",
+      "received_source_executed": false,
+      "recorded_at": "2026-10-14T05:38:04.935856+00:00",
+      "remote_devices_tested": false,
+      "verification": {
+        "acknowledged_history_counts": true,
+        "contiguous_event_catchup": true,
+        "exact_final_checkpoints": true,
+        "same_pin_each_round": true,
+        "task_memory_filtering": true
+      },
+      "workload": {
+        "accepted_memory_entries": 2,
+        "commits": 20,
+        "expected_conflicts": 20,
+        "payload_bytes_per_task": 4096,
+        "publish_attempts": 40,
+        "rounds": 20,
+        "tasks": 4
+      }
+    }
+  },
+  "runtime_base_commit": "ff74b99170530205ed2a559b37e236b959d5e280",
+  "schema": "casita-relay-load-validation.v1",
+  "scope": "Local synthetic Linux validation; no deployed-host capacity qualification"
+}

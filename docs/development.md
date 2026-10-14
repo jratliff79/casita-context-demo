@@ -56,6 +56,9 @@ signed and unsigned transport check; the signed control rejects replacement pins
 and archives before initializing a receiver store. It remains a
 correctness check using a debug CLI build, not a performance benchmark. The workflow uses read-only
 permissions and does not upload raw receipts, stores or context archives.
+The handoff job also runs two rounds of the [synthetic load harness](relay-load.md)
+with independent native client processes. It checks commits/conflicts, restored
+pins, filtering, cursor continuity and final state; it sets no performance SLA.
 An additional OCI job builds with `--features oci` and checks image/context
 transport plus the trusted host checker. It does not run Apple Container.
 The handoff job also replays a recorded capsule-only AI review of an allowlisted

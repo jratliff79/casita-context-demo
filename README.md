@@ -55,6 +55,7 @@ Choose the example closest to your task:
 | Have two assistants agree on who does what | [Planning exchange](docs/agent-planning.md) | Bounded proposals, counterproposals and two explicit agreements before human review |
 | Consult reviewed team memory when starting a task | [Live context relay](docs/live-context-relay.md) | Authenticated clients, separate task checkpoints, durable updates and owner-reviewed memory |
 | Consult a relay automatically in a local Codex chat | [Codex task-start adapter](docs/codex-task-start.md) | Opt-in SessionStart hook, fresh verified receipt and explicit unavailable-context behavior |
+| Measure two-client relay contention with synthetic state | [Relay load harness](docs/relay-load.md) | Independent native restores, HTTP latency, sampled resources and retained storage growth |
 
 Consider a change to a private pricing calculation. An outside reviewer can see
 the selected diff and source without receiving repository access. If a helper is

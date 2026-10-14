@@ -260,3 +260,7 @@ monitor private disk usage. Preserve the SQLite index and Casita store/archives
 together when taking a backup with the server stopped. Test backup restoration
 before depending on it. A future service should add operational controls after
 the real JP/CJ task-start and handoff are verified.
+
+For an explicitly opted-in deployment, the [read-only health and storage monitor](relay-monitoring.md)
+provides scoped readiness, separate state/spool pressure and retained-state
+measurements. Its readiness credential requires the reviewed server upgrade. Its synthetic checks do not qualify live alarms or concurrent capacity.

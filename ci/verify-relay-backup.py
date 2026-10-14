@@ -3,12 +3,38 @@
 import argparse
 import json
 import os
+import secrets
 from pathlib import Path
 import sys
+import threading
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from relay_readiness import request_proof, response_proof
 import context_relay as relay
 import relay_backup as backup
+import relay_monitor as monitor
+
+
+def observe_native_monitor(restored, spool):
+    http = relay.serve(restored, 0)
+    thread = threading.Thread(target=http.serve_forever, name="native-monitor-qualification")
+    try:
+        thread.start()
+        before = backup.inventory(restored.state, 512*1024*1024)
+        observations = monitor.sample(dict(state=str(restored.state), spool=str(spool),
+            credential=str(restored.state/'monitoring/readiness.json'), port=http.server_port,
+            backup_max_bytes=512*1024*1024, free_percent=15, inodes_free_percent=10,
+            region='us-west-2', namespace='Synthetic/Relay', relay_name='synthetic'))
+        assert observations['Readiness'] == 1
+        if sys.platform == 'linux':
+            assert observations['MonitorComplete'] == 1 and set(observations) == set(monitor.METRICS)
+        assert backup.inventory(restored.state, 512*1024*1024) == before
+        return observations
+    finally:
+        if thread.is_alive():
+            http.shutdown()
+            thread.join()
+        http.server_close()
 
 
 def main():
@@ -32,6 +58,8 @@ def main():
                   runtime_inventory=str(index), max_bytes=512*1024*1024,
                   service='synthetic.service', source_commit='a'*40, casita_commit='b'*40)
     relay.initialize(state, 'synthetic-team', 'jp', ['cj'])
+    relay.provision_readiness(state)
+    readiness_identity = relay.readiness_credential(state)
     service = relay.Relay(state, binary)
     token = json.loads((state/'credentials/jp.json').read_text())['token']
     text = 'SYNTHETIC NOTE\n'
@@ -64,6 +92,21 @@ def main():
     manifest = backup.capture(config, spool/'staging-valid', run=run, ready=lambda c: None)
     assert manifest['revision'] == 3 and manifest['pin'] == pins[-1]
     assert calls == ['is-active', 'stop', 'start']
+    restored_state = spool / 'staging-valid/state'
+    restored = relay.Relay(restored_state, binary)
+    assert relay.readiness_credential(restored_state) == readiness_identity
+    body = {'nonce':secrets.token_hex(32)}
+    response = restored.handle(request_proof(readiness_identity['token'], body), 'readiness', body)
+    assert response == {'ready':True, 'nonce':body['nonce'],
+                        'proof':response_proof(readiness_identity['token'], 'synthetic-team', body['nonce'])}
+    for operation in ('context', 'updates', 'publish', 'propose', 'accept'):
+        try:
+            restored.handle(readiness_identity['token'], operation, {'workspace':'synthetic-team'})
+        except relay.Rejected as error:
+            assert error.status == 401
+        else:
+            raise AssertionError('restored readiness credential escaped scope')
+    observations = observe_native_monitor(restored, spool)
     # Existing relay events predate the explicit request identity fields.
     with relay.connect(state) as db:
         for row in db.execute('SELECT cursor,payload FROM events').fetchall():
@@ -93,6 +136,10 @@ def main():
     backup.cleanup(spool)
     backup.write_json(root/'receipt.json', dict(schema='synthetic-backup-check.v1',
                       native_capture_passed=True, proposal_acceptance_captured=True,
+                      readiness_identity_restore_and_scope_passed=True,
+                      authenticated_native_readiness_passed=True,
+                      native_monitor_complete=bool(observations['MonitorComplete']),
+                      monitor_observation_platform=sys.platform,
                       legacy_request_identity_verified=True, explicit_noop_publish_verified=True,
                       historical_archive_rejected=True,
                       synthetic_service_only=True, aws_accessed=False))

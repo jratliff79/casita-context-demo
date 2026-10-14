@@ -12,12 +12,14 @@ from pathlib import Path, PurePosixPath
 import re
 import secrets
 import sqlite3
+import stat
 import subprocess
 import tempfile
 import time
 from urllib.parse import urlsplit
 from urllib.request import Request, build_opener, ProxyHandler, HTTPRedirectHandler
 
+from relay_readiness import request_proof, response_proof
 from authentication import read_regular
 from demo import Casita, canonical, digest, file_map
 from git_review import git_environment, git_lines
@@ -27,12 +29,20 @@ from relay_validation import (LIMIT, WIRE_LIMIT, SCHEMA, Rejected, require,
                               snapshot as validate_snapshot)
 
 @contextmanager
-def connect(state):
-    db = sqlite3.connect(str(state / "relay.sqlite"), timeout=10)
+def connect(state, readonly=False):
+    state = Path(state)
+    if readonly:
+        path = state / "relay.sqlite"
+        require(stat.S_ISREG(path.lstat().st_mode), "invalid readiness database", 503)
+        db = sqlite3.connect((state.resolve() / "relay.sqlite").as_uri() + "?mode=ro", uri=True, timeout=10)
+    else:
+        db = sqlite3.connect(str(state / "relay.sqlite"), timeout=10)
     db.row_factory = sqlite3.Row
-    db.execute("PRAGMA foreign_keys = ON")
-    db.execute("PRAGMA synchronous = FULL")
     try:
+        if readonly:
+            db.execute("PRAGMA query_only = ON")
+        db.execute("PRAGMA foreign_keys = ON")
+        db.execute("PRAGMA synchronous = FULL")
         with db:
             yield db
     finally:
@@ -61,6 +71,89 @@ def initialize(state, workspace, owner, members):
             db.execute("INSERT INTO members VALUES (?,?,1)", (member, digest(token.encode())))
             (state / "credentials" / (member + ".json")).write_bytes(canonical({
                 "workspace": workspace, "token": token}))
+
+
+def readiness_credential(state):
+    """Dedicated server scope; never insert this token in the member index."""
+    state = Path(state)
+    folder = state / "monitoring"
+    info = folder.lstat()
+    require(stat.S_ISDIR(info.st_mode) and info.st_uid == state.stat().st_uid
+            and stat.S_IMODE(info.st_mode) == 0o700, "invalid readiness identity", 401)
+    fd = os.open(folder / "readiness.json", os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    with os.fdopen(fd, "rb") as stream:
+        info = os.fstat(stream.fileno())
+        require(stat.S_ISREG(info.st_mode) and info.st_uid == state.stat().st_uid
+                and stat.S_IMODE(info.st_mode) == 0o600 and info.st_size <= 4096,
+                "invalid readiness identity", 401)
+        raw = stream.read(4097)
+        require(len(raw) <= 4096, "invalid readiness identity", 401)
+    credential = json.loads(raw)
+    require(isinstance(credential, dict) and set(credential) == {"workspace", "token", "scope"}
+            and identifier(credential["workspace"]) and credential["scope"] == "relay-readiness.v1"
+            and isinstance(credential["token"], str)
+            and re.fullmatch(r"[A-Za-z0-9_-]{30,100}", credential["token"]),
+            "invalid readiness identity", 401)
+    return credential
+
+
+def provision_readiness(state):
+    state = Path(state)
+    require(stat.S_ISDIR(state.lstat().st_mode) and state.stat().st_uid == os.getuid(),
+            "provision as the state owner")
+    with connect(state, readonly=True) as db:
+        workspace = db.execute("SELECT workspace FROM settings").fetchone()["workspace"]
+        require(identifier(workspace), "invalid readiness workspace")
+        token = secrets.token_urlsafe(32)
+        require(db.execute("SELECT 1 FROM members WHERE token_hash=?", (digest(token.encode()),)).fetchone()
+                is None, "readiness identity must be separate from member credentials")
+    folder = state / "monitoring"
+    folder.mkdir(mode=0o700, exist_ok=True)
+    info = folder.lstat()
+    require(stat.S_ISDIR(info.st_mode) and info.st_uid == os.getuid()
+            and stat.S_IMODE(info.st_mode) == 0o700, "invalid monitoring directory")
+    path = folder / "readiness.json"
+    # Publish only a fully written/fsynced file; hard-link publication preserves
+    # no-overwrite semantics. Roll back our destination on any pre-success error.
+    fd, temporary_name = tempfile.mkstemp(prefix=".readiness-", dir=folder)
+    temporary = Path(temporary_name)
+    published = False
+    try:
+        with os.fdopen(fd, "wb") as stream:
+            stream.write(canonical({"workspace": workspace, "token": token, "scope": "relay-readiness.v1"}))
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.link(temporary, path, follow_symlinks=False)
+        published = True
+        temporary.unlink()
+        flush_readiness_directory(folder)
+        flush_readiness_directory(state)
+    except BaseException:
+        if published:
+            path.unlink()
+        temporary.unlink(missing_ok=True)
+        flush_readiness_directory(folder)
+        raise
+
+
+def flush_readiness_directory(folder):
+    fd = os.open(folder, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def revoke_readiness(state):
+    state = Path(state)
+    require(state.stat().st_uid == os.getuid(), "revoke as the state owner")
+    readiness_credential(state)  # Reject unsafe inputs; never silently overwrite a credential.
+    (state / "monitoring/readiness.json").unlink()
+    fd = os.open(state / "monitoring", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
 
 
 class DiscardDiagnostics:
@@ -139,7 +232,26 @@ class Relay:
 
     def handle(self, token, operation, body):
         require(isinstance(body, dict), "body must be a JSON object")
-        with connect(self.state) as db:
+        with connect(self.state, readonly=(operation == "readiness")) as db:
+            if operation == "readiness":
+                try:
+                    credential = readiness_credential(self.state)
+                except Exception:
+                    raise Rejected("readiness identity unavailable", 401) from None
+                require(isinstance(token, str) and re.fullmatch(r"[0-9a-f]{64}", token)
+                        and secrets.compare_digest(token, request_proof(credential["token"], body)),
+                        "unauthorized", 401)
+                # Authenticate first: a bogus proof must not disclose the workspace.
+                require(set(body) == {"nonce"} and credential["workspace"] == self.workspace
+                        and isinstance(body["nonce"], str) and re.fullmatch(r"[0-9a-f]{64}", body["nonce"]),
+                        "invalid readiness request", 403)
+                require(db.execute("SELECT 1 FROM members WHERE token_hash=?",
+                                   (digest(credential["token"].encode()),)).fetchone()
+                        is None, "readiness identity must be separate from member credentials", 401)
+                require(db.execute("SELECT workspace FROM settings").fetchone()["workspace"] == self.workspace,
+                        "workspace unavailable", 503)
+                return {"ready": True, "nonce": body["nonce"],
+                        "proof": response_proof(credential["token"], self.workspace, body["nonce"])}
             # Reload membership every request, including reads and idempotent retries.
             actor = self.authenticate(db, token)
             require(body.get("workspace") == self.workspace, "workspace unavailable", 403)
@@ -262,13 +374,15 @@ def serve(relay, port):
                         "one content length required")
                 length = int(self.headers["Content-Length"])
                 require(0 < length <= LIMIT + 5000, "request exceeds byte limit", 413)
-                require(self.path in ("/context", "/updates", "/publish", "/propose", "/accept"),
+                require(self.path in ("/context", "/updates", "/publish", "/propose", "/accept", "/readiness"),
                         "unknown endpoint", 404)
+                require(self.path != "/readiness" or length <= 512, "readiness request exceeds byte limit", 413)
                 auth = self.headers.get("Authorization", "")
-                require(auth.startswith("Bearer "), "unauthorized", 401)
+                prefix = "RelayReadiness " if self.path == "/readiness" else "Bearer "
+                require(auth.startswith(prefix), "unauthorized", 401)
                 raw = self.rfile.read(length)
                 require(len(raw) == length, "incomplete body")
-                result = relay.handle(auth[7:], self.path[1:], json.loads(raw))
+                result = relay.handle(auth[len(prefix):], self.path[1:], json.loads(raw))
                 status = 200
             except Rejected as error:
                 status, result = error.status, {"error": str(error)}
@@ -455,6 +569,9 @@ def main():
     revoke = sub.add_parser("revoke")
     revoke.add_argument("--state", type=Path, required=True)
     revoke.add_argument("--member", required=True)
+    for name in ("provision-readiness", "revoke-readiness"):
+        command = sub.add_parser(name)
+        command.add_argument("--state", type=Path, required=True)
     staging = sub.add_parser("prepare")
     staging.add_argument("--repo", type=Path, required=True)
     staging.add_argument("--revision", required=True)
@@ -501,6 +618,12 @@ def main():
     elif args.command == "revoke":
         revoke_member(args.state, args.member)
         print("Revoked future requests. Already delivered copies remain with their recipients.")
+    elif args.command == "provision-readiness":
+        provision_readiness(args.state)
+        print("Provisioned readiness-only identity; credential stays in private state.")
+    elif args.command == "revoke-readiness":
+        revoke_readiness(args.state)
+        print("Revoked readiness-only identity for subsequent requests.")
     elif args.command == "prepare":
         data = prepare(args.repo, args.revision, args.file, args.task, args.summary,
                        args.completed, args.pending, args.blocker)

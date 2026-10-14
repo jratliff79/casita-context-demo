@@ -32,7 +32,8 @@ class LoadTests(unittest.TestCase):
         for operation, code, expected in (("publish", 409, True), ("context", 409, False),
                                           ("publish", 503, False), ("publish", 401, False)):
             rows = []
-            error = HTTPError("http://127.0.0.1:1", code, "synthetic failure", {}, None)
+            response = io.BytesIO(b"{}")
+            error = HTTPError("http://127.0.0.1:1", code, "synthetic failure", {}, response)
             with self.subTest(operation=operation, code=code), patch.object(
                     load, "client", side_effect=error) as request:
                 if expected:
@@ -43,6 +44,7 @@ class LoadTests(unittest.TestCase):
                         load.timed_request(rows, "unused", "unused", operation, {})
                 self.assertEqual(request.call_count, 1)
                 self.assertEqual(rows[0]["status"], code)
+                self.assertTrue(response.closed)
 
     def test_storage_deduplicates_allocated_hardlinks_and_refuses_symlinks(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -78,7 +80,7 @@ class LoadTests(unittest.TestCase):
                       "url": "unused", "binary": "unused"}
             path = folder / "config.json"
             path.write_text(json.dumps(config))
-            responses = [HTTPError("unused", 409, "conflict", {}, None),
+            responses = [HTTPError("unused", 409, "conflict", {}, io.BytesIO(b"{}")),
                          {"revision": 7, "pin": {"revision": 7}}, events,
                          {"events": [], "next_cursor": 9}]
             selected = {"checkpoint": {}, "accepted_memory": [{"scope": s} for s in scopes]}

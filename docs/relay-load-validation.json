@@ -7,11 +7,17 @@
     "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)"
   },
   "checks": {
+    "additional_harness_regression_interpreter": "Python 3.14.7",
     "harness_regressions_passed": 10,
     "native_core_demo_passed": true,
+    "native_smoke_interpreters": [
+      "Python 3.14.7",
+      "Python 3.9.25"
+    ],
     "native_smoke_rounds_passed": 2,
-    "test_source_sha256": "b5bc82c79b5a0610f4fad184e41f26c2d8c821e3a8cb75c714a96ebaa31d8122",
-    "unit_interpreter": "Python 3.14.7",
+    "recorded_at": "2026-10-14T05:45:22.758380+00:00",
+    "test_source_sha256": "3448009e1d3d797f0298bcdffae2de0e40ee973c8668dabe6f62d366a7d17c71",
+    "unit_interpreter": "Python 3.9.25",
     "unit_tests_passed": 389
   },
   "evidence_format": "Reviewed numeric summaries; full per-round receipts remain in ignored output/",

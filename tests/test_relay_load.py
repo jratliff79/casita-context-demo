@@ -1,17 +1,65 @@
 import io
 import fcntl
+import ast
 import json
 import os
 from pathlib import Path
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 from urllib.error import HTTPError
 
 import relay_load as load
 
 
 class LoadTests(unittest.TestCase):
+    def test_source_pins_cover_reachable_local_imports(self):
+        pending, seen = ["relay_load.py"], set()
+        while pending:
+            name = pending.pop()
+            if name in seen:
+                continue
+            seen.add(name)
+            for node in ast.walk(ast.parse((load.HERE / name).read_text())):
+                modules = []
+                if isinstance(node, ast.Import):
+                    modules = [alias.name for alias in node.names]
+                elif isinstance(node, ast.ImportFrom) and node.module:
+                    modules = [node.module]
+                for module in modules:
+                    candidate = module.split(".")[0] + ".py"
+                    if (load.HERE / candidate).is_file():
+                        pending.append(candidate)
+        self.assertTrue(seen.issubset(load.SOURCE_FILES), seen - set(load.SOURCE_FILES))
+
+    def test_cleanup_failure_emits_only_failure_and_attempts_other_resources(self):
+        with tempfile.TemporaryDirectory() as temp:
+            output = Path(temp)
+            broken = Mock()
+            broken.close.side_effect = OSError("synthetic close failure")
+            other = io.StringIO()
+            receipt = {"ok": True, "verification": {}}
+            with self.assertRaisesRegex(RuntimeError, "cleanup failed"):
+                load.finish(output, receipt, None, [], [broken, other])
+            self.assertTrue(other.closed)
+            self.assertFalse((output / "receipt.json").exists())
+            self.assertFalse((output / "receipt-pending.json").exists())
+            self.assertFalse(json.loads((output / "failure.json").read_bytes())["ok"])
+
+    def test_success_receipt_is_published_after_all_resources_close(self):
+        with tempfile.TemporaryDirectory() as temp:
+            output = Path(temp)
+            log = Mock()
+            def closed_before_receipt():
+                self.assertFalse((output / "receipt.json").exists())
+            log.close.side_effect = closed_before_receipt
+            receipt = {"ok": True, "verification": {}}
+            load.finish(output, receipt, None, [], [log])
+            log.close.assert_called_once()
+            self.assertTrue(json.loads((output / "receipt.json").read_bytes())[
+                "verification"]["owned_resource_cleanup"])
+            self.assertFalse((output / "failure.json").exists())
+
     def test_nearest_rank_tail_and_empty_samples(self):
         result = load.latency_summary([{"milliseconds": n} for n in range(1, 21)])
         self.assertEqual(result["p50_ms"], 10)

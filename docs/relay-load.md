@@ -37,11 +37,16 @@ checks task/workspace memory filtering, and catches up its own event cursor.
 Both clients must report the same snapshot pin each round. The coordinator
 checks exact final checkpoint bytes, total revisions/events/acknowledged
 requests, and every expected commit/conflict. Failed runs exit nonzero and
-write `failure.json`, rather than a successful performance receipt. Owned
-server/client process groups are terminated on completion or failure.
+write `failure.json`, rather than a successful performance receipt. Cleanup
+attempts every owned server/client process group and stream even if one fails.
+The success receipt is published atomically only after cleanup succeeds.
 Received source and notes are never executed.
 
 ## Measurements and their limits
+
+Source pins cover the reachable local Python modules, including authentication
+and lazily imported helpers, and are rechecked at the end. They record file
+identity, not execution attestation.
 
 `receipt.json` contains the workload, executable/source hashes, host CPU/memory
 counts, per-round observations, verification results and these measurements:
@@ -52,8 +57,10 @@ counts, per-round observations, verification results and these measurements:
 - Native restore latency includes fresh-store init, archive verification/import,
   checkout, native fsck and snapshot validation. It is separate from HTTP time.
 - Client cycle latency covers publish, fetch, native restore and event catch-up.
-- Server/client CPU seconds include native children waited for by those
-  processes. The load window includes first-round client interpreter startup,
+- Server CPU is a delta from its post-seeding baseline; client CPU is each
+  worker's total from process birth, including all interpreter startup/imports.
+  Both include waited native children. The wall-time load window starts after
+  client spawn and CPU baseline reads, so it includes only remaining startup,
   rendezvous pacing and the coordinator's per-round storage scans.
 - Sampled peak process-tree RSS includes live native children. The default
   50 ms sampling can miss brief peaks. RSS can count shared pages more than once
@@ -106,9 +113,9 @@ Rust 1.99.0. This differs from CI's compiler and the deployed environment.
 
 | Measurement | 4 tasks × 4096 bytes | 20 tasks × 16000 bytes |
 | --- | ---: | ---: |
-| Successful publish p95 | 434 ms | 1264 ms |
-| Native restore p95 (40 restores) | 432 ms | 576 ms |
-| Sampled server tree peak RSS | 149.9 MiB | 173.2 MiB |
+| Successful publish p95 | 425 ms | 1240 ms |
+| Native restore p95 (40 restores) | 464 ms | 598 ms |
+| Sampled server tree peak RSS | 145.7 MiB | 173.6 MiB |
 | Retained allocated growth (20 commits) | 1.21 MiB | 15.39 MiB |
 | Final retained revisions (including seeds) | 26 | 42 |
 

@@ -21,6 +21,8 @@ from context_relay import (canonical, checkpoint, client, connect, digest,
 
 HERE = Path(__file__).resolve().parent
 NAMES = ("alpha", "beta")
+SOURCE_FILES = ("authentication.py", "context_relay.py", "demo.py", "git_review.py",
+                "relay_load.py", "relay_readiness.py", "relay_validation.py", "review_handoff.py")
 
 
 def require(condition, message):
@@ -231,9 +233,47 @@ def stop(process):
         os.killpg(process.pid, signal.SIGKILL)
     except ProcessLookupError:
         pass
-    for stream in (process.stdin, process.stdout):
-        if stream:
-            stream.close()
+
+
+def cleanup(sampler, processes, logs):
+    failures = []
+    def attempt(action):
+        try:
+            action()
+        except BaseException as error:
+            failures.append(error)
+    if sampler:
+        attempt(sampler.stop)
+    for process in reversed(processes):
+        attempt(lambda: stop(process))
+        for stream in (process.stdin, process.stdout):
+            if stream:
+                attempt(stream.close)
+    for log in logs:
+        attempt(log.close)
+    if failures:
+        raise RuntimeError("owned resource cleanup failed") from failures[0]
+
+
+def failure(output, error):
+    (output / "failure.json").write_bytes(canonical({"ok": False, "synthetic": True,
+                                                    "error_type": type(error).__name__}))
+
+
+def finish(output, receipt, sampler, processes, logs):
+    """Publish a complete success artifact only after every cleanup step passes."""
+    pending, target = output / "receipt-pending.json", output / "receipt.json"
+    try:
+        cleanup(sampler, processes, logs)
+        if receipt is not None:
+            receipt["verification"]["owned_resource_cleanup"] = True
+            pending.write_bytes(canonical(receipt))
+            pending.replace(target)
+    except BaseException as error:
+        pending.unlink(missing_ok=True)
+        target.unlink(missing_ok=True)
+        failure(output, error)
+        raise
 
 
 def run(binary, output, rounds=10, tasks=4, payload_bytes=4096, sample_interval=.05):
@@ -246,9 +286,7 @@ def run(binary, output, rounds=10, tasks=4, payload_bytes=4096, sample_interval=
     binary = Path(binary).resolve()
     require(binary.is_file() and os.access(binary, os.X_OK), "Casita executable unavailable")
     binary_pin = digest(binary.read_bytes())
-    source_pins = {name: digest((HERE / name).read_bytes()) for name in
-                   ("relay_load.py", "context_relay.py", "relay_validation.py",
-                    "relay_readiness.py", "demo.py")}
+    source_pins = {name: digest((HERE / name).read_bytes()) for name in SOURCE_FILES}
     # No endpoint/state option: every run owns new synthetic credentials and state.
     output = output.resolve()
     output.mkdir(parents=True, exist_ok=False, mode=0o700)
@@ -256,7 +294,7 @@ def run(binary, output, rounds=10, tasks=4, payload_bytes=4096, sample_interval=
     state, gates = output / "relay", output / "gates"
     gates.mkdir()
     processes, logs, workers = [], [], {}
-    sampler = None
+    sampler, receipt = None, None
     try:
         initialize(state, "synthetic-load", "alpha", ["beta"])
         credentials = {name: state / f"credentials/{name}.json" for name in NAMES}
@@ -311,6 +349,12 @@ def run(binary, output, rounds=10, tasks=4, payload_bytes=4096, sample_interval=
             processes.append(process)
         measured = {"server": server, **workers}
         cpu_before = {name: proc_usage(process.pid) for name, process in measured.items()}
+        # Workers may already have executed Python imports by this point.
+        # Linux child CPU counters start at zero at process birth, so use that
+        # baseline to include all worker startup, independent of spawn timing.
+        # The server baseline excludes the startup and seed writes above.
+        for name in NAMES:
+            cpu_before[name]["cpu_seconds_including_waited_children"] = 0
         sampler = Sampler(measured, sample_interval)
         sampler.thread.start()
         started = time.monotonic()
@@ -381,7 +425,8 @@ def run(binary, output, rounds=10, tasks=4, payload_bytes=4096, sample_interval=
                     {"milliseconds": row["cycle_ms"]} for row in observations]),
                 "resources": resources, "rss_sample_count": len(sampler.rows),
                 "rss_sample_interval_seconds": sample_interval,
-                "cpu_scope": "process plus waited native children; load window includes client startup, coordinator pacing and storage scans",
+                "cpu_scope": "server delta from post-seeding baseline; client totals from process birth including all startup; both include waited native children",
+                "wall_scope": "load window after client spawn and CPU baselines; includes remaining startup, rendezvous pacing and coordinator storage scans; excludes seeding",
                 "memory_scope": "sampled summed RSS of each process and its live descendants; shared pages may be counted twice",
                 "restore_scope": "fresh-store init, archive verify/import, checkout, fsck and snapshot verification",
                 "percentiles": "nearest-rank; small samples are descriptive, not an SLA",
@@ -397,21 +442,13 @@ def run(binary, output, rounds=10, tasks=4, payload_bytes=4096, sample_interval=
                        "Synthetic payload hashes differ but remain compressible ASCII",
                        "Sampled RSS can miss short native-process peaks; it is not unique physical memory",
                        "No think time inside each round; barrier-coordinated closed-loop workload"]}
-        (output / "receipt.json").write_bytes(canonical(receipt))
-        return receipt
     except BaseException as error:
-        (output / "failure.json").write_bytes(canonical({"ok": False, "synthetic": True,
-                                                        "error_type": type(error).__name__}))
+        receipt = None
+        failure(output, error)
         raise
     finally:
-        try:
-            if sampler and sampler.thread.is_alive():
-                sampler.stop()
-        finally:
-            for process in reversed(processes):
-                stop(process)
-            for log in logs:
-                log.close()
+        finish(output, receipt, sampler, processes, logs)
+    return receipt
 
 
 def main():

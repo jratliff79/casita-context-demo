@@ -1,5 +1,9 @@
 # Two-client synthetic load qualification
 
+For fixed-rate arrivals, remote SSH workers, API-built aged history and encrypted
+backup overlap, use the separate [paced workload harness](relay-workload.md).
+The contention mode and historical receipts documented below remain unchanged.
+
 `relay_load.py` measures two independent Python client processes against one
 fresh Linux loopback relay and the real Casita executable. Each run creates its
 own synthetic workspace, credentials, SQLite index and native stores. It has no

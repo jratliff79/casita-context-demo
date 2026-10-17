@@ -225,6 +225,15 @@ jobs:
           uv run --no-project --python 3.12 python relay_load.py
           --casita output/casita-build/debug/casita --output output/relay-load
           --rounds 2 --tasks 2 --payload-bytes 1024
+      - name: Install age for isolated encrypted workload recovery
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends age
+      - name: Verify paced workload and encrypted backup overlap
+        run: >-
+          python ci/verify-relay-workload.py
+          --casita output/casita-build/debug/casita
+          --output output/ci-paced-workload
       - name: Restore synthetic build artifacts without rebuilding
         run: |
           uv run --no-project --python 3.12 python artifacts.py --casita output/casita-build/debug/casita --output output/build-artifacts

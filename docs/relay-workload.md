@@ -25,6 +25,10 @@ This runs a 30-second normal phase and a 20-second burst, with an API-built
 and memory filtering; four deliberate conflict pairs each commit both changes
 using one bounded loser retry. The short profile polls every 2.5 seconds so its
 last poll follows its last publication. It is explicitly labelled a smoke test.
+After both operators finish all scheduled work, the controller releases a
+separate bounded final catch-up to the exact acknowledged cursor. This drain
+is recorded separately and does not change the offered polling rate or p95
+summaries. A publication finishing after the last scheduled poll is preserved.
 
 The check also captures, age-encrypts and restores the complete owned runtime
 and relay state during active client work. A separate copied-state case exercises
@@ -138,9 +142,10 @@ delay from the scheduled arrival. The controller independently checks timing
 arithmetic, counts, native pins, exact event payloads and final checkpoint bytes.
 
 SSH transport alone does not prove that two physical devices participated.
-The receipt records worker system/machine/hostname observations; these are not
-host execution attestations. In particular, the contained loopback SSH fixture
-does not claim independent remote devices or actual JP/CJ device qualification.
+`remote_devices_tested` always remains false. The receipt separately records
+worker system/machine/hostname observations, including whether client names are
+distinct; these are not host execution attestations. Actual JP/CJ device
+qualification requires independent evidence outside this harness.
 
 ## Backup and measurement evidence
 

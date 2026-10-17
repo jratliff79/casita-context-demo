@@ -102,6 +102,8 @@ def main():
                 and data['reconnect_case']['original_timed_pin_unchanged']
                 and data['reconnect_case']['exact_backlog_and_native_pin_verified'], 'separate reconnect failed')
         require(data['verification']['owned_resource_cleanup'], 'cleanup was not verified')
+        require(all(row['cursor'] == 28 for row in data['client_final_catch_up'].values()),
+                'final quiescent catch-up did not reach all acknowledged changes')
         require(not data['remote_devices_tested'], 'loopback SSH must not claim independent physical devices')
         conflicts = 0
         for name in ('alpha', 'beta'):

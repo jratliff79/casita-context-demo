@@ -105,15 +105,21 @@ def advance_cursor(page, cursor):
 
 def catch_up_events(request, cursor, count):
     require(type(count) is int and 1 <= count <= 100, 'invalid reconnect backlog')
-    target, events = cursor + count, []
+    return drain_updates(request, cursor, cursor + count)
+
+
+def drain_updates(request, cursor, target):
+    require(type(cursor) is int and type(target) is int and 0 <= cursor <= target
+            and target - cursor <= 1000, 'invalid final catch-up target')
+    events = []
     while cursor < target:
         page = request('updates', dict(after=cursor))
-        require(bool(page['events']), 'reconnect stopped before the target cursor')
+        require(bool(page['events']), 'catch-up stopped before the target cursor')
         cursor = advance_cursor(page, cursor)
         events.extend(page['events'])
-        require(cursor <= target, 'reconnect exceeded the acknowledged target')
+        require(cursor <= target, 'catch-up exceeded the acknowledged target')
     last = request('updates', dict(after=cursor))
-    require(last['events'] == [] and advance_cursor(last, cursor) == target, 'reconnect target was not quiescent')
+    require(last['events'] == [] and advance_cursor(last, cursor) == target, 'catch-up target was not quiescent')
     return dict(cursor=cursor, events=events)
 
 

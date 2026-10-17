@@ -22,7 +22,7 @@ import relay_backup as backup
 import relay_monitor as monitor
 from relay_load import fixture, latency_summary, require, state_measurement, stop, tree_rss
 from relay_workload_plan import (HERE, NAMES, make_plan, source_pins, seed_history,
-                                 ssh_argv, clock_mapping, validate_hello)
+                                 ssh_argv, clock_mapping, validate_hello, advance_cursor)
 from relay_workload_backup import OwnedServer, capture_restore
 
 
@@ -89,6 +89,14 @@ def causal_overlap(probes, start, end):
     """
     return len({logical for probe in probes if start <= probe['sent'] <= probe['received'] <= end
                 for logical in probe['active']})
+
+
+def device_observations(environments):
+    names = [environments[name]['hostname'] for name in NAMES]
+    return dict(remote_devices_tested=False, hostname_observations=dict(
+        controller=socket.gethostname(), clients=dict(zip(NAMES, names)),
+        distinct_client_names=len(set(names)) == len(names),
+        all_client_names_differ_from_controller=all(name != socket.gethostname() for name in names)))
 
 
 def source_revision():
@@ -158,6 +166,20 @@ def check_results(plan, rows, done, initial, state):
         require(len(rows[name]) == len(plan['clients'][name]), 'scheduled arrivals were lost')
         jobs = {job['logical_id']: job for job in plan['clients'][name]}
         require(len({row['job']['logical_id'] for row in rows[name]}) == len(jobs), 'duplicate worker observation')
+        cursor = initial['cursor']
+        for row in sorted(rows[name], key=lambda row: row['job']['at']):
+            if row['job']['operation'] == 'updates':
+                result = row['result']
+                require(result['previous_cursor'] == cursor, 'scheduled update chain changed')
+                cursor = advance_cursor(dict(events=result['events'], next_cursor=result['cursor']), cursor)
+        final = done[name]['final_updates']
+        validate_timing(final)
+        require(final['start'] >= max(row['end'] for row in rows[name])
+                and final['previous_cursor'] == cursor, 'final catch-up preceded drained work')
+        require(advance_cursor(dict(events=final['events'], next_cursor=final['cursor']), cursor)
+                == initial['cursor'] + total, 'final catch-up did not reach the acknowledged target')
+        for event in final['events']:
+            require(event == dict(events[event['cursor']], cursor=event['cursor']), 'final event payload changed')
         for row in rows[name]:
             job, result = row['job'], row['result']
             require(job == jobs[job['logical_id']], 'worker changed its scheduled job')
@@ -217,6 +239,7 @@ def run(binary, output, plan, clients=None, casita_commit=None):
     owned_binary = output / 'trusted-casita'
     state = output / 'relay'
     peers, logs, mappings, environments, rows, done = {}, [], {}, {}, {n: [] for n in NAMES}, {}
+    drained, finishing = set(), False
     server, job_thread, sample_thread = None, None, None
     sample_stop, job_done = threading.Event(), threading.Event()
     samples, sample_failures, monitor_rows, backup_result, backup_errors = [], [], [], {}, []
@@ -259,6 +282,7 @@ def run(binary, output, plan, clients=None, casita_commit=None):
             worker_credential = backup.private_json(state / 'credentials' / (name + '.json'))
             config = dict(binary=client['binary'], output=client['output'], credential=worker_credential,
                           cursor=initial['cursor'], jobs=plan['clients'][name], duration=plan['duration'],
+                          final_cursor=initial['cursor'] + plan['final_revisions'] - plan['initial_revisions'],
                           relay_port=server.port, url=url if clients is None else
                           'http://127.0.0.1:' + str(client['forward_port']))
             peer.send(dict(operation='configure', config=config)); peer.receive('ready')
@@ -317,9 +341,13 @@ def run(binary, output, plan, clients=None, casita_commit=None):
                     with (output / (name + '-observations.jsonl')).open('a') as stream:
                         stream.write(json.dumps(message, allow_nan=False) + '\n')
                 elif kind == 'done':
-                    require(name not in done, 'worker repeated completion')
+                    require(name in drained and name not in done, 'worker completed before drain or repeated completion')
                     done[name] = message
                     peer.process.stdin.close()
+                elif kind == 'drained':
+                    require(name not in drained and len(rows[name]) == len(plan['clients'][name]),
+                            'worker drained before all observations or repeated drain')
+                    drained.add(name)
                 elif kind == 'probe':
                     sent = pending_probes.pop((name, message['probe_id']))
                     active = message['active']
@@ -331,6 +359,11 @@ def run(binary, output, plan, clients=None, casita_commit=None):
                     pass
                 else:
                     raise ValueError('worker failed or disconnected; see private partial observations')
+            if len(drained) == 2 and not finishing:
+                for peer in peers.values():
+                    peer.send(dict(operation='finish', cursor=initial['cursor'] +
+                        plan['final_revisions'] - plan['initial_revisions']))
+                finishing = True
             time.sleep(.01)
         require(not sample_failures and not backup_errors, 'background verification failed')
         for peer in peers.values():
@@ -355,8 +388,8 @@ def run(binary, output, plan, clients=None, casita_commit=None):
             casita_binary_sha256=binary_pin, casita_source_commit_claim=casita_commit,
             client_environments=environments, clock_calibration=mappings, start_monotonic=epoch,
             transport='ssh-reverse-loopback' if clients is not None else 'local-subprocess-loopback',
-            remote_devices_tested=bool(clients is not None and all(
-                env['hostname'] != socket.gethostname() for env in environments.values())),
+            **device_observations(environments),
+            client_final_catch_up={name: done[name]['final_updates'] for name in NAMES},
             client_summaries=summaries, history_windows=history_windows(plan, rows),
             storage_before=before, storage_after=after,
             host_samples=samples, monitor_observations=monitor_rows,

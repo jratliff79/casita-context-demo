@@ -13,7 +13,7 @@ from urllib.error import HTTPError
 
 import context_relay as relay
 from relay_load import fixture, require
-from relay_workload_plan import source_pins, publish_logical, advance_cursor, catch_up_events
+from relay_workload_plan import source_pins, publish_logical, advance_cursor, catch_up_events, drain_updates
 
 PRINT_LOCK = threading.Lock()
 MAX_LINE = 1_000_000
@@ -46,6 +46,7 @@ def execute(config, epoch, expected_runtime):
         os.setsid()
     require(os.getpgrp() == os.getpid(), 'worker must own its process group')
     finished, cancelled = threading.Event(), threading.Event()
+    drained, finish = threading.Event(), threading.Event()
     locks = {name: threading.Lock() for name in ('publish', 'consult', 'updates', 'reconnect')}
     threads, failures, cursor = [], [], config['cursor']
     active, active_lock = set(), threading.Lock()
@@ -67,6 +68,10 @@ def execute(config, epoch, expected_runtime):
                     with active_lock:
                         observed = sorted(active)
                     emit(dict(kind='probe', probe_id=message['probe_id'], active=observed))
+                if message.get('operation') == 'finish':
+                    require(drained.is_set() and not finish.is_set()
+                            and message['cursor'] == config['final_cursor'], 'unexpected final drain release')
+                    finish.set()
             abort('ControllerDisconnected')
         except BaseException:
             abort('ControllerDisconnected')
@@ -162,13 +167,34 @@ def execute(config, epoch, expected_runtime):
         for thread in threads:
             thread.join(timeout=31)
         require(not failures and not any(thread.is_alive() for thread in threads), 'worker incomplete')
+        final = {}
+        if 'final_cursor' in config:
+            drained.set()
+            emit(dict(kind='drained', cursor=cursor))
+            require(finish.wait(35), 'controller did not release the final drain')
+            start = time.monotonic()
+            timer = threading.Timer(10, lambda: abort('FinalDrainDeadline'))
+            timer.daemon = True
+            timer.start()
+            try:
+                previous = cursor
+                result = drain_updates(lambda operation, body: relay.client(config['url'], credential,
+                    operation, body, relay_port=config['relay_port']), cursor, config['final_cursor'])
+                cursor = result['cursor']
+                end = time.monotonic()
+                require(end - start <= 10, 'final catch-up deadline exceeded')
+                final = dict(final_updates=dict(result, previous_cursor=previous, start=start, end=end,
+                    scheduled=start, milliseconds=1000 * (end - start), dispatch_lag_ms=0,
+                    job=dict(operation='updates')))
+            finally:
+                timer.cancel()
         runtime = dict(source_sha256=source_pins(),
                        binary_sha256=relay.digest(Path(config['binary']).read_bytes()))
         require(runtime == expected_runtime, 'worker source or executable changed during the workload')
         credential.unlink()
         finished.set()
         emit(dict(kind='done', cursor=cursor, credential_removed=True,
-                  owned_native_operations_finished=True, **runtime))
+                  owned_native_operations_finished=True, **runtime, **final))
     finally:
         credential.unlink(missing_ok=True)
         if any(thread.is_alive() for thread in threads):

@@ -127,6 +127,7 @@ completion. Controller disconnect or operation-deadline failure terminates the
 worker's owned process group, including in-flight native children.
 Completion rechecks worker and controller source/executable bytes against their
 startup hashes; changed bytes prevent a success receipt.
+Executable aliases are resolved to the verified canonical target before use.
 
 Five round trips calibrate monotonic clock offsets before scheduling. Startup
 uncertainty greater than 250 ms is rejected. Each worker follows its own fixed

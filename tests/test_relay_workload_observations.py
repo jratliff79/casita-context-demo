@@ -16,6 +16,27 @@ import relay_workload_plan as protocol
 
 
 class WorkloadObservationTests(unittest.TestCase):
+    def test_remote_executable_can_use_a_trusted_symlink_or_macos_alias_path(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            binary = root / 'trusted-native-link'
+            binary.symlink_to(Path(sys.executable).resolve())
+            with (root / 'worker.log').open('wb') as log:
+                peer = controller.Peer([sys.executable, '-B', str(protocol.HERE / 'relay_workload_client.py')], log)
+                try:
+                    peer.send(dict(operation='hello', binary=str(binary)))
+                    peer.receive('hello')
+                    peer.send(dict(operation='configure', config=dict(binary=str(binary),
+                        output=str(root / 'client'), credential=dict(workspace='synthetic-jpcj-link',
+                        token='synthetic-only'), jobs=[], duration=0, cursor=0)))
+                    self.assertEqual(peer.messages.get(timeout=3)['kind'], 'ready')
+                    peer.send(dict(operation='start', epoch=time.monotonic() + .1))
+                    self.assertTrue(peer.receive('done', timeout=3)['credential_removed'])
+                    peer.process.stdin.close()
+                    self.assertEqual(peer.process.wait(timeout=3), 0)
+                finally:
+                    peer.close()
+
     def test_worker_rejects_executable_drift_during_the_timed_workload(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()

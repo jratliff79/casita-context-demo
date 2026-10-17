@@ -191,7 +191,10 @@ def main():
             emit(dict(kind='pong', monotonic=time.monotonic()))
         elif message['operation'] == 'configure':
             config = message['config']
-            require(config['binary'] == str(binary), 'configured executable changed')
+            require(Path(config['binary']).resolve() == binary, 'configured executable changed')
+            # Keep the verified target for native calls, including macOS /tmp
+            # aliases and package-manager symlinks supplied in private config.
+            config = dict(config, binary=str(binary))
             emit(dict(kind='ready'))
         elif message['operation'] == 'start':
             execute(config, message['epoch'], runtime)

@@ -56,6 +56,7 @@ Choose the example closest to your task:
 | Consult reviewed team memory when starting a task | [Live context relay](docs/live-context-relay.md) | Authenticated clients, separate task checkpoints, durable updates and owner-reviewed memory |
 | Consult a relay automatically in a local Codex chat | [Codex task-start adapter](docs/codex-task-start.md) | Opt-in SessionStart hook, fresh verified receipt and explicit unavailable-context behavior |
 | Measure two-client relay contention with synthetic state | [Relay load harness](docs/relay-load.md) | Independent native restores, HTTP latency, sampled resources and retained storage growth |
+| Exercise paced two-operator arrivals and recovery interference | [Paced workload harness](docs/relay-workload.md) | Pinned SSH workers, API-built aged history, bounded conflict retries, encrypted backup overlap and separate catch-up |
 
 Consider a change to a private pricing calculation. An outside reviewer can see
 the selected diff and source without receiving repository access. If a helper is

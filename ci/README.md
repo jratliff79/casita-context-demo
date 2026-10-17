@@ -23,6 +23,16 @@ pilot. CI retains the default and OCI example jobs and adds the two-client relay
 trial. The [previous receipt](../docs/casita-update-validation.json) retains its
 original pin and build metadata. These checks preserve the distinction between
 transport and container execution; they do not benchmark the upstream change.
+
+The same native handoff job also installs `age` and runs the short
+[paced workload check](../docs/relay-workload.md). It reuses the existing native
+CLI build and verifies an aged synthetic store, scheduled arrivals, bounded
+conflict retries, genuine age capture/restore overlap and separate copied-state
+catch-up. The short local-worker profile does not qualify a 70-minute remote
+run. `ci/verify-relay-workload.py --ssh-fixture` exercises real strict SSH in a
+disposable Docker container with private throwaway keys and loopback-only sshd;
+that option is guarded against running on the operator host and is not enabled
+on the GitHub host runner. No cloud credentials or outbound notifications are used.
 The default-feature handoff job also runs [the signed pin example](../docs/signed-handoff.md)
 with OpenSSH and temporary keys. This adds authentication checks without changing
 the Casita dependency snapshot or introducing a signing service.

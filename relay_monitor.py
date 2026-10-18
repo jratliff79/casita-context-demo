@@ -118,7 +118,7 @@ def storage_pressure(config, result):
 
 
 def state_size(config, clock=time.monotonic):
-    started, entries, allocated = clock(), 0, 0
+    started, entries, allocated = clock(), 1, 0
     state = Path(config['state'])
     require(stat.S_ISDIR(state.lstat().st_mode))
     # Bytes allocated, including directory entries; no following links, file reads
@@ -126,24 +126,31 @@ def state_size(config, clock=time.monotonic):
     def visit(fd):
         nonlocal entries, allocated
         info = os.fstat(fd)
-        entries += 1
         require(entries <= MAX_ENTRIES and clock() - started <= 10)
         allocated += info.st_blocks * 512
         with os.scandir(fd) as children:
             for child in children:
                 if fd == root_fd and child.name == 'credentials':
                     continue  # Deployment hides ordinary member credentials from the monitor.
-                info = child.stat(follow_symlinks=False)
+                # Native maintenance may unlink entries during this live sample.
+                # Count even vanished entries so churn cannot bypass either bound.
+                entries += 1
+                require(entries <= MAX_ENTRIES and clock() - started <= 10)
+                try:
+                    info = child.stat(follow_symlinks=False)
+                except FileNotFoundError:
+                    continue
                 require(stat.S_ISDIR(info.st_mode) or stat.S_ISREG(info.st_mode))
                 if stat.S_ISDIR(info.st_mode):
-                    nested = os.open(child.name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
+                    try:
+                        nested = os.open(child.name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
+                    except FileNotFoundError:
+                        continue
                     try:
                         visit(nested)
                     finally:
                         os.close(nested)
                 else:
-                    entries += 1
-                    require(entries <= MAX_ENTRIES and clock() - started <= 10)
                     allocated += info.st_blocks * 512
     root_fd = os.open(state, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     try:

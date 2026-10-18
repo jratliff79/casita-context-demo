@@ -35,6 +35,62 @@ and relay state during active client work. A separate copied-state case exercise
 three missed events in smoke mode, preserving the timed relay's original pin.
 No cloud, SNS, production service or installed systemd unit is contacted.
 
+## Bounded diagnostic evidence
+
+Add `--stage-timing` to a controller command to retain private numeric stage
+records. The native smoke check enables it automatically. The ordinary relay
+CLI leaves timing disabled. This option preserves the workload, retry rules,
+native verification, durability calls, acceptance budgets and denominators.
+
+`stage-timing.jsonl` joins each scheduled client's wire attempt to exactly one
+server request using a numeric synthetic tag. Nested spans separate HTTP
+read/decode, relay handling, authentication, snapshot creation, native import,
+root lookup, archive creation, whole-store fsck, native checkout, snapshot
+persistence and SQLite commit. Preparation also records native retained-history
+verification. Native spans measure wall time, including process launch/wait;
+they do not attribute CPU time from overlapping child processes. Backup overlap
+has a total wall span; its internal native calls and client-side native work
+remain outside this server trace.
+
+The outer `http.accepted` interval starts in the request handler, after socket
+accept/setup. It does not directly measure the pre-accept queue, SSH transport
+or network delay. Compare a client's wire interval with its matching server
+interval using the retained clock calibration and uncertainty. Their residual
+also includes queueing, client work and instrumentation; it is not a pure network
+measurement. Nested intervals overlap, and their percentiles must not be added.
+All instrumentation overhead remains in the observed latency. The summary's
+`write_overhead_ns` counts trace encoding/write-lock/writes, not all timing work.
+
+Each trace is capped at 60,000 records, 16 MiB total and 1,024 bytes per record,
+with at most 32 nested spans per thread and 4,096 distinct request tags. Exhaustion
+preserves the prefix and counts dropped records. Write errors, caps, or missing,
+unexpected or duplicate scheduled tags make diagnostics incomplete and suppress
+the success receipt. A complete trace describes evidence collection, not workload
+acceptance: `failure.json` can coexist with a complete timing summary. Scheduled
+wire observations carry the tag only when enabled; preparation, readiness,
+quiescent drain and copied recovery traffic can be untagged. Tags are synthetic
+correlation identifiers, not authentication or execution attestation.
+
+After creating its new private output directory, the controller always writes
+bounded `preparation-status.json` and, on failure, `failure.json`, even without
+timing enabled. Status separates preflight/configuration, native initialization,
+API history seeding, history verification, storage and worker startup from the
+timed workload. It includes monotonic time and an acknowledged seed revision
+count, updated every 50 revisions. Preparation is not the timed-phase start.
+Status writes are capped at 2,048; the scalar reader refuses files over 1,024
+bytes, symlinks, non-regular files and unexpected fields or values.
+
+Failure evidence retains a fixed error category, stage and at most 12 safe stack
+frames per failure, with the primary failure and up to two secondary failures
+bounded to 8 KiB. Only allowlisted public module basenames, function names and
+line numbers are retained; external frames become `external`. It omits raw
+exception text, command arguments/output, credentials, payloads and absolute
+paths. Diagnostic files use mode 0600 in a fresh owned mode-0700 directory.
+Atomic replacement and close are not a power-loss durability attestation. If
+the output itself cannot be created or written, even failure evidence may be
+unavailable. Keep partial evidence and the nonzero exit; never treat a missing
+receipt as a pass. Owned-resource cleanup still runs before publishing success.
+
 ## Run one full paced profile
 
 After reviewing the execution environment and its resource/time authorization:

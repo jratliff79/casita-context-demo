@@ -24,6 +24,7 @@ from relay_load import fixture, latency_summary, require, state_measurement, sto
 from relay_workload_plan import (HERE, NAMES, make_plan, source_pins, seed_history,
                                  ssh_argv, clock_mapping, validate_hello, advance_cursor)
 from relay_workload_backup import OwnedServer, capture_restore
+from relay_workload_diagnostics import Diagnostics
 
 
 class Peer:
@@ -227,15 +228,27 @@ def check_results(plan, rows, done, initial, state):
     return summaries
 
 
-def run(binary, output, plan, clients=None, casita_commit=None):
-    require(platform.system() == 'Linux', 'controller requires Linux host observations')
-    require(all(Path(path).is_file() for path in ('/usr/bin/age', '/usr/bin/age-keygen')), 'install age and age-keygen first')
+def publish_receipt(output, receipt, diagnostics, expected_tags=None):
+    """Called only after owned-resource cleanup; incomplete evidence is a failure."""
+    summary = diagnostics.finish(expected_tags=expected_tags)
+    if not summary['complete'] or diagnostics.primary is not None:
+        error = RuntimeError('workload diagnostics incomplete')
+        diagnostics.failure(error, phase='workload.verify')
+        raise error
+    receipt['diagnostics'] = summary
+    receipt['verification']['owned_resource_cleanup'] = True
+    pending = output / 'receipt-pending.json'
+    fd = os.open(pending, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(fd, 'wb') as stream:
+        stream.write(relay.canonical(receipt))
+    pending.replace(output / 'receipt.json')
+
+
+def run(binary, output, plan, clients=None, casita_commit=None, stage_timing=False):
     binary, output = Path(binary).resolve(), Path(output).resolve()
-    require(binary.is_file() and os.access(binary, os.X_OK), 'Casita executable unavailable')
-    pins, binary_pin = source_pins(), relay.digest(binary.read_bytes())
-    require(clients is None or set(clients) == set(NAMES), 'exactly alpha and beta client definitions required')
     output.mkdir(parents=True, exist_ok=False, mode=0o700)
     output.chmod(0o700)
+    diagnostics = Diagnostics(output, enabled=stage_timing)
     owned_binary = output / 'trusted-casita'
     state = output / 'relay'
     peers, logs, mappings, environments, rows, done = {}, [], {}, {}, {n: [] for n in NAMES}, {}
@@ -247,49 +260,74 @@ def run(binary, output, plan, clients=None, casita_commit=None):
     next_probe, probe_id = 0, 0
     receipt = None
     try:
-        shutil.copyfile(binary, owned_binary); owned_binary.chmod(0o700)
-        require(relay.digest(owned_binary.read_bytes()) == binary_pin, 'copied native binary changed')
-        relay.initialize(state, 'synthetic-jpcj-' + secrets.token_hex(8), 'alpha', ['beta'])
-        relay.provision_readiness(state)
-        service = relay.Relay(state, owned_binary)
+        with diagnostics.phase('prepare.preflight'):
+            require(platform.system() == 'Linux', 'controller requires Linux host observations')
+            require(all(Path(path).is_file() for path in ('/usr/bin/age', '/usr/bin/age-keygen')),
+                    'install age and age-keygen first')
+            require(binary.is_file() and os.access(binary, os.X_OK), 'Casita executable unavailable')
+            pins, binary_pin = source_pins(), relay.digest(binary.read_bytes())
+        with diagnostics.phase('prepare.config'):
+            if isinstance(clients, Path):
+                clients = backup.private_json(clients)
+            require(clients is None or set(clients) == set(NAMES),
+                    'exactly alpha and beta client definitions required')
+        with diagnostics.phase('prepare.initialize'):
+            shutil.copyfile(binary, owned_binary); owned_binary.chmod(0o700)
+            require(relay.digest(owned_binary.read_bytes()) == binary_pin, 'copied native binary changed')
+            relay.initialize(state, 'synthetic-jpcj-' + secrets.token_hex(8), 'alpha', ['beta'])
+            relay.provision_readiness(state)
+        with diagnostics.phase('prepare.service'):
+            service = relay.Relay(state, owned_binary, timing=diagnostics if stage_timing else None)
         credential = backup.private_json(state / 'credentials/alpha.json')
-        initial = seed_history(service, credential['token'], plan['initial_revisions'])
+        with diagnostics.phase('prepare.seed_history'):
+            initial = seed_history(service, credential['token'], plan['initial_revisions'],
+                                   on_progress=diagnostics.progress)
         # Re-verify every retained object and transition before an aged run starts.
         with relay.connect(state, readonly=True) as db:
-            backup.verify_events(db)
-            backup.verify_transitions(db, backup.verify_auxiliary_json(db))
-            backup.verify_snapshots(db, state, owned_binary)
-        before = state_measurement(state)
-        server = OwnedServer(service); server.start()
+            with diagnostics.phase('prepare.verify_events'):
+                backup.verify_events(db)
+            with diagnostics.phase('prepare.verify_transitions'):
+                backup.verify_transitions(db, backup.verify_auxiliary_json(db))
+            with diagnostics.phase('prepare.verify_snapshots'):
+                command = (lambda *argv: diagnostics.native(backup.command, *argv)) if stage_timing else backup.command
+                backup.verify_snapshots(db, state, owned_binary, run=command)
+        with diagnostics.phase('prepare.storage'):
+            before = state_measurement(state)
+            spool = output / 'sample-spool'; spool.mkdir()
+        with diagnostics.phase('prepare.service'):
+            server = OwnedServer(service); server.start()
         url = 'http://127.0.0.1:' + str(server.port)
         for name in NAMES:
-            log = (output / (name + '-transport.stderr')).open('wb'); logs.append(log)
-            local = dict(binary=str(owned_binary), output=str(output / name))
-            client = local if clients is None else clients[name]
-            argv = ([sys.executable, '-B', str(HERE / 'relay_workload_client.py')]
-                    if clients is None else ssh_argv(client, server.port))
-            peer = Peer(argv, log); peers[name] = peer
-            peer.send(dict(operation='hello', binary=client['binary']))
-            hello = peer.receive('hello')
-            validate_hello(hello, pins, binary_pin if clients is None else client['binary_sha256'])
-            environments[name] = hello
-            clocks = []
-            for _ in range(5):
-                sent = time.monotonic(); peer.send(dict(operation='ping'))
-                pong = peer.receive('pong'); received = time.monotonic()
-                clocks.append((sent, pong['monotonic'], received))
-            mappings[name] = dict(clock_mapping(clocks), samples=clocks)
-            worker_credential = backup.private_json(state / 'credentials' / (name + '.json'))
-            config = dict(binary=client['binary'], output=client['output'], credential=worker_credential,
-                          cursor=initial['cursor'], jobs=plan['clients'][name], duration=plan['duration'],
-                          final_cursor=initial['cursor'] + plan['final_revisions'] - plan['initial_revisions'],
-                          relay_port=server.port, url=url if clients is None else
-                          'http://127.0.0.1:' + str(client['forward_port']))
-            peer.send(dict(operation='configure', config=config)); peer.receive('ready')
-        epoch = time.monotonic() + 5
-        for name in NAMES:
-            peers[name].send(dict(operation='start', epoch=epoch + mappings[name]['offset']))
-        spool = output / 'sample-spool'; spool.mkdir()
+            with diagnostics.phase('prepare.worker_' + name):
+                log = (output / (name + '-transport.stderr')).open('wb'); logs.append(log)
+                local = dict(binary=str(owned_binary), output=str(output / name))
+                client = local if clients is None else clients[name]
+                argv = ([sys.executable, '-B', str(HERE / 'relay_workload_client.py')]
+                        if clients is None else ssh_argv(client, server.port))
+                peer = Peer(argv, log); peers[name] = peer
+                peer.send(dict(operation='hello', binary=client['binary']))
+                hello = peer.receive('hello')
+                validate_hello(hello, pins, binary_pin if clients is None else client['binary_sha256'])
+                environments[name] = hello
+                clocks = []
+                for _ in range(5):
+                    sent = time.monotonic(); peer.send(dict(operation='ping'))
+                    pong = peer.receive('pong'); received = time.monotonic()
+                    clocks.append((sent, pong['monotonic'], received))
+                mappings[name] = dict(clock_mapping(clocks), samples=clocks)
+                worker_credential = backup.private_json(state / 'credentials' / (name + '.json'))
+                config = dict(binary=client['binary'], output=client['output'], credential=worker_credential,
+                              cursor=initial['cursor'], jobs=plan['clients'][name], duration=plan['duration'],
+                              final_cursor=initial['cursor'] + plan['final_revisions'] - plan['initial_revisions'],
+                              relay_port=server.port, url=url if clients is None else
+                              'http://127.0.0.1:' + str(client['forward_port']))
+                if stage_timing:
+                    config['trace_client'] = NAMES.index(name) + 1
+                peer.send(dict(operation='configure', config=config)); peer.receive('ready')
+        with diagnostics.phase('prepare.ready'):
+            epoch = time.monotonic() + 5
+            for name in NAMES:
+                peers[name].send(dict(operation='start', epoch=epoch + mappings[name]['offset']))
         def sample():
             try:
                 while not sample_stop.is_set():
@@ -297,116 +335,122 @@ def run(binary, output, plan, clients=None, casita_commit=None):
                     sample_stop.wait(1)
             except BaseException as error:
                 sample_failures.append(type(error).__name__)
+                diagnostics.failure(error, phase='workload.sample')
         sample_thread = threading.Thread(target=sample, daemon=True); sample_thread.start()
         def background_backup():
             try:
                 source_commit = source_revision()
-                backup_result.update(capture_restore(output / 'overlap-backup', state, owned_binary,
-                    server, source_commit, casita_commit or '0' * 40,
-                    on_start=lambda value: backup_progress.update(start=value)))
+                with diagnostics.span('workload.backup'):
+                    backup_result.update(capture_restore(output / 'overlap-backup', state, owned_binary,
+                        server, source_commit, casita_commit or '0' * 40,
+                        on_start=lambda value: backup_progress.update(start=value)))
             except BaseException as error:
                 backup_errors.append(type(error).__name__)
+                diagnostics.failure(error, phase='workload.backup')
             finally:
                 job_done.set()
         next_monitor = epoch
         monitor_config = dict(state=str(state), spool=str(spool), credential=str(state / 'monitoring/readiness.json'),
                               port=server.port, backup_max_bytes=512 * 1024**2, free_percent=15,
                               inodes_free_percent=10, region='synthetic', namespace='Synthetic/Workload', relay_name='synthetic')
-        while len(done) < 2 or not job_done.is_set() or time.monotonic() < epoch + plan['duration']:
-            now = time.monotonic()
-            require(now < epoch + plan['duration'] + 60, 'workload drain or backup deadline exceeded')
-            require(not sample_failures and not backup_errors, 'background verification failed')
-            if job_thread is None and now >= epoch + plan['normal_seconds'] / 2:
-                job_thread = threading.Thread(target=background_backup, daemon=True); job_thread.start()
-            if now >= next_monitor and now < epoch + plan['duration']:
-                monitor_rows.append(dict(monotonic=time.monotonic(), metrics=monitor.sample(monitor_config)))
-                next_monitor += 300
-            if (backup_progress and not job_done.is_set() and now >= next_probe
-                    and not any(probe['active'] for probe in probes)):
+        with diagnostics.phase('workload.execute'):
+            while len(done) < 2 or not job_done.is_set() or time.monotonic() < epoch + plan['duration']:
+                now = time.monotonic()
+                require(now < epoch + plan['duration'] + 60, 'workload drain or backup deadline exceeded')
+                require(not sample_failures and not backup_errors, 'background verification failed')
+                if job_thread is None and now >= epoch + plan['normal_seconds'] / 2:
+                    job_thread = threading.Thread(target=background_backup, daemon=True); job_thread.start()
+                if now >= next_monitor and now < epoch + plan['duration']:
+                    monitor_rows.append(dict(monotonic=time.monotonic(), metrics=monitor.sample(monitor_config)))
+                    next_monitor += 300
+                if (backup_progress and not job_done.is_set() and now >= next_probe
+                        and not any(probe['active'] for probe in probes)):
+                    for name, peer in peers.items():
+                        if name not in done and not any(key[0] == name for key in pending_probes):
+                            probe_id += 1
+                            pending_probes[(name, probe_id)] = time.monotonic()
+                            peer.send(dict(operation='probe', probe_id=probe_id))
+                    next_probe = now + .25
                 for name, peer in peers.items():
-                    if name not in done and not any(key[0] == name for key in pending_probes):
-                        probe_id += 1
-                        pending_probes[(name, probe_id)] = time.monotonic()
-                        peer.send(dict(operation='probe', probe_id=probe_id))
-                next_probe = now + .25
-            for name, peer in peers.items():
-                try:
-                    message = peer.messages.get_nowait()
-                except queue.Empty:
-                    continue
-                kind = message.get('kind')
-                if kind == 'observation':
-                    require(name not in done, 'worker emitted observations after cleanup')
-                    rows[name].append(message)
-                    with (output / (name + '-observations.jsonl')).open('a') as stream:
-                        stream.write(json.dumps(message, allow_nan=False) + '\n')
-                elif kind == 'done':
-                    require(name in drained and name not in done, 'worker completed before drain or repeated completion')
-                    done[name] = message
-                    peer.process.stdin.close()
-                elif kind == 'drained':
-                    require(name not in drained and len(rows[name]) == len(plan['clients'][name]),
-                            'worker drained before all observations or repeated drain')
-                    drained.add(name)
-                elif kind == 'probe':
-                    sent = pending_probes.pop((name, message['probe_id']))
-                    active = message['active']
-                    valid = {job['logical_id'] for job in plan['clients'][name]
-                             if job['operation'] in ('publish', 'consult')}
-                    require(type(active) is list and set(active) <= valid, 'invalid active operation probe')
-                    probes.append(dict(name=name, sent=sent, received=time.monotonic(), active=active))
-                elif kind == 'eof' and name in done:
-                    pass
-                else:
-                    raise ValueError('worker failed or disconnected; see private partial observations')
-            if len(drained) == 2 and not finishing:
-                for peer in peers.values():
-                    peer.send(dict(operation='finish', cursor=initial['cursor'] +
-                        plan['final_revisions'] - plan['initial_revisions']))
-                finishing = True
-            time.sleep(.01)
-        require(not sample_failures and not backup_errors, 'background verification failed')
-        for peer in peers.values():
-            require(peer.process.wait(timeout=5) == 0, 'worker exited unsuccessfully')
-        for name in NAMES:
-            require(all(done[name][key] == environments[name][key]
-                        for key in ('source_sha256', 'binary_sha256')), 'worker completion pins changed')
-        summaries = check_results(plan, rows, done, initial, state)
-        overlap = causal_overlap(probes, backup_result['start'], backup_result['end'])
-        require(overlap > 0 and epoch <= backup_result['start'] < backup_result['end'] <= epoch + plan['duration'],
-                'backup did not definitely overlap timed client work')
-        sample_stop.set(); sample_thread.join(timeout=5)
-        require(not sample_thread.is_alive() and not sample_failures, 'host sampling incomplete')
-        after = state_measurement(state)
-        from relay_workload_reconnect import check as check_reconnect
-        reconnect = check_reconnect(state, owned_binary, server, output / 'reconnect-case',
-            None if clients is None else clients['beta'], 100 if plan['full_profile'] else 3)
-        require(source_pins() == pins and relay.digest(owned_binary.read_bytes()) == binary_pin
-                and relay.digest(binary.read_bytes()) == binary_pin, 'controller source or executable changed')
-        receipt = dict(schema='casita-relay-paced-workload.v1', ok=True, synthetic=True,
-            recorded_at=datetime.now(timezone.utc).isoformat(), plan=plan, source_sha256=pins,
-            casita_binary_sha256=binary_pin, casita_source_commit_claim=casita_commit,
-            client_environments=environments, clock_calibration=mappings, start_monotonic=epoch,
-            transport='ssh-reverse-loopback' if clients is not None else 'local-subprocess-loopback',
-            **device_observations(environments),
-            client_final_catch_up={name: done[name]['final_updates'] for name in NAMES},
-            client_summaries=summaries, history_windows=history_windows(plan, rows),
-            storage_before=before, storage_after=after,
-            host_samples=samples, monitor_observations=monitor_rows,
-            reconnect_case=reconnect,
-            backup=dict(backup_result, definitely_overlapping_operations=overlap, causal_probes=probes),
-            verification=dict(all_arrivals_accounted=True, logical_changes_exact=True,
-                scoped_native_restores=True, retained_history_verified=True, encrypted_restore_verified=True,
-                completion_source_and_binary_pins_verified=True),
-            capacity_qualified=False, provider_cpu_buckets_verified=False, depleted_credit_state_verified=False,
-            limits=['One run, not the three-fresh/three-aged matrix',
-                    'Synthetic service adapter, not installed systemd timer execution',
-                    'Local encrypted sink; no off-host durability or cloud integration claim',
-                    'Client clock calibration is an observation, not host attestation',
-                    'Actual JP/CJ device and sustained depleted-credit qualification remain external gates'])
+                    try:
+                        message = peer.messages.get_nowait()
+                    except queue.Empty:
+                        continue
+                    kind = message.get('kind')
+                    if kind == 'observation':
+                        require(name not in done, 'worker emitted observations after cleanup')
+                        rows[name].append(message)
+                        with (output / (name + '-observations.jsonl')).open('a') as stream:
+                            stream.write(json.dumps(message, allow_nan=False) + '\n')
+                    elif kind == 'done':
+                        require(name in drained and name not in done, 'worker completed before drain or repeated completion')
+                        done[name] = message
+                        peer.process.stdin.close()
+                    elif kind == 'drained':
+                        require(name not in drained and len(rows[name]) == len(plan['clients'][name]),
+                                'worker drained before all observations or repeated drain')
+                        drained.add(name)
+                    elif kind == 'probe':
+                        sent = pending_probes.pop((name, message['probe_id']))
+                        active = message['active']
+                        valid = {job['logical_id'] for job in plan['clients'][name]
+                                 if job['operation'] in ('publish', 'consult')}
+                        require(type(active) is list and set(active) <= valid, 'invalid active operation probe')
+                        probes.append(dict(name=name, sent=sent, received=time.monotonic(), active=active))
+                    elif kind == 'eof' and name in done:
+                        pass
+                    else:
+                        raise ValueError('worker failed or disconnected; see private partial observations')
+                if len(drained) == 2 and not finishing:
+                    for peer in peers.values():
+                        peer.send(dict(operation='finish', cursor=initial['cursor'] +
+                            plan['final_revisions'] - plan['initial_revisions']))
+                    finishing = True
+                time.sleep(.01)
+        with diagnostics.phase('workload.verify'):
+            require(not sample_failures and not backup_errors, 'background verification failed')
+            for peer in peers.values():
+                require(peer.process.wait(timeout=5) == 0, 'worker exited unsuccessfully')
+            for name in NAMES:
+                require(all(done[name][key] == environments[name][key]
+                            for key in ('source_sha256', 'binary_sha256')), 'worker completion pins changed')
+            summaries = check_results(plan, rows, done, initial, state)
+            overlap = causal_overlap(probes, backup_result['start'], backup_result['end'])
+            require(overlap > 0 and epoch <= backup_result['start'] < backup_result['end'] <= epoch + plan['duration'],
+                    'backup did not definitely overlap timed client work')
+            sample_stop.set(); sample_thread.join(timeout=5)
+            require(not sample_thread.is_alive() and not sample_failures, 'host sampling incomplete')
+            after = state_measurement(state)
+            from relay_workload_reconnect import check as check_reconnect
+            with diagnostics.phase('workload.reconnect'):
+                reconnect = check_reconnect(state, owned_binary, server, output / 'reconnect-case',
+                    None if clients is None else clients['beta'], 100 if plan['full_profile'] else 3)
+            require(source_pins() == pins and relay.digest(owned_binary.read_bytes()) == binary_pin
+                    and relay.digest(binary.read_bytes()) == binary_pin, 'controller source or executable changed')
+            receipt = dict(schema='casita-relay-paced-workload.v1', ok=True, synthetic=True,
+                recorded_at=datetime.now(timezone.utc).isoformat(), plan=plan, source_sha256=pins,
+                casita_binary_sha256=binary_pin, casita_source_commit_claim=casita_commit,
+                client_environments=environments, clock_calibration=mappings, start_monotonic=epoch,
+                transport='ssh-reverse-loopback' if clients is not None else 'local-subprocess-loopback',
+                **device_observations(environments),
+                client_final_catch_up={name: done[name]['final_updates'] for name in NAMES},
+                client_summaries=summaries, history_windows=history_windows(plan, rows),
+                storage_before=before, storage_after=after,
+                host_samples=samples, monitor_observations=monitor_rows,
+                reconnect_case=reconnect,
+                backup=dict(backup_result, definitely_overlapping_operations=overlap, causal_probes=probes),
+                verification=dict(all_arrivals_accounted=True, logical_changes_exact=True,
+                    scoped_native_restores=True, retained_history_verified=True, encrypted_restore_verified=True,
+                    completion_source_and_binary_pins_verified=True),
+                capacity_qualified=False, provider_cpu_buckets_verified=False, depleted_credit_state_verified=False,
+                limits=['One run, not the three-fresh/three-aged matrix',
+                        'Synthetic service adapter, not installed systemd timer execution',
+                        'Local encrypted sink; no off-host durability or cloud integration claim',
+                        'Client clock calibration is an observation, not host attestation',
+                        'Actual JP/CJ device and sustained depleted-credit qualification remain external gates'])
         return receipt
     except BaseException as error:
-        (output / 'failure.json').write_bytes(relay.canonical(dict(ok=False, synthetic=True, error_type=type(error).__name__)))
+        diagnostics.failure(error)
         raise
     finally:
         sample_stop.set()
@@ -415,12 +459,17 @@ def run(binary, output, plan, clients=None, casita_commit=None):
             close_resources(peers, None, [])
         except BaseException as error:
             cleanup_errors.append(error)
+            diagnostics.failure(error, phase='cleanup')
         if job_thread is not None and job_thread.is_alive():
             job_thread.join(timeout=5)
             if job_thread.is_alive():
                 # Only main() may run the controller; it owns this process group.
                 # Persist failure before terminating a hung backup's native children.
-                (output / 'failure.json').write_bytes(relay.canonical(dict(ok=False, error_type='BackupCleanupTimeout')))
+                try:
+                    diagnostics.failure(TimeoutError(), phase='cleanup')
+                    diagnostics.finish()
+                except BaseException:
+                    pass  # Evidence I/O must never prevent owned-process termination.
                 for key in output.glob('overlap-backup/ephemeral-age-identity'):
                     key.unlink(missing_ok=True)
                 os.killpg(os.getpgrp(), signal.SIGKILL)
@@ -430,13 +479,36 @@ def run(binary, output, plan, clients=None, casita_commit=None):
             close_resources({}, server, logs)
         except BaseException as error:
             cleanup_errors.append(error)
+            diagnostics.failure(error, phase='cleanup')
         if cleanup_errors:
-            (output / 'failure.json').write_bytes(relay.canonical(dict(ok=False, error_type='CleanupFailure')))
+            try:
+                diagnostics.finish()
+            except BaseException:
+                diagnostics.close()
             raise RuntimeError('workload cleanup failed') from cleanup_errors[0]
         if receipt is not None:
-            receipt['verification']['owned_resource_cleanup'] = True
-            pending = output / 'receipt-pending.json'
-            pending.write_bytes(relay.canonical(receipt)); pending.replace(output / 'receipt.json')
+            try:
+                expected_tags = None
+                if stage_timing:
+                    expected_tags = []
+                    for client_index, name in enumerate(NAMES, 1):
+                        jobs = {job['logical_id']: i for i, job in enumerate(plan['clients'][name])}
+                        for row in rows[name]:
+                            for attempt, wire in enumerate(row['wire'], 1):
+                                expected = client_index * 1_000_000 + jobs[row['job']['logical_id']] * 16 + attempt
+                                require(wire.get('trace_tag') == expected, 'client diagnostic tag changed')
+                                expected_tags.append(expected)
+                publish_receipt(output, receipt, diagnostics, expected_tags)
+            except BaseException as error:
+                diagnostics.failure(error, phase='workload.verify')
+                diagnostics.close()
+                raise
+        else:
+            try:
+                diagnostics.finish()
+            except BaseException as error:
+                diagnostics.failure(error, phase='cleanup')
+                diagnostics.close()
 
 
 def main():
@@ -449,6 +521,7 @@ def main():
     parser.add_argument('--smoke', action='store_true', help='short code exercise; never the full workload profile')
     parser.add_argument('--initial-revisions', type=int, default=6)
     parser.add_argument('--casita-commit', help='operator-supplied source claim; the harness verifies executable bytes')
+    parser.add_argument('--stage-timing', action='store_true', help='bounded private server/native timing; required-complete when enabled')
     args = parser.parse_args()
     if args.casita_commit:
         require(re.fullmatch('[0-9a-f]{40}', args.casita_commit) is not None, 'invalid Casita source claim')
@@ -456,8 +529,12 @@ def main():
         os.setsid()
     require(os.getpgrp() == os.getpid(), 'controller must own its process group')
     os.umask(0o077)
-    clients = backup.private_json(args.clients) if args.clients else None
+    clients = args.clients
     plan = (make_plan(30, 20, 10, args.initial_revisions) if args.smoke
             else make_plan(initial_revisions=args.initial_revisions))
-    receipt = run(args.casita, args.output, plan, clients, args.casita_commit)
+    try:
+        receipt = run(args.casita, args.output, plan, clients, args.casita_commit, args.stage_timing)
+    except BaseException:
+        print('Synthetic workload failed; inspect its private bounded diagnostics.', file=sys.stderr)
+        raise SystemExit(1) from None
     print('Synthetic paced workload completed; capacity_qualified=' + str(receipt['capacity_qualified']))

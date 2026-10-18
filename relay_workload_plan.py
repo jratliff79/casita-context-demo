@@ -13,7 +13,8 @@ NAMES = ('alpha', 'beta')
 SOURCE_FILES = (*LOAD_SOURCES, 'relay_backup.py', 'relay_monitor.py',
                 'relay_workload.py', 'relay_workload_plan.py',
                 'relay_workload_client.py', 'relay_workload_controller.py',
-                'relay_workload_backup.py', 'relay_workload_reconnect.py')
+                'relay_workload_backup.py', 'relay_workload_reconnect.py',
+                'relay_workload_diagnostics.py')
 
 
 def source_pins():
@@ -159,7 +160,7 @@ def overlap_count(observations, start, end):
                < min(row['end'] - row['uncertainty'], end) for row in observations)
 
 
-def seed_history(service, token, initial_revisions, payload_bytes=4096):
+def seed_history(service, token, initial_revisions, payload_bytes=4096, on_progress=None):
     require(type(initial_revisions) is int and 6 <= initial_revisions <= 1000, 'invalid seed horizon')
     tasks, revision, cursor = {}, 0, 0
     def call(operation, body):
@@ -168,6 +169,8 @@ def seed_history(service, token, initial_revisions, payload_bytes=4096):
                                 expected_revision=revision))
         if operation != 'propose':
             revision = result['pin']['revision']
+            if on_progress is not None:
+                on_progress(revision)
         cursor = result['cursor']
         return result
     for name in NAMES:

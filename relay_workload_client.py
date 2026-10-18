@@ -78,7 +78,12 @@ def execute(config, epoch, expected_runtime):
     watcher = threading.Thread(target=watch_input, daemon=True)
     watcher.start()
 
-    def operation(job):
+    trace_client = config.get('trace_client')
+    require(trace_client is None or type(trace_client) is int and trace_client in (1, 2),
+            'invalid diagnostic client index')
+    require(trace_client is None or len(config['jobs']) <= 4096, 'diagnostic job limit exceeded')
+
+    def operation(job, ordinal):
         nonlocal cursor
         scheduled = epoch + job['at']
         started = time.monotonic()
@@ -91,17 +96,25 @@ def execute(config, epoch, expected_runtime):
         timer.start()
         wire = []
         def request(operation, body):
+            tag = None
+            if trace_client is not None:
+                require(len(wire) < 16, 'diagnostic attempt limit exceeded')
+                tag = trace_client * 1_000_000 + ordinal * 16 + len(wire) + 1
             before = time.monotonic()
             status = 200
             try:
+                kwargs = dict(trace_tag=tag) if tag is not None else {}
                 return relay.client(config['url'], credential, operation, body,
-                                    relay_port=config['relay_port'])
+                                    relay_port=config['relay_port'], **kwargs)
             except HTTPError as error:
                 status = error.code
                 raise
             finally:
-                wire.append(dict(operation=operation, status=status,
-                                 milliseconds=1000 * (time.monotonic() - before)))
+                row = dict(operation=operation, status=status,
+                           milliseconds=1000 * (time.monotonic() - before))
+                if tag is not None:
+                    row['trace_tag'] = tag
+                wire.append(row)
         try:
             if job['operation'] == 'publish':
                 result = publish_logical(job, request)
@@ -150,7 +163,7 @@ def execute(config, epoch, expected_runtime):
             locks[job['operation']].release()
     try:
         require(time.monotonic() < epoch, 'worker missed the agreed start')
-        for job in config['jobs']:
+        for ordinal, job in enumerate(config['jobs']):
             if cancelled.wait(max(0, epoch + job['at'] - time.monotonic())):
                 break
             lock = locks[job['operation']]
@@ -159,7 +172,7 @@ def execute(config, epoch, expected_runtime):
                 emit(dict(kind='failure', logical_id=job['logical_id'], error_type='MissedArrival'))
                 cancelled.set()
                 break
-            thread = threading.Thread(target=operation, args=(job,), daemon=True)
+            thread = threading.Thread(target=operation, args=(job, ordinal), daemon=True)
             threads.append(thread)
             thread.start()
         if not cancelled.is_set():

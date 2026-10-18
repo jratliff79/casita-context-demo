@@ -102,7 +102,12 @@ deduplication result, capacity forecast or concurrent-load qualification.
 
 The visible inventory rejects links/special files, scans at most 50,000 entries for ten
 seconds, opens directories without following links, and never reads state payload
-files or invokes Casita. SQLite counts are read-only and bounded by a progress
+files or invokes Casita. Entries unlinked during enumeration or before opening a
+child directory are omitted from that live sample, including transient native
+maintenance markers. They still consume the entry/time budget. A missing root,
+permission error, link/special file or exhausted budget still fails the collector
+and makes telemetry incomplete; these failures never become a zero-byte success.
+SQLite counts are read-only and bounded by a progress
 handler. Deploy under a read-only filesystem sandbox and a total process deadline;
 a growing or changing tree can invalidate a sample. Filesystems with undefined
 or inconsistent inode totals produce incomplete telemetry, not a fabricated healthy

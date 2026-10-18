@@ -104,6 +104,7 @@ class InventoryRaceTests(unittest.TestCase):
         self.assertTrue(folder.is_symlink())
 
     def test_disappearing_entries_still_consume_entry_budget(self):
+        (self.state / 'retained').unlink()
         names = {'native-marker-' + str(i) for i in range(4)}
         for name in names:
             (self.state / name).touch()
@@ -113,6 +114,7 @@ class InventoryRaceTests(unittest.TestCase):
                     monitor.state_size(self.config)
 
     def test_disappearing_entries_still_consume_time_budget(self):
+        (self.state / 'retained').unlink()
         marker = self.state / 'native-marker'
         marker.touch()
         with patch.object(monitor.os, 'scandir', self.removing_scan({marker.name})):

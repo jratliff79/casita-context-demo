@@ -159,6 +159,10 @@ def compare_case(root, binaries, horizon, repeats, result):
                 require(report == reference, 'physical/logical healthy reports differ')
                 require(int(re.search(r'checked (\d+) root', report[2]).group(1)) == horizon, 'retained root count differs')
                 measured['validation_passed']=True
+            # fsck --dry-run still writes process-pin metadata. Publication
+            # gets a separate fixture copy that this standalone scan never saw.
+            with tempfile.TemporaryDirectory(dir=root) as temp:
+                state = Path(temp)/'relay'; shutil.copytree(original, state)
                 service = relay.Relay(state, binaries[role]); credential=backup.private_json(state/'credentials/alpha.json')
                 native_calls, original_run = [], service.store.run
                 def observed_native(*args):
@@ -250,11 +254,12 @@ def main(argv=None):
     require(all(p.is_file() and os.access(p,os.X_OK) for p in binaries.values()),'native binaries unavailable')
     pins=source_pins();binary_pins={name:relay.digest(path.read_bytes()) for name,path in binaries.items()}
     runner_pin=relay.digest(Path(__file__).read_bytes())
-    horizons,repeats=([6,12],2) if args.smoke else ([6,166,840],3)
+    horizons,repeats=([6,12],2) if args.smoke else ([6,166,840],4)
     record=dict(schema='casita-relay-fsck-benchmark.v1',ok=False,synthetic=True,local_only=True,
         recorded_at=datetime.now(timezone.utc).isoformat(),source_sha256=pins,binary_sha256=binary_pins,
         machine=platform.machine(),python=platform.python_version(),horizons=horizons,repeats=repeats,cases=[],
         runner_sha256=runner_pin,corruption_attempts={},
+        scan_publication_state_separate=True,cache_state_controlled=False,
         paced_workload_tested=False,capacity_qualified=False,aws_accessed=False)
     try:
         record['corruption_controls']=corruption_controls(output/'controls',binaries,record['corruption_attempts'])

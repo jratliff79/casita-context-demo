@@ -88,8 +88,9 @@ Use Python 3.12+ and a new evidence directory outside the input checkout. The
 helper requires an unchanged Git checkout at the native pin, the exact lockfile,
 rustup's Rust 1.94.1 toolchain and no compiler/profile environment overrides.
 It rejects untracked and ignored source inputs except the exact root lockfile,
-then builds a private Git archive snapshot. Cargo runs from that snapshot, with
-automatic ancestor/home configs rejected and the explicit profile restricted to
+then builds a private Git archive snapshot with replacement objects disabled
+and a sanitized Git environment for every validation/archive command. Cargo runs
+from that snapshot, with automatic ancestor/home configs rejected and the explicit profile restricted to
 the reviewed settings. This accounts for [Cargo's hierarchical configuration](https://doc.rust-lang.org/cargo/reference/config.html#hierarchical-structure)
 without consuming configuration from the invoking directory. Keep the build
 target outside the source input too. It checks Cargo's emitted binary artifact profile and records source,
@@ -107,9 +108,12 @@ python3 benchmark all --baseline "$CASITA_DEMO_BIN" \
 
 The default curve covers 6, 166 and 840 API-built revisions. Every seed publication
 still runs whole-store physical/logical fsck, checkout and snapshot fsyncs. Both
-binaries verify all retained archives/snapshots. Three alternating-order trials
+binaries verify all retained archives/snapshots. Four alternating-order trials
 per horizon compare full fsck reports (only explicit timing lines are excluded)
-and direct API publication on independent fresh copies. The final publication
+and direct API publication on separate fresh copies for each operation. The
+standalone scan cannot mutate the publication copy; filesystem/OS caches are
+shared and uncontrolled, so these are not cold-cache samples. Each binary has
+two first and two second positions at every horizon. The final publication
 copy per binary receives another full history audit. Setup/copy/audit time stays
 outside each timed call. Raw wall/physical/logical samples and all attempted
 cases remain in the private output; completed scan/publication timings are

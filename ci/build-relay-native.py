@@ -19,14 +19,28 @@ PROFILE_LINES = ('[profile.relay-checked]', 'inherits = "dev"', 'opt-level = 3',
     'debug = 0', 'debug-assertions = true', 'overflow-checks = true', 'incremental = false')
 
 
+def source_git(source, *args):
+    # Neither replacement refs nor the caller's Git redirection/config may
+    # change what the pinned object means during validation or extraction.
+    environment={key:value for key,value in os.environ.items() if not key.startswith('GIT_')}
+    environment.update(GIT_NO_REPLACE_OBJECTS='1',GIT_CONFIG_NOSYSTEM='1',
+                       GIT_CONFIG_GLOBAL=os.devnull,GIT_GRAFT_FILE=os.devnull)
+    return subprocess.check_output(['git','--no-replace-objects','-c','core.fsmonitor=false',
+                                    '-c','advice.graftFileDeprecated=false',
+                                    '-C',str(source),*args],env=environment)
+
+
+def source_archive(source):
+    return source_git(source,'archive','--format=tar',PIN)
+
+
 def validate_source(source, lock):
-    if subprocess.check_output(['git','-C',str(source),'rev-parse','HEAD']).decode().strip()!=PIN:
+    if source_git(source,'rev-parse','HEAD').decode().strip()!=PIN:
         raise ValueError('native source pin mismatch')
-    if subprocess.check_output(['git','-C',str(source),'status','--porcelain','--untracked-files=no']):
+    if source_git(source,'status','--porcelain','--untracked-files=no'):
         raise ValueError('native tracked source changed')
     for extra_args in ([], ['--ignored']):
-        extra=subprocess.check_output(['git','-C',str(source),'ls-files','--others',
-                                       '--exclude-standard','-z',*extra_args]).split(b'\0')
+        extra=source_git(source,'ls-files','--others','--exclude-standard','-z',*extra_args).split(b'\0')
         if set(extra)-{b'',b'Cargo.lock'}:
             raise ValueError('untracked or ignored native build input')
     path=source/'Cargo.lock'
@@ -75,7 +89,7 @@ def main():
     # Cargo must see only a private Git snapshot plus the explicitly pinned lock.
     # Running from the source snapshot also removes the invocation directory
     # from Cargo's automatic configuration search.
-    archive=subprocess.check_output(['git','-C',str(source),'archive','--format=tar',PIN])
+    archive=source_archive(source)
     argv=['cargo','+1.94.1','build','--locked','--package','casita','--bin','casita',
           '--target-dir',str(target),'--profile','relay-checked','--config',str(profile),
           '--message-format=json-render-diagnostics']
@@ -108,7 +122,8 @@ def main():
         lock_sha256=hashlib.sha256(lock).hexdigest(),profile=artifact['profile'],
         native_binary_sha256=hashlib.sha256(binary.read_bytes()).hexdigest(),
         profile_config_sha256=profile_pin,source_archive_sha256=hashlib.sha256(archive).hexdigest(),
-        source_snapshot_from_git=True,untracked_input_allowlist=['Cargo.lock'],automatic_cargo_configs_rejected=True,
+        source_snapshot_from_git=True,git_replacements_disabled=True,git_environment_sanitized=True,
+        untracked_input_allowlist=['Cargo.lock'],automatic_cargo_configs_rejected=True,
         full_fsck_per_publication_unchanged=True,runtime_source_changed=False)
     (output/'build-receipt.json').write_text(json.dumps(receipt,indent=2,sort_keys=True)+'\n')
     print('Checked optimized native CLI built; runtime assertions and overflow checks enabled.')

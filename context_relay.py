@@ -2,7 +2,7 @@
 """Opt-in, one-workspace context relay. Bind only to loopback; use SSH remotely."""
 import argparse
 import base64
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from datetime import datetime, timezone
 import fcntl
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -12,6 +12,7 @@ from pathlib import Path, PurePosixPath
 import re
 import secrets
 import sqlite3
+import sys
 import stat
 import subprocess
 import tempfile
@@ -171,7 +172,8 @@ def revoke_member(state, member):
 
 class Relay:
     """One local process serializes Casita operations; SQLite commits head + event together."""
-    def __init__(self, state, binary):
+    def __init__(self, state, binary, timing=None):
+        self.timing = timing
         self.state, self.binary = Path(state), str(Path(binary).resolve())
         require(self.state.is_dir() and not self.state.is_symlink(), "invalid relay state")
         with connect(self.state) as db:
@@ -179,7 +181,12 @@ class Relay:
             self.workspace, self.owner = settings["workspace"], settings["owner"]
         self.store = Casita(self.binary, self.state / "store", DiscardDiagnostics())
         if not (self.state / "store").exists():
-            self.store.run("init")
+            with self.stage('native.init'):
+                self.store.run("init")
+
+    def stage(self, name):
+        timing = getattr(self, 'timing', None)
+        return timing.span(name) if timing is not None else nullcontext()
 
     def authenticate(self, db, token):
         require(isinstance(token, str) and 30 <= len(token) <= 100, "unauthorized", 401)
@@ -194,6 +201,10 @@ class Relay:
         return json.loads(row["snapshot"]) if row else None
 
     def save_snapshot(self, db, snapshot):
+        with self.stage('server.snapshot'):
+            return self._save_snapshot(db, snapshot)
+
+    def _save_snapshot(self, db, snapshot):
         raw = canonical(snapshot)
         require(len(raw) <= LIMIT, "shared state exceeds byte limit")
         # Unique roots retain every published revision. Orphans from a failed commit
@@ -203,12 +214,17 @@ class Relay:
             folder = Path(temp) / "bundle"
             folder.mkdir()
             (folder / "snapshot.json").write_bytes(raw)
-            self.store.run("import", folder, "--root", root)
-            key = self.store.roots()[root]
+            with self.stage('native.import'):
+                self.store.run("import", folder, "--root", root)
+            with self.stage('native.root_ls'):
+                key = self.store.roots()[root]
             archive = Path(temp) / "snapshot.casitar"
-            self.store.run("archive", "create", "--root", root, "--output", archive, "--json")
-            self.store.run("fsck", "--dry-run")
-            self.store.run("checkout", key, Path(temp) / "verified", "--no-root")
+            with self.stage('native.archive_create'):
+                self.store.run("archive", "create", "--root", root, "--output", archive, "--json")
+            with self.stage('native.fsck'):
+                self.store.run("fsck", "--dry-run")
+            with self.stage('native.checkout'):
+                self.store.run("checkout", key, Path(temp) / "verified", "--no-root")
             require(file_map(Path(temp) / "verified") == {"snapshot.json": digest(raw)},
                     "Casita snapshot verification failed")
             encoded = read_regular(archive, WIRE_LIMIT // 2)
@@ -217,20 +233,25 @@ class Relay:
                    "snapshot_sha256": digest(raw), "archive_sha256": archive_id}
             destination = self.state / "snapshots" / (archive_id + ".casitar")
             # Write archive durably before exposing its index in the SQLite commit.
-            with destination.open("xb") as stream:
-                stream.write(encoded)
-                stream.flush()
-                os.fsync(stream.fileno())
-            fd = os.open(str(destination.parent), os.O_RDONLY)
-            try:
-                os.fsync(fd)
-            finally:
-                os.close(fd)
+            with self.stage('server.snapshot_persist'):
+                with destination.open("xb") as stream:
+                    stream.write(encoded)
+                    stream.flush()
+                    os.fsync(stream.fileno())
+                fd = os.open(str(destination.parent), os.O_RDONLY)
+                try:
+                    os.fsync(fd)
+                finally:
+                    os.close(fd)
         db.execute("INSERT INTO revisions VALUES (?,?,?)",
                    (snapshot["revision"], raw.decode(), canonical(pin).decode()))
         return pin
 
     def handle(self, token, operation, body):
+        with self.stage('server.handle'):
+            return self._handle(token, operation, body)
+
+    def _handle(self, token, operation, body):
         require(isinstance(body, dict), "body must be a JSON object")
         with connect(self.state, readonly=(operation == "readiness")) as db:
             if operation == "readiness":
@@ -253,7 +274,8 @@ class Relay:
                 return {"ready": True, "nonce": body["nonce"],
                         "proof": response_proof(credential["token"], self.workspace, body["nonce"])}
             # Reload membership every request, including reads and idempotent retries.
-            actor = self.authenticate(db, token)
+            with self.stage('server.authenticate'):
+                actor = self.authenticate(db, token)
             require(body.get("workspace") == self.workspace, "workspace unavailable", 403)
             if operation == "context":
                 require(set(body) == {"workspace"}, "invalid context request")
@@ -350,12 +372,28 @@ class Relay:
             result = {**result, "cursor": db.execute("SELECT last_insert_rowid()").fetchone()[0]}
             db.execute("INSERT INTO requests VALUES (?,?,?,?)",
                        (actor, body["request_id"], request_hash, canonical(result).decode()))
-            db.commit()
+            with self.stage('server.commit'):
+                db.commit()
             return result
 
 
 def serve(relay, port):
+    timing = getattr(relay, 'timing', None)
+    def span(name):
+        return timing.span(name) if timing is not None else nullcontext()
+    class Server(HTTPServer):
+        def handle_error(self, request, client_address):
+            if timing is None:
+                return super().handle_error(request, client_address)
+            # socketserver's default traceback can include raw paths/messages.
+            timing.failure(sys.exc_info()[1], phase='http.accepted')
     class Handler(BaseHTTPRequestHandler):
+        def handle_one_request(self):
+            if timing is None:
+                return super().handle_one_request()
+            with timing.request(), span('http.accepted'):
+                return super().handle_one_request()
+
         def setup(self):
             super().setup()
             self.connection.settimeout(10)
@@ -365,6 +403,8 @@ def serve(relay, port):
 
         def do_POST(self):
             self.connection.settimeout(10)
+            if timing is not None:
+                timing.bind_request(self.path[1:], self.headers.get('X-Casita-Workload-Trace'))
             try:
                 require(self.headers.get("Host") in (f"127.0.0.1:{self.server.server_port}",
                         f"localhost:{self.server.server_port}"), "invalid Host", 403)
@@ -380,9 +420,12 @@ def serve(relay, port):
                 auth = self.headers.get("Authorization", "")
                 prefix = "RelayReadiness " if self.path == "/readiness" else "Bearer "
                 require(auth.startswith(prefix), "unauthorized", 401)
-                raw = self.rfile.read(length)
-                require(len(raw) == length, "incomplete body")
-                result = relay.handle(auth[len(prefix):], self.path[1:], json.loads(raw))
+                with span('http.read_decode'):
+                    raw = self.rfile.read(length)
+                    require(len(raw) == length, "incomplete body")
+                    body = json.loads(raw)
+                with span('http.handle'):
+                    result = relay.handle(auth[len(prefix):], self.path[1:], body)
                 status = 200
             except Rejected as error:
                 status, result = error.status, {"error": str(error)}
@@ -390,15 +433,16 @@ def serve(relay, port):
                 status, result = 400, {"error": "invalid request"}
             except Exception:
                 status, result = 503, {"error": "relay operation failed; no update acknowledged"}
-            encoded = canonical(result)
-            self.send_response(status)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Cache-Control", "no-store")
-            self.send_header("Content-Length", str(len(encoded)))
-            self.end_headers()
-            self.wfile.write(encoded)
+            with span('http.response_write'):
+                encoded = canonical(result)
+                self.send_response(status)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("Content-Length", str(len(encoded)))
+                self.end_headers()
+                self.wfile.write(encoded)
 
-    return HTTPServer(("127.0.0.1", port), Handler)
+    return Server(("127.0.0.1", port), Handler)
 
 
 class NoRedirect(HTTPRedirectHandler):
@@ -406,13 +450,16 @@ class NoRedirect(HTTPRedirectHandler):
         raise Rejected("redirect rejected")
 
 
-def client(url, credential, operation, body, relay_port=None):
+def client(url, credential, operation, body, relay_port=None, trace_tag=None):
     target = urlsplit(url)
     require(target.scheme == "http" and target.hostname in ("127.0.0.1", "localhost")
             and target.port is not None and target.path in ("", "/") and not target.query
             and not target.fragment and not target.username and not target.password,
             "use a loopback URL, with SSH forwarding for another machine")
     headers = {"Content-Type": "application/json"}
+    if trace_tag is not None:
+        require(type(trace_tag) is int and 0 < trace_tag < 2**31, 'invalid trace tag')
+        headers['X-Casita-Workload-Trace'] = str(trace_tag)
     if relay_port is not None:
         require(type(relay_port) is int and 1 <= relay_port <= 65535,
                 "invalid relay port")

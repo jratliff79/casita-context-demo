@@ -33,7 +33,7 @@ def main():
     root = args.output.resolve(); root.mkdir(parents=True, exist_ok=False, mode=0o700)
     binary = args.casita.resolve()
     argv = [sys.executable, '-B', str(HERE / 'relay_workload.py'), '--casita', str(binary),
-            '--output', str(root / 'workload'), '--smoke', '--initial-revisions', '12',
+            '--output', str(root / 'workload'), '--smoke', '--initial-revisions', '12', '--stage-timing',
             '--casita-commit', '9d7a2f42b14d86189662e21241f72a55ccb42cb6']
     sshd, log, process = None, None, None
     keys = []
@@ -92,6 +92,15 @@ def main():
             os.killpg(process.pid, signal.SIGINT)
             raise
         data = json.loads((root / 'workload/receipt.json').read_text())
+        diagnostic = data['diagnostics']
+        require(diagnostic['enabled'] and diagnostic['complete'] and diagnostic['records_written'] > 0
+                and diagnostic['records_dropped'] == 0 and not diagnostic['io_failed']
+                and diagnostic['missing_requests'] == diagnostic['unexpected_requests'] == diagnostic['duplicate_requests'] == 0,
+                'bounded stage diagnostics or request correlation incomplete')
+        trace = [json.loads(line) for line in (root / 'workload/stage-timing.jsonl').read_text().splitlines()]
+        require({'native.import', 'native.fsck', 'native.archive_create', 'native.checkout',
+                 'http.accepted', 'http.response_write', 'prepare.seed_history', 'prepare.verify_snapshots'}
+                <= {row['stage'] for row in trace}, 'server/native/preparation stages missing')
         require(data['ok'] and not data['capacity_qualified'] and not data['plan']['full_profile'], 'smoke scope changed')
         require(data['storage_before']['counts']['revisions'] == 12
                 and data['storage_after']['counts']['revisions'] == 26, 'aged/paced revision conservation failed')

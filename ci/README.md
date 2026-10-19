@@ -84,9 +84,15 @@ python3 ci/build-relay-native.py --source output/casita-source \
 export CASITA_CHECKED_BIN="$PWD/output/checked-native-build/relay-checked/casita"
 ```
 
-Use a new evidence directory. The helper requires an unchanged Git checkout at
-the native pin, the exact lockfile, rustup's Rust 1.94.1 toolchain and no compiler/profile environment
-overrides. It checks Cargo's emitted binary artifact profile and records source,
+Use Python 3.12+ and a new evidence directory outside the input checkout. The
+helper requires an unchanged Git checkout at the native pin, the exact lockfile,
+rustup's Rust 1.94.1 toolchain and no compiler/profile environment overrides.
+It rejects untracked and ignored source inputs except the exact root lockfile,
+then builds a private Git archive snapshot. Cargo runs from that snapshot, with
+automatic ancestor/home configs rejected and the explicit profile restricted to
+the reviewed settings. This accounts for [Cargo's hierarchical configuration](https://doc.rust-lang.org/cargo/reference/config.html#hierarchical-structure)
+without consuming configuration from the invoking directory. Keep the build
+target outside the source input too. It checks Cargo's emitted binary artifact profile and records source,
 lock, config and binary hashes in `build-receipt.json`. A build receipt describes
 observed inputs/profile; it is not execution attestation or approval to replace
 a deployed binary. The old debug executable is retained for comparison.
@@ -106,7 +112,8 @@ per horizon compare full fsck reports (only explicit timing lines are excluded)
 and direct API publication on independent fresh copies. The final publication
 copy per binary receives another full history audit. Setup/copy/audit time stays
 outside each timed call. Raw wall/physical/logical samples and all attempted
-cases remain in the private output; a failed or missing case cannot become an
+cases remain in the private output; completed scan/publication timings are
+recorded before post-call validation, with a separate validation status. A failed or missing case cannot become an
 `ok` receipt. Timings do not impose hardware-independent speed thresholds.
 
 Four synthetic corruption controls run with each binary. A distinct old native

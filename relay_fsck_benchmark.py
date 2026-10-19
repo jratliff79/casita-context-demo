@@ -78,14 +78,17 @@ def command(argv):
     return subprocess.run(list(map(str, argv)), capture_output=True, text=True, timeout=90)
 
 
-def scan(binary, store):
+def scan(binary, store, on_complete=None):
     before = time.monotonic()
     result = command(fsck_argv(binary, store))
+    measured=dict(milliseconds=1000*(time.monotonic()-before),validation_passed=False)
+    if on_complete is not None:on_complete(measured)
     require(result.returncode == 0, 'full fsck rejected healthy fixture')
     semantic = semantic_report(result.stdout)
     times = {part: int(re.search(part+r'-fsck-nanos (\d+)', result.stdout).group(1))
              for part in ('physical', 'logical')}
-    return semantic, dict(milliseconds=1000*(time.monotonic()-before), physical_ns=times['physical'], logical_ns=times['logical'])
+    measured.update(physical_ns=times['physical'],logical_ns=times['logical'])
+    return semantic, measured
 
 
 def verify_history(state, binary):
@@ -148,11 +151,14 @@ def compare_case(root, binaries, horizon, repeats, result):
         for role in order:
             with tempfile.TemporaryDirectory(dir=root) as temp:
                 state = Path(temp)/'relay'; shutil.copytree(original, state)
-                report, measured = scan(binaries[role], state/'store')
+                def completed_scan(measured):
+                    measured.update(iteration=iteration,order=order.index(role))
+                    observations[role]['fsck'].append(measured)
+                report, measured = scan(binaries[role], state/'store',on_complete=completed_scan)
                 reference = report if reference is None else reference
                 require(report == reference, 'physical/logical healthy reports differ')
                 require(int(re.search(r'checked (\d+) root', report[2]).group(1)) == horizon, 'retained root count differs')
-                observations[role]['fsck'].append(dict(measured, iteration=iteration, order=order.index(role)))
+                measured['validation_passed']=True
                 service = relay.Relay(state, binaries[role]); credential=backup.private_json(state/'credentials/alpha.json')
                 native_calls, original_run = [], service.store.run
                 def observed_native(*args):
@@ -165,12 +171,14 @@ def compare_case(root, binaries, horizon, repeats, result):
                     request_id='synthetic-benchmark-'+str(iteration), expected_revision=horizon,
                     checkpoint=fixture('task-alpha-0', 'benchmark-'+str(iteration), 4096)))
                 elapsed = 1000*(time.monotonic()-start)
+                observed=dict(milliseconds=elapsed,iteration=iteration,order=order.index(role),validation_passed=False)
+                observations[role]['publication'].append(observed)
                 require(native_calls == ['import','root','archive','fsck','checkout'], 'native publication order changed')
                 require(response['pin']['revision'] == horizon+1, 'publication head differs')
                 require(state_measurement(state)['counts'] == dict(expected, revisions=horizon+1, events=horizon+3, requests=horizon+3),
                         'publication changed history accounting')
                 if iteration == repeats-1:verify_history(state, binaries[role])
-                observations[role]['publication'].append(dict(milliseconds=elapsed, iteration=iteration, order=order.index(role)))
+                observed['validation_passed']=True
     result.update(status='passed',
         summaries={role:{kind:latency_summary(rows) for kind,rows in kinds.items()} for role,kinds in observations.items()},
         healthy_reports_equal=True, all_retained_snapshots_verified=True, full_fsck_on_every_publication=True)

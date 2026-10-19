@@ -810,3 +810,42 @@ jobs:
           assert all(c["exit_code"] == 0 for c in receipt["commands"])
           print("PASS: OCI image/context transport and trusted host check; no container runtime executed")
           PY
+
+  checked-relay-fsck:
+    name: Checked relay fsck
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      CARGO_BUILD_JOBS: '2'
+      CARGO_TERM_COLOR: never
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          repository: cachix/casita
+          ref: 9d7a2f42b14d86189662e21241f72a55ccb42cb6
+          path: output/casita-checked-source
+          persist-credentials: false
+      - name: Install pinned compiler and dependency snapshot
+        run: |
+          rustup toolchain install 1.94.1 --profile minimal
+          cp ci/Cargo.lock output/casita-checked-source/Cargo.lock
+      - name: Build debug baseline
+        run: >-
+          cargo +1.94.1 build --locked --package casita --bin casita
+          --manifest-path output/casita-checked-source/Cargo.toml
+          --target-dir output/fsck-build
+      - name: Build and verify checked optimized compiler profile
+        run: >-
+          python ci/build-relay-native.py --source output/casita-checked-source
+          --target output/fsck-build --output output/fsck-checked-build
+      - name: Compare full scans and reject damaged retained history
+        run: >-
+          python benchmark all --baseline output/fsck-build/debug/casita
+          --candidate output/fsck-build/relay-checked/casita
+          --output output/fsck-comparison --smoke

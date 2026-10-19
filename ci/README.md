@@ -63,3 +63,62 @@ After completing its default-CLI demonstrations, the handoff job enables
 They cover length hints, EOF, bounded allocation and short reads. This feature
 is enabled for the test build; the demonstrations run first with the default
 CLI build. No performance timings are collected.
+
+## Checked optimized relay build
+
+The ordinary debug build is intentionally unoptimized. Its cost is visible when
+`Relay.save_snapshot` runs full `fsck --dry-run` for every retained revision.
+`relay-checked-profile.toml` changes code optimization while explicitly retaining
+**both debug assertions and overflow checks**. It inherits `dev`, uses opt-level
+3, disables debug symbols/incremental compilation, and keeps the same native
+source, default features and dependency lock. It changes no integrity algorithm,
+root retention, fsck scope/frequency, archive verification or durability call.
+The traversal still scales with retained history; this is a constant-factor build
+optimization, not an incremental-integrity design.
+
+After the fresh pinned source checkout and lockfile copy described above:
+
+```sh
+python3 ci/build-relay-native.py --source output/casita-source \
+  --target output/checked-native-build --output output/checked-native-build-evidence
+export CASITA_CHECKED_BIN="$PWD/output/checked-native-build/relay-checked/casita"
+```
+
+Use a new evidence directory. The helper requires an unchanged Git checkout at
+the native pin, the exact lockfile, rustup's Rust 1.94.1 toolchain and no compiler/profile environment
+overrides. It checks Cargo's emitted binary artifact profile and records source,
+lock, config and binary hashes in `build-receipt.json`. A build receipt describes
+observed inputs/profile; it is not execution attestation or approval to replace
+a deployed binary. The old debug executable is retained for comparison.
+
+The permanent corpus registers `relay-fsck` in `benchmarks/manifest.json` and
+includes it in `benchmark all`:
+
+```sh
+python3 benchmark all --baseline "$CASITA_DEMO_BIN" \
+  --candidate "$CASITA_CHECKED_BIN" --output output/checked-fsck-comparison
+```
+
+The default curve covers 6, 166 and 840 API-built revisions. Every seed publication
+still runs whole-store physical/logical fsck, checkout and snapshot fsyncs. Both
+binaries verify all retained archives/snapshots. Three alternating-order trials
+per horizon compare full fsck reports (only explicit timing lines are excluded)
+and direct API publication on independent fresh copies. The final publication
+copy per binary receives another full history audit. Setup/copy/audit time stays
+outside each timed call. Raw wall/physical/logical samples and all attempted
+cases remain in the private output; a failed or missing case cannot become an
+`ok` receipt. Timings do not impose hardware-independent speed thresholds.
+
+Four synthetic corruption controls run with each binary. A distinct old native
+canary root is retained before the six API revisions. Its damaged/missing pack
+must fail full fsck and block publication even while the latest native
+snapshot still restores; latest-pack corruption must also block publication.
+Committed SQLite history cannot change on rejection. A separate damaged retained
+archive must fail the complete history audit while its native store remains
+healthy. None of these controls is used to skip a check for healthy samples.
+
+The `Checked relay fsck` CI job builds both profiles and runs `--smoke` (6/12
+revisions, two alternating trials and the same corruption controls). A local
+comparison is not a paced remote-client workload, capacity qualification, or
+permission for a paid run or production change. Any future qualification must
+pin the newly built executable bytes and preserve the historical failed results.

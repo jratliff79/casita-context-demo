@@ -1,0 +1,11 @@
+{
+  "schema": "casita-demo-benchmarks.v1",
+  "all": ["relay-fsck"],
+  "cases": {
+    "relay-fsck": {
+      "horizons": [6, 166, 840],
+      "runner": "relay_fsck_benchmark.py",
+      "correctness": ["identical full physical/logical reports", "all retained snapshots verified", "old and latest corruption rejected", "no publication on failed fsck"]
+    }
+  }
+}

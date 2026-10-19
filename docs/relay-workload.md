@@ -240,3 +240,13 @@ three fresh plus three aged repetitions, every operational budget or the actual
 operator devices. It does not approve a resize, retention horizon or pruning.
 Inspect and export only reviewed numeric results and hashes. Never copy the whole
 private output tree into Git or a shared context.
+
+## Reducing native check overhead without reducing verification
+
+For local cost comparisons, use the [checked optimized build and permanent fsck
+benchmark](../ci/README.md#checked-optimized-relay-build). Its source, lock and
+integrity operations match the debug build; compiler optimization retains debug
+assertions and overflow checks. Full `fsck --dry-run` still runs on every
+publication. The corpus checks complete old history and corrupt historical data,
+not just the latest snapshot. It does not qualify the new binary for a paid or
+production workload; those require fresh exact-binary evidence and authorization.

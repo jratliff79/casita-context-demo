@@ -1,0 +1,14 @@
+#!/usr/bin/env python3
+"""Permanent synthetic benchmark corpus; every registered case is in all."""
+import json
+from pathlib import Path
+import sys
+
+ROOT = Path(__file__).resolve().parent
+manifest = json.loads((ROOT / 'benchmarks/manifest.json').read_text())
+if len(sys.argv) < 2 or sys.argv[1] not in ('all', 'relay-fsck'):
+    raise SystemExit('usage: python3 benchmark {all,relay-fsck} --baseline BIN --candidate BIN --output NEW_DIR [--smoke]')
+if manifest['all'] != ['relay-fsck'] or set(manifest['cases']) != {'relay-fsck'}:
+    raise SystemExit('unregistered benchmark case')
+from relay_fsck_benchmark import main
+main(sys.argv[2:])

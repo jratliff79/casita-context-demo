@@ -1,0 +1,8 @@
+# Faster native checks with the dev profile's runtime guards retained.
+[profile.relay-checked]
+inherits = "dev"
+opt-level = 3
+debug = 0
+debug-assertions = true
+overflow-checks = true
+incremental = false

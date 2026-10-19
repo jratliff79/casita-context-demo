@@ -17,12 +17,13 @@ ROOT=Path(__file__).resolve().parents[1]
 
 class PublicPresentation(unittest.TestCase):
     def test_failed_event_kit_receipt_keeps_generic_service_boundary(self):
-        with tempfile.TemporaryDirectory(dir=ROOT/'output') as directory:
-            output=Path(directory)
-            output.rmdir()  # The demo requires a fresh output/<directory>.
-            with patch.object(event_kit,'Casita',side_effect=RuntimeError('synthetic stop')):
+        with tempfile.TemporaryDirectory() as directory:
+            output=Path(directory)/'kit';output.mkdir()
+            # Path validation has its own tests; isolate the failed-receipt contract.
+            with patch.object(event_kit,'new_output',return_value=output), \
+                    patch.object(event_kit,'Casita',side_effect=RuntimeError('synthetic stop')):
                 with self.assertRaisesRegex(RuntimeError,'synthetic stop'):
-                    event_kit.run_demo('/synthetic/native',output.relative_to(ROOT))
+                    event_kit.run_demo('/synthetic/native',Path('output/kit'))
             receipt=json.loads((output/'receipt.json').read_text())
             self.assertIn('external_service_integration',receipt)
             self.assertIs(receipt['external_service_integration'],False)

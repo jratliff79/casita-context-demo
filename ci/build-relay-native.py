@@ -24,17 +24,27 @@ def source_git(source, *args):
     # change what the pinned object means during validation or extraction.
     environment={key:value for key,value in os.environ.items() if not key.startswith('GIT_')}
     environment.update(GIT_NO_REPLACE_OBJECTS='1',GIT_CONFIG_NOSYSTEM='1',
-                       GIT_CONFIG_GLOBAL=os.devnull,GIT_GRAFT_FILE=os.devnull)
+                       GIT_CONFIG_GLOBAL=os.devnull,GIT_GRAFT_FILE=os.devnull,GIT_ATTR_NOSYSTEM='1')
     return subprocess.check_output(['git','--no-replace-objects','-c','core.fsmonitor=false',
                                     '-c','advice.graftFileDeprecated=false',
+                                    '-c','core.attributesFile='+os.devnull,
                                     '-C',str(source),*args],env=environment)
 
 
+def validate_archive_attributes(source):
+    private=Path(source_git(source,'rev-parse','--path-format=absolute',
+                            '--git-path','info/attributes').decode().strip())
+    if private.exists() or private.is_symlink():
+        raise ValueError('repository-private archive attributes are unsupported')
+
+
 def source_archive(source):
+    validate_archive_attributes(source)
     return source_git(source,'archive','--format=tar',PIN)
 
 
 def validate_source(source, lock):
+    validate_archive_attributes(source)
     if source_git(source,'rev-parse','HEAD').decode().strip()!=PIN:
         raise ValueError('native source pin mismatch')
     if source_git(source,'status','--porcelain','--untracked-files=no'):
@@ -51,7 +61,7 @@ def validate_source(source, lock):
 def validate_environment(environment):
     if 'CARGO_HOME' in environment and not Path(environment['CARGO_HOME']).is_absolute():
         raise ValueError('Cargo home must be absolute when provided')
-    forbidden={'RUSTFLAGS','CARGO_ENCODED_RUSTFLAGS','RUSTC_WRAPPER','RUSTC_WORKSPACE_WRAPPER','RUSTC'}
+    forbidden={'RUSTFLAGS','CARGO_ENCODED_RUSTFLAGS','RUSTC_WRAPPER','RUSTC_WORKSPACE_WRAPPER','RUSTC','CARGO_INCREMENTAL'}
     for key,value in environment.items():
         if value and (key in forbidden or key.startswith(('CARGO_PROFILE_','CARGO_TARGET_'))
                 or key.startswith('CARGO_BUILD_') and key!='CARGO_BUILD_JOBS'):
@@ -123,6 +133,7 @@ def main():
         native_binary_sha256=hashlib.sha256(binary.read_bytes()).hexdigest(),
         profile_config_sha256=profile_pin,source_archive_sha256=hashlib.sha256(archive).hexdigest(),
         source_snapshot_from_git=True,git_replacements_disabled=True,git_environment_sanitized=True,
+        private_archive_attributes_rejected=True,global_system_attributes_disabled=True,
         untracked_input_allowlist=['Cargo.lock'],automatic_cargo_configs_rejected=True,
         full_fsck_per_publication_unchanged=True,runtime_source_changed=False)
     (output/'build-receipt.json').write_text(json.dumps(receipt,indent=2,sort_keys=True)+'\n')

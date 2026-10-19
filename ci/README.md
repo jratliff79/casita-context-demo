@@ -89,7 +89,9 @@ helper requires an unchanged Git checkout at the native pin, the exact lockfile,
 rustup's Rust 1.94.1 toolchain and no compiler/profile environment overrides.
 It rejects untracked and ignored source inputs except the exact root lockfile,
 then builds a private Git archive snapshot with replacement objects disabled
-and a sanitized Git environment for every validation/archive command. Cargo runs
+and a sanitized Git environment for every validation/archive command. Private
+repository attributes are rejected, global/system attributes are disabled, and
+`CARGO_INCREMENTAL` cannot override the explicit profile. Cargo runs
 from that snapshot, with automatic ancestor/home configs rejected and the explicit profile restricted to
 the reviewed settings. This accounts for [Cargo's hierarchical configuration](https://doc.rust-lang.org/cargo/reference/config.html#hierarchical-structure)
 without consuming configuration from the invoking directory. Keep the build

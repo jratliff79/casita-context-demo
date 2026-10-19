@@ -84,7 +84,7 @@ python3 ci/build-relay-native.py --source output/casita-source \
 export CASITA_CHECKED_BIN="$PWD/output/checked-native-build/relay-checked/casita"
 ```
 
-Use Python 3.12+ and a new evidence directory outside the input checkout. The
+Use Python 3.12+ and new evidence and target directories outside the input checkout. The
 helper requires an unchanged Git checkout at the native pin, the exact lockfile,
 rustup's Rust 1.94.1 toolchain and no compiler/profile environment overrides.
 It rejects untracked and ignored source inputs except the exact root lockfile,
@@ -92,7 +92,12 @@ then builds a private Git archive snapshot with replacement objects disabled
 and a sanitized Git environment for every validation/archive command. Private
 repository attributes are rejected, global/system attributes are disabled, and
 `CARGO_INCREMENTAL` cannot override the explicit profile. Cargo runs
-from that snapshot, with automatic ancestor/home configs rejected and the explicit profile restricted to
+from that snapshot with a fresh temporary Cargo home, a new target, and a closed
+environment allowlist that excludes native compiler/package overrides. Dependency
+sources are downloaded afresh; the caller's unpacked registry/Git caches are not
+consumed. Network access is required. The private source/cache workspace is removed
+on success or failure. Cargo must report that it built the final executable in
+this invocation. Automatic ancestor/home configs are rejected and the profile restricted to
 the reviewed settings. This accounts for [Cargo's hierarchical configuration](https://doc.rust-lang.org/cargo/reference/config.html#hierarchical-structure)
 without consuming configuration from the invoking directory. Keep the build
 target outside the source input too. It checks Cargo's emitted binary artifact profile and records source,

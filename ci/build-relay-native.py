@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Build the pinned native CLI with optimization and both dev runtime guards."""
 import argparse
+from contextlib import contextmanager
 import hashlib
 import io
 import json
@@ -84,18 +85,51 @@ def validate_profile_config(path):
     return hashlib.sha256(raw).hexdigest()
 
 
+def build_environment(environment, cargo_home):
+    # A closed set excludes native compiler flags, package build-script knobs,
+    # wrappers, and mutable caller Cargo configuration/dependency caches.
+    allowed={'PATH','HOME','RUSTUP_HOME','TMPDIR','TMP','TEMP','CARGO_BUILD_JOBS',
+             'CARGO_TERM_COLOR','SSL_CERT_FILE','SSL_CERT_DIR','HTTPS_PROXY','HTTP_PROXY',
+             'NO_PROXY','ALL_PROXY','https_proxy','http_proxy','no_proxy','all_proxy'}
+    result={key:value for key,value in environment.items() if key in allowed}
+    result.update(CARGO_HOME=str(cargo_home),GIT_NO_REPLACE_OBJECTS='1',
+                  GIT_CONFIG_NOSYSTEM='1',GIT_CONFIG_GLOBAL=os.devnull,GIT_ATTR_NOSYSTEM='1',
+                  CARGO_NET_GIT_FETCH_WITH_CLI='true')
+    return result
+
+
+@contextmanager
+def private_build_workspace(output):
+    with tempfile.TemporaryDirectory(prefix='native-build-',dir=output) as temporary:
+        root=Path(temporary);snapshot=root/'source';cargo_home=root/'cargo-home'
+        snapshot.mkdir(mode=0o700);cargo_home.mkdir(mode=0o700)
+        yield snapshot,cargo_home
+
+
+def prepare_target(target):
+    if target.exists() or target.is_symlink():
+        raise ValueError('checked build target must be new; cached artifacts are unsupported')
+    target.mkdir(parents=True,mode=0o700,exist_ok=False)
+
+
+def built_artifact(artifact):
+    if artifact.get('fresh') is not False:
+        raise ValueError('final executable must be built by this invocation')
+    return checked_artifact(artifact)
+
+
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--source',type=Path,required=True);parser.add_argument('--target',type=Path,required=True)
-    parser.add_argument('--output',type=Path,required=True);parser.add_argument('--offline',action='store_true')
+    parser.add_argument('--output',type=Path,required=True)
     args=parser.parse_args();source,target=args.source.resolve(),args.target.resolve()
     output=args.output.resolve();output.mkdir(parents=True,exist_ok=False,mode=0o700)
     lock=(HERE/'ci/Cargo.lock').read_bytes()
     validate_source(source,lock);validate_environment(os.environ)
     profile=HERE/'ci/relay-checked-profile.toml';profile_pin=validate_profile_config(profile)
-    cargo_home=Path(os.environ.get('CARGO_HOME',Path.home()/'.cargo')).resolve()
     if target.is_relative_to(source) or output.is_relative_to(source):
         raise ValueError('build output must stay outside the source input')
+    prepare_target(target)
     # Cargo must see only a private Git snapshot plus the explicitly pinned lock.
     # Running from the source snapshot also removes the invocation directory
     # from Cargo's automatic configuration search.
@@ -103,17 +137,16 @@ def main():
     argv=['cargo','+1.94.1','build','--locked','--package','casita','--bin','casita',
           '--target-dir',str(target),'--profile','relay-checked','--config',str(profile),
           '--message-format=json-render-diagnostics']
-    if args.offline:argv.append('--offline')
     artifact=None
-    with tempfile.TemporaryDirectory(prefix='native-source-',dir=output) as temporary, \
+    with private_build_workspace(output) as (snapshot,cargo_home), \
             (output/'cargo-messages.jsonl').open('x') as messages:
-        snapshot=Path(temporary)
         with tarfile.open(fileobj=io.BytesIO(archive)) as tar:
             tar.extractall(snapshot,filter='data')
         (snapshot/'Cargo.lock').write_bytes(lock)
         validate_cargo_configs(snapshot,cargo_home)
         process=subprocess.Popen(argv+['--manifest-path',str(snapshot/'Cargo.toml')],
-                                 cwd=snapshot,stdout=subprocess.PIPE,text=True)
+                                 cwd=snapshot,env=build_environment(os.environ,cargo_home),
+                                 stdout=subprocess.PIPE,text=True)
         try:
             for line in process.stdout:
                 if len(line)>1024*1024:raise ValueError('compiler message exceeds bound')
@@ -125,7 +158,7 @@ def main():
         finally:
             process.stdout.close()
             if process.poll() is None:process.terminate();process.wait(timeout=10)
-    binary=Path(checked_artifact(artifact or {}))
+    binary=Path(built_artifact(artifact or {}))
     validate_source(source,lock)
     if validate_profile_config(profile)!=profile_pin:raise ValueError('profile changed during build')
     receipt=dict(source_commit=PIN,rust_toolchain='1.94.1',
@@ -134,6 +167,8 @@ def main():
         profile_config_sha256=profile_pin,source_archive_sha256=hashlib.sha256(archive).hexdigest(),
         source_snapshot_from_git=True,git_replacements_disabled=True,git_environment_sanitized=True,
         private_archive_attributes_rejected=True,global_system_attributes_disabled=True,
+        fresh_cargo_home=True,fresh_target=True,final_artifact_built_this_invocation=True,
+        compiler_environment_allowlisted=True,
         untracked_input_allowlist=['Cargo.lock'],automatic_cargo_configs_rejected=True,
         full_fsck_per_publication_unchanged=True,runtime_source_changed=False)
     (output/'build-receipt.json').write_text(json.dumps(receipt,indent=2,sort_keys=True)+'\n')

@@ -843,9 +843,9 @@ jobs:
       - name: Build and verify checked optimized compiler profile
         run: >-
           python ci/build-relay-native.py --source output/casita-checked-source
-          --target output/fsck-build --output output/fsck-checked-build
+          --target output/fsck-checked-target --output output/fsck-checked-build
       - name: Compare full scans and reject damaged retained history
         run: >-
           python benchmark all --baseline output/fsck-build/debug/casita
-          --candidate output/fsck-build/relay-checked/casita
+          --candidate output/fsck-checked-target/relay-checked/casita
           --output output/fsck-comparison --smoke

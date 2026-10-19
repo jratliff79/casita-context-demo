@@ -22,7 +22,7 @@ class MonitorTests(unittest.TestCase):
         temp = tempfile.TemporaryDirectory(); self.addCleanup(temp.cleanup)
         self.root = Path(temp.name)
         self.state = self.root / 'state'
-        context_relay.initialize(self.state, 'synthetic-team', 'jp', ['cj'])
+        context_relay.initialize(self.state, 'synthetic-team', 'owner', ['member'])
         context_relay.provision_readiness(self.state)
         self.credential = self.state / 'monitoring/readiness.json'
         self.spool = self.root / 'spool'
@@ -111,7 +111,7 @@ class MonitorTests(unittest.TestCase):
     def test_authenticated_real_relay_readiness(self):
         class Index(context_relay.Relay):
             def __init__(service, state):
-                service.state=state; service.workspace='synthetic-team'; service.owner='jp'
+                service.state=state; service.workspace='synthetic-team'; service.owner='owner'
         server = context_relay.serve(Index(self.state), 0)
         thread=threading.Thread(target=server.serve_forever);thread.start()
         self.addCleanup(lambda:(server.shutdown(),thread.join(),server.server_close()))
@@ -168,10 +168,10 @@ class MonitorTests(unittest.TestCase):
         class Index(context_relay.Relay):
             def __init__(service, state):
                 service.state = state
-                service.workspace, service.owner = 'synthetic-team', 'jp'
+                service.workspace, service.owner = 'synthetic-team', 'owner'
         service = Index(self.state)
         credential = json.loads(self.credential.read_bytes())
-        member = json.loads((self.state / 'credentials/jp.json').read_bytes())
+        member = json.loads((self.state / 'credentials/owner.json').read_bytes())
         before = hashlib.sha256((self.state / 'relay.sqlite').read_bytes()).hexdigest()
         body = {'nonce':secrets.token_hex(32)}
         result = service.handle(request_proof(credential['token'], body), 'readiness', body)
@@ -211,7 +211,7 @@ class MonitorTests(unittest.TestCase):
         class Index(context_relay.Relay):
             def __init__(service, state):
                 service.state = state
-                service.workspace, service.owner = 'synthetic-team', 'jp'
+                service.workspace, service.owner = 'synthetic-team', 'owner'
         service = Index(self.state)
         identity = json.loads(self.credential.read_bytes())
         for workspace in ('synthetic-team','other'):
@@ -230,7 +230,7 @@ class MonitorTests(unittest.TestCase):
         class Index(context_relay.Relay):
             def __init__(service, state):
                 service.state = state
-                service.workspace, service.owner = 'synthetic-team', 'jp'
+                service.workspace, service.owner = 'synthetic-team', 'owner'
         identity = json.loads(self.credential.read_bytes())
         body = {'nonce':secrets.token_hex(32)}
         database = self.state / 'relay.sqlite'
@@ -282,7 +282,7 @@ class MonitorTests(unittest.TestCase):
         before = self.credential.read_bytes()
         with self.assertRaises(FileExistsError): context_relay.provision_readiness(self.state)
         self.assertEqual(before, self.credential.read_bytes())
-        token = json.loads((self.state / 'credentials/jp.json').read_bytes())['token']
+        token = json.loads((self.state / 'credentials/owner.json').read_bytes())['token']
         context_relay.revoke_readiness(self.state)
         with patch.object(context_relay.secrets, 'token_urlsafe', return_value=token):
             with self.assertRaises(context_relay.Rejected): context_relay.provision_readiness(self.state)
@@ -290,7 +290,7 @@ class MonitorTests(unittest.TestCase):
 
     def test_monitor_rejects_ordinary_member_credential_even_on_successful_http(self):
         self.server()
-        self.config['credential'] = str(self.state / 'credentials/jp.json')
+        self.config['credential'] = str(self.state / 'credentials/owner.json')
         os.chmod(self.config['credential'], 0o600)
         self.assertEqual(monitor.sample(self.config)['Readiness'], 0)
 
@@ -320,7 +320,7 @@ class MonitorTests(unittest.TestCase):
         self.assertEqual({m['MetricName'] for m in payload['MetricData']},set(monitor.METRICS))
         serialized=json.dumps(payload)
         credential=json.loads(self.credential.read_bytes())
-        for private in (self.config['state'],credential['token'],credential['workspace'],'jp.json'):
+        for private in (self.config['state'],credential['token'],credential['workspace'],'owner.json'):
             self.assertNotIn(private,serialized)
         for item in payload['MetricData']:
             self.assertEqual(item['Dimensions'],[{'Name':'Relay','Value':'synthetic'}])

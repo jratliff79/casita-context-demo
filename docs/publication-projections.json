@@ -1,0 +1,31 @@
+{
+  "schema": "casita-context-demo.publication-projections.v1",
+  "records": [
+    {
+      "path": "docs/relay-validation.json",
+      "representation": "privacy-summary",
+      "original_sha256": "601d12c0631e527403cd96fca5d841389f76fde137cc944eb1855f3326367887",
+      "public_sha256": "c0eac2c9fefad230286fab5d6cc50a262cb52f8d6110dc6e7af115f9b4e69844",
+      "changes": "Identifying field names generalized; all recorded values, dates, pins and controls preserved.",
+      "new_validation_run": false
+    },
+    {
+      "path": "docs/casita-update-validation.json",
+      "representation": "privacy-summary",
+      "original_sha256": "85aa13c60d482466686087dc7d253bd9a463aa67d4cbc6f389b30046a55c4585",
+      "public_sha256": "d3a7f1c2431973517b39cb724d230faeb6fe917d4557ae05563d50c6bbac89df",
+      "changes": "Identifying field names generalized; all recorded values, dates, pins and controls preserved.",
+      "new_validation_run": false
+    },
+    {
+      "path": "docs/docs-checkpoint-report.json",
+      "representation": "citation-omission-projection",
+      "original_sha256": "67ad5461df1f925b65317ef144876a1e722d9e3bef303e19dc88e6f46b21151e",
+      "public_sha256": "c16d67636cbd0821ead749684c305f5b6bee19fe24d2e5526235e57859b6bdd0",
+      "changes": "One identifying citation omitted; both findings, recommendation text, remaining citations and context/source bindings preserved.",
+      "original_citation_count": 13,
+      "public_citation_count": 12,
+      "new_ai_review": false
+    }
+  ]
+}

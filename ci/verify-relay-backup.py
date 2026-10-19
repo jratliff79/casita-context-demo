@@ -57,11 +57,11 @@ def main():
                   service_unit_pin=backup.file_pin(unit, 100_000),
                   runtime_inventory=str(index), max_bytes=512*1024*1024,
                   service='synthetic.service', source_commit='a'*40, casita_commit='b'*40)
-    relay.initialize(state, 'synthetic-team', 'jp', ['cj'])
+    relay.initialize(state, 'synthetic-team', 'owner', ['member'])
     relay.provision_readiness(state)
     readiness_identity = relay.readiness_credential(state)
     service = relay.Relay(state, binary)
-    token = json.loads((state/'credentials/jp.json').read_text())['token']
+    token = json.loads((state/'credentials/owner.json').read_text())['token']
     text = 'SYNTHETIC NOTE\n'
     context = dict(task_id='synthetic-task', summary='Synthetic capture qualification',
                    completed=[], pending=['review'], blockers=[], source_revision='a'*40,
@@ -72,8 +72,8 @@ def main():
                         request_id='synthetic-publish-'+str(revision), expected_revision=revision,
                         checkpoint=dict(context, summary='Synthetic capture revision '+str(revision))))
         pins.append(result['pin'])
-    cj_token = json.loads((state/'credentials/cj.json').read_text())['token']
-    proposal = service.handle(cj_token, 'propose', dict(
+    member_token = json.loads((state/'credentials/member.json').read_text())['token']
+    proposal = service.handle(member_token, 'propose', dict(
         workspace='synthetic-team', request_id='synthetic-proposal', expected_revision=2,
         task_id='synthetic-task', scope='workspace', entry_id='synthetic-memory',
         statement='Synthetic backup qualification includes owner-reviewed memory.',

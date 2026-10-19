@@ -81,5 +81,14 @@
       "task_id": "public-docs-onboarding-20261008"
     }
   },
-  "report_sha256": "67ad5461df1f925b65317ef144876a1e722d9e3bef303e19dc88e6f46b21151e"
+  "report_sha256": "c16d67636cbd0821ead749684c305f5b6bee19fe24d2e5526235e57859b6bdd0",
+  "report_provenance": {
+    "representation": "citation-omission-projection",
+    "original_report_sha256": "67ad5461df1f925b65317ef144876a1e722d9e3bef303e19dc88e6f46b21151e",
+    "omitted_citation_count": 1,
+    "original_citation_count": 13,
+    "public_citation_count": 12,
+    "new_ai_review": false,
+    "manifest": "docs/publication-projections.json"
+  }
 }

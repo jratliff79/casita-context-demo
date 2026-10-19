@@ -122,7 +122,7 @@ class WorkloadLifecycleTests(unittest.TestCase):
         hello = peer.receive('hello')
         plan.validate_hello(hello, plan.source_pins(), hello['binary_sha256'])
         config = dict(binary=str(Path(sys.executable).resolve()), output=str(root / 'worker-output'),
-                      credential=dict(workspace='synthetic-jpcj-test', token='synthetic-ephemeral-token-only'),
+                      credential=dict(workspace='synthetic-two-operator-test', token='synthetic-ephemeral-token-only'),
                       jobs=[], duration=0, cursor=8)
         peer.send(dict(operation='configure', config=config)); peer.receive('ready')
         return peer, log

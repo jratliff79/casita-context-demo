@@ -19,7 +19,7 @@ class IndexRelay(relay.Relay):
     """SQLite/HTTP tests isolate the object backend; CI also runs the real Casita pilot."""
     def __init__(self, state):
         self.state = state
-        self.workspace, self.owner = "synthetic-team", "jp"
+        self.workspace, self.owner = "synthetic-team", "owner"
 
     def save_snapshot(self, db, snapshot):
         raw = relay.canonical(snapshot)
@@ -37,9 +37,9 @@ class RelayTests(unittest.TestCase):
         self.addCleanup(temp.cleanup)
         self.root = Path(temp.name)
         self.state = self.root / "state"
-        relay.initialize(self.state, "synthetic-team", "jp", ["cj"])
+        relay.initialize(self.state, "synthetic-team", "owner", ["member"])
         self.service = IndexRelay(self.state)
-        self.credentials = {p: self.state / ("credentials/" + p + ".json") for p in ("jp", "cj")}
+        self.credentials = {p: self.state / ("credentials/" + p + ".json") for p in ("owner", "member")}
         self.tokens = {p: json.loads(f.read_bytes())["token"] for p, f in self.credentials.items()}
         raw = "SYNTHETIC POLICY\nRun focused checks before handoff.\n"
         self.context = {"task_id": "test-task", "summary": "selected synthetic task", "completed": [],
@@ -47,14 +47,14 @@ class RelayTests(unittest.TestCase):
                         "files": [{"path": "source/policy.txt", "text": raw,
                                    "sha256": relay.digest(raw.encode())}]}
 
-    def call(self, operation, body, actor="jp"):
+    def call(self, operation, body, actor="owner"):
         return self.service.handle(self.tokens[actor], operation, {"workspace": "synthetic-team", **body})
 
-    def publish(self, revision=0, request="publish-one", actor="jp"):
+    def publish(self, revision=0, request="publish-one", actor="owner"):
         return self.call("publish", {"request_id": request, "expected_revision": revision,
                                      "checkpoint": self.context}, actor)
 
-    def proposal(self, request="proposal-one", actor="cj"):
+    def proposal(self, request="proposal-one", actor="member"):
         source = self.context["files"][0]
         return self.call("propose", {"request_id": request, "expected_revision": 1,
                                     "task_id": "test-task", "scope": "task", "entry_id": "checks", "statement": "Run focused checks.",
@@ -64,7 +64,7 @@ class RelayTests(unittest.TestCase):
 
     def test_checkpoint_cas_only_one_concurrent_writer_commits(self):
         with ThreadPoolExecutor(2) as pool:
-            futures = [pool.submit(self.publish, 0, "request-" + p, p) for p in ("jp", "cj")]
+            futures = [pool.submit(self.publish, 0, "request-" + p, p) for p in ("owner", "member")]
         results, rejected = [], []
         for future in futures:
             try:
@@ -106,7 +106,7 @@ class RelayTests(unittest.TestCase):
     def test_proposals_do_not_change_accepted_memory_and_competitors_remain(self):
         self.publish()
         a = self.proposal()
-        b = self.proposal("other-proposal", "jp")
+        b = self.proposal("other-proposal", "owner")
         with relay.connect(self.state) as db:
             self.assertEqual(self.service.current(db)["memory"], [])
             self.assertEqual(db.execute("SELECT count(*) FROM proposals").fetchone()[0], 2)
@@ -115,8 +115,8 @@ class RelayTests(unittest.TestCase):
                              "proposal_id": a["proposal_id"]})
         with relay.connect(self.state) as db:
             memory = self.service.current(db)["memory"]
-            self.assertEqual(memory[0]["author"], "cj")
-            self.assertEqual(memory[0]["accepted_by"], "jp")
+            self.assertEqual(memory[0]["author"], "member")
+            self.assertEqual(memory[0]["accepted_by"], "owner")
         with self.assertRaisesRegex(relay.Rejected, "stale"):
             self.call("accept", {"expected_revision": 2, "request_id": "accept-other",
                                  "proposal_id": b["proposal_id"]})
@@ -126,24 +126,24 @@ class RelayTests(unittest.TestCase):
         proposal = self.proposal()
         with self.assertRaisesRegex(relay.Rejected, "only the workspace owner"):
             self.call("accept", {"request_id": "unauthorized-accept", "expected_revision": 1,
-                                 "proposal_id": proposal["proposal_id"]}, "cj")
+                                 "proposal_id": proposal["proposal_id"]}, "member")
         self.assertEqual(self.call("context", {})["revision"], 1)
 
     def test_revocation_blocks_reads_updates_and_idempotent_retries(self):
-        self.publish(actor="cj")
+        self.publish(actor="member")
         with relay.connect(self.state) as db:
-            db.execute("UPDATE members SET enabled=0 WHERE name='cj'")
+            db.execute("UPDATE members SET enabled=0 WHERE name='member'")
         for operation, body in (("context", {}), ("updates", {"after": 0}),
                                 ("publish", {"request_id": "publish-one", "expected_revision": 0,
                                              "checkpoint": self.context})):
             with self.subTest(operation=operation), self.assertRaisesRegex(relay.Rejected, "unauthorized"):
-                self.call(operation, body, "cj")
+                self.call(operation, body, "member")
         self.assertEqual(self.call("context", {})["revision"], 1)
 
     def test_workspace_and_invalid_token_cannot_read_guessed_context(self):
         self.publish()
         with self.assertRaisesRegex(relay.Rejected, "workspace unavailable"):
-            self.service.handle(self.tokens["cj"], "context", {"workspace": "other"})
+            self.service.handle(self.tokens["member"], "context", {"workspace": "other"})
         with self.assertRaisesRegex(relay.Rejected, "unauthorized"):
             self.service.handle("x" * 43, "context", {"workspace": "synthetic-team"})
 
@@ -179,11 +179,11 @@ class RelayTests(unittest.TestCase):
 
     def test_sole_owner_revocation_rejected_and_member_revocation_still_works(self):
         with self.assertRaisesRegex(relay.Rejected, "sole workspace owner"):
-            relay.revoke_member(self.state, "jp")
+            relay.revoke_member(self.state, "owner")
         self.assertEqual(self.call("context", {})["revision"], 0)
-        relay.revoke_member(self.state, "cj")
+        relay.revoke_member(self.state, "member")
         with self.assertRaisesRegex(relay.Rejected, "unauthorized"):
-            self.call("context", {}, "cj")
+            self.call("context", {}, "member")
 
     def test_long_running_cli_diagnostics_do_not_retain_completed_command_output(self):
         class Output(str):
@@ -292,10 +292,10 @@ class RelayTests(unittest.TestCase):
         # Simulate an interrupted watcher: event fsynced, cursor not yet replaced.
         (output / "1.json").write_bytes(relay.canonical(event))
         with patch.object(relay, "client", side_effect=lambda u,c,o,b: self.call(o,b)):
-            result = relay.watch("http://127.0.0.1:8765", self.credentials["cj"], output, .03, .01)
+            result = relay.watch("http://127.0.0.1:8765", self.credentials["member"], output, .03, .01)
             self.assertEqual(result["after"], 1)
             self.proposal()
-            result = relay.watch("http://127.0.0.1:8765", self.credentials["cj"], output, .03, .01)
+            result = relay.watch("http://127.0.0.1:8765", self.credentials["member"], output, .03, .01)
         self.assertEqual(result["after"], 2)
         self.assertEqual(sorted(p.name for p in output.glob('[0-9]*.json')), ["1.json", "2.json"])
 
@@ -312,14 +312,14 @@ class RelayTests(unittest.TestCase):
         self.addCleanup(server.server_close)
         self.addCleanup(server.shutdown)
         url = "http://127.0.0.1:" + str(server.server_port)
-        result = relay.client(url, self.credentials["jp"], "publish", {
+        result = relay.client(url, self.credentials["owner"], "publish", {
             "request_id": "via-http", "expected_revision": 0, "checkpoint": self.context})
         self.assertEqual(result["pin"]["revision"], 1)
-        self.assertEqual(relay.client(url, self.credentials["cj"], "context", {})["revision"], 1)
-        self.assertEqual(relay.client(url, self.credentials["cj"], "context", {},
+        self.assertEqual(relay.client(url, self.credentials["member"], "context", {})["revision"], 1)
+        self.assertEqual(relay.client(url, self.credentials["member"], "context", {},
                                       relay_port=server.server_port)["revision"], 1)
         with self.assertRaises(HTTPError) as wrong_host:
-            relay.client(url, self.credentials["cj"], "context", {},
+            relay.client(url, self.credentials["member"], "context", {},
                          relay_port=1 if server.server_port != 1 else 2)
         self.assertEqual(wrong_host.exception.code, 403)
         for headers, status in (({}, 401), ({"Origin": "https://example.invalid"}, 403),
@@ -342,11 +342,11 @@ class RelayTests(unittest.TestCase):
         opener = unittest.mock.MagicMock()
         opener.open.return_value = response
         with patch.object(relay, "build_opener", return_value=opener):
-            relay.client("http://127.0.0.1:43210", self.credentials["jp"], "context", {}, relay_port=8765)
+            relay.client("http://127.0.0.1:43210", self.credentials["owner"], "context", {}, relay_port=8765)
             request = opener.open.call_args.args[0]
             self.assertEqual(request.full_url, "http://127.0.0.1:43210/context")
             self.assertEqual(request.get_header("Host"), "127.0.0.1:8765")
-            relay.client("http://127.0.0.1:43210", self.credentials["jp"], "context", {})
+            relay.client("http://127.0.0.1:43210", self.credentials["owner"], "context", {})
             self.assertIsNone(opener.open.call_args.args[0].get_header("Host"))
 
     def test_client_rejects_invalid_remote_ports_before_credentials(self):
@@ -359,7 +359,7 @@ class RelayTests(unittest.TestCase):
         state = self.root / "cli-state"
         subprocess.run(["sh", "-c", 'umask 0022; exec "$@"', "sh", "python3", str(script),
                         "init", "--state", str(state), "--workspace", "synthetic-team",
-                        "--owner", "jp", "--member", "cj"], check=True, capture_output=True)
+                        "--owner", "owner", "--member", "member"], check=True, capture_output=True)
         for path in [state, *state.rglob("*")]:
             self.assertEqual(path.stat().st_mode & 0o777, 0o700 if path.is_dir() else 0o600)
 

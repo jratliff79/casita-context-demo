@@ -106,7 +106,7 @@ def run_demo(binary, destination):
     output = new_output(destination)
     commands = []
     receipt = {"schema": "casita-event-kit.receipt.v1", "commands": commands,
-               "synthetic": True, "eventools_integration": False,
+               "synthetic": True, "external_service_integration": False,
                "network_isolation_enforced": False, "received_code_executed": False,
                "media_played": False, "execution_attested": False, "scripted_selection": True}
     try:

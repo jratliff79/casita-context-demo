@@ -165,7 +165,7 @@ for child processes, and removes Git, Python, loader and developer-directory ove
 Review the script, settings and hook command. Open `/hooks` in the Codex CLI and
 trust this exact definition through Codex's normal review flow. Do not write a
 trusted hash yourself or bypass hook trust. Hook support must be enabled in the
-runtime. No Eventools or teammate configuration is changed by this repository.
+runtime. No external application or teammate configuration is changed by this repository.
 
 ## Results and failure behavior
 

@@ -269,7 +269,7 @@ jobs:
           root = Path("output/event-kit")
           receipt = json.loads((root / "receipt.json").read_bytes())
           assert receipt["ok"] and receipt["synthetic"] and receipt["scripted_selection"]
-          assert not receipt["eventools_integration"] and not receipt["network_isolation_enforced"]
+          assert not receipt["external_service_integration"] and not receipt["network_isolation_enforced"]
           assert not receipt["received_code_executed"] and not receipt["media_played"]
           assert not receipt["execution_attested"]
           assert receipt["sender_path_unavailable"] and not (root / "sender-store").exists()
@@ -578,7 +578,10 @@ jobs:
           for name in ("sender", "receiver", "reviewer-return", "verified-return"):
               role = json.loads((root / name / "receipt.json").read_text())
               assert role["ok"] and all(command["exit_code"] == 0 for command in role["commands"])
-          print("PASS: unchanged recorded docs report, original task-state pins, citations and seven controls")
+          assert receipt["report_provenance"]["representation"] == "citation-omission-projection"
+          assert receipt["report_provenance"]["new_ai_review"] is False
+          assert sum(len(f["citations"]) for f in report["findings"]) == 12
+          print("PASS: pinned public report projection, original task-state pins, citations and seven controls")
           PY
 
       - name: Run the public base/head diff review handoff

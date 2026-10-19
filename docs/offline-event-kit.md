@@ -5,9 +5,8 @@ a last-minute cue changes, transfer the update, verify the selected version, and
 keep working from that local snapshot when the sender is unavailable.
 
 This runnable example uses one synthetic event, two cues, a generated SVG title
-and a text operator card. It is inspired by an Eventools-style workflow but is
-independent of Eventools: it reads no production exports, private events or media,
-and does not integrate with the application or drive a show.
+and a text operator card. It reads no production exports, private events or
+media, and does not integrate with an external application or drive a show.
 
 ## Run
 
@@ -93,7 +92,7 @@ hashes and rejection controls. Inspect `venue-only-v2/rundown.json` as data.
 
 This models loss of access to a sender with two repositories on one host. It does
 not turn off the host network, test a venue outage or cross-host transfer, or
-measure live Eventools behavior. No received code, SVG or media is executed or
+measure live application behavior. No received code, SVG or media is executed or
 played. A working checkout can later be edited; reverify it before relying on it.
 
 Pins must come through an independently trusted channel in a real handoff. These

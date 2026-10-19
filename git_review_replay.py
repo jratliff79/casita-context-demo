@@ -52,6 +52,9 @@ def run(args):
                "return_signer_role": "local controller; not independently attested model identity",
                "recorded_case": case,
                "negative_controls": {}}
+    if case == "docs-checkpoint":
+        receipt["report_provenance"] = source["report_provenance"]
+        receipt["report_sha256"] = demo.digest(recorded_bytes)
     def role(mode, name, **kwargs):
         options = {key: None for key in ("source", "spec", "observation", "signing_key", "archive", "pins", "signature",
                                         "allowed_signers", "signer", "context", "report", "original")}

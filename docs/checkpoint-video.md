@@ -18,6 +18,10 @@ with Palmier Pro's Gemini 3.1 Flash TTS. The video and documentation used
 substantial OpenAI Codex assistance. The [publication receipt](checkpoint-video-validation.json)
 records the reviewed media hash, public source pin and technical checks.
 
+The video describes the original 13-citation run. Current replay uses a
+[public projection](docs-checkpoint-case.md#what-came-back) with one citation
+omitted; it does not regenerate this historical video or claim a new AI review.
+
 ## Story and narration
 
 | Scene | Screen | Narration |

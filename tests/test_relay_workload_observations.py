@@ -27,7 +27,7 @@ class WorkloadObservationTests(unittest.TestCase):
                     peer.send(dict(operation='hello', binary=str(binary)))
                     peer.receive('hello')
                     peer.send(dict(operation='configure', config=dict(binary=str(binary),
-                        output=str(root / 'client'), credential=dict(workspace='synthetic-jpcj-link',
+                        output=str(root / 'client'), credential=dict(workspace='synthetic-two-operator-link',
                         token='synthetic-only'), jobs=[], duration=0, cursor=0)))
                     self.assertEqual(peer.messages.get(timeout=3)['kind'], 'ready')
                     peer.send(dict(operation='start', epoch=time.monotonic() + .1))
@@ -49,7 +49,7 @@ class WorkloadObservationTests(unittest.TestCase):
                     peer.send(dict(operation='hello', binary=str(binary)))
                     peer.receive('hello')
                     peer.send(dict(operation='configure', config=dict(binary=str(binary),
-                        output=str(root / 'client'), credential=dict(workspace='synthetic-jpcj-drift',
+                        output=str(root / 'client'), credential=dict(workspace='synthetic-two-operator-drift',
                         token='synthetic-only'), jobs=[], duration=.5, cursor=0)))
                     peer.receive('ready')
                     peer.send(dict(operation='start', epoch=time.monotonic() + .1))

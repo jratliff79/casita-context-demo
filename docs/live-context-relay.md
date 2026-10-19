@@ -1,15 +1,16 @@
 # A live relay for task context and reviewed team memory
 
-Use this when JP and CJ work on different tasks and want each fresh assistant
-to consult shared knowledge before starting. The relay keeps separate task
+Use this when two teammates work on different tasks and want each fresh
+assistant to consult shared knowledge before starting. The relay keeps separate task
 checkpoints, reviewed workspace or task advice, immutable Casita snapshots and a
 durable event stream. It runs until stopped. Clients can poll continuously and
 resume from their saved cursor after going offline.
 
 This is a private local-service pilot, not a hosted product. The automated trial
 uses short-lived CLI clients and a coordinator with two authenticated identities,
-`jp` and `cj`, and synthetic Eventools notes. Actual CJ participation, two-device SSH access and automatic assistant
-startup integration have not been tested. No Eventools source is in this repo.
+`owner` and `member`, and synthetic team notes. Actual teammate participation,
+two-device SSH access and automatic assistant startup integration have not been
+tested. No private application source is in this repo.
 
 ## Try the complete synthetic flow
 
@@ -33,20 +34,20 @@ account, cloud service or personal Codex history are needed. Use optional
 `uv run --no-project --python 3.12 python` in place of `python3` as described in
 the [prerequisites](../README.md#prerequisites).
 
-## Start a private JP/CJ workspace
+## Start a private two-operator workspace
 
 On the host that owns the relay, from this demo's root:
 
 ```sh
-python3 context_relay.py init --state output/eventools-relay \
-  --workspace eventools --owner jp --member cj
-python3 context_relay.py serve --state output/eventools-relay \
+python3 context_relay.py init --state output/team-relay \
+  --workspace synthetic-team --owner owner --member member
+python3 context_relay.py serve --state output/team-relay \
   --casita "$CASITA_DEMO_BIN" --port 8765
 ```
 
 `init` refuses an existing directory. It creates separate owner-only credential
-files under `output/eventools-relay/credentials/`. The SQLite database stores
-token hashes. Keep JP's credential on JP's machine. Deliver only CJ's credential
+files under `output/team-relay/credentials/`. The SQLite database stores
+token hashes. Keep the owner's credential on the owner's machine. Deliver only the member's credential
 through a private channel, never in a PR, shared capsule, command line token or
 public chat. Set the received file to mode `0600`. Tokens represent provisioned
 members; they do not prove that the named person or a particular model participated.
@@ -54,9 +55,9 @@ members; they do not prove that the named person or a particular model participa
 The server binds only to `127.0.0.1`. It has no public bind option, browser access,
 proxy support or redirects. For another machine, use a trusted SSH account and
 verified host identity. This requires arranging SSH access separately. Do not
-forward the credential directory or give CJ JP's token.
+forward the credential directory or give the member the owner's token.
 
-On CJ's machine, with the relay host substituted for `YOUR_RELAY_HOST`:
+On the member's machine, with the relay host substituted for `YOUR_RELAY_HOST`:
 
 ```sh
 ssh -N -o ExitOnForwardFailure=yes \
@@ -71,7 +72,7 @@ server and does not supply an identity provider or device enrollment.
 
 ## Publish only an explicitly selected checkpoint
 
-Choose a full Git commit and individual regular files that CJ should see. The
+Choose a full Git commit and individual regular files that the member should see. The
 local preparation command reads immutable committed bytes, excluding dirty and
 untracked content. It refuses links, hidden paths and obvious key-file paths.
 Those restrictions are not a secret scanner: ordinary source and JSON can still
@@ -80,7 +81,7 @@ contain sensitive data. Read every selected byte, summary and progress item.
 From the demo root, replace the capitalized values:
 
 ```sh
-python3 context_relay.py prepare --repo YOUR_EVENTOOLS_CHECKOUT \
+python3 context_relay.py prepare --repo YOUR_PUBLIC_CHECKOUT \
   --revision FULL_GIT_COMMIT --file SELECTED_FILE --task task-id \
   --summary 'A short handoff for this task' \
   --completed 'What has been checked' --pending 'What remains' \
@@ -94,7 +95,7 @@ SHA-256 printed by preparation only after reviewing the content:
 
 ```sh
 python3 context_relay.py publish \
-  --credential output/eventools-relay/credentials/jp.json \
+  --credential output/team-relay/credentials/owner.json \
   --input output/task-publish.json --approve-sha256 REVIEWED_PAYLOAD_SHA256 \
   --output output/task-publish-response.json
 ```
@@ -113,12 +114,12 @@ For opt-in automatic consultation in local Codex chats, see the
 `SessionStart` hook on each teammate's machine. Manual consultation remains
 available below; installing a template alone does not prove runtime invocation.
 
-Both teammates install the same demo code and tested CLI locally. For CJ, use the
-privately delivered credential path instead of JP's path below:
+Both teammates install the same demo code and tested CLI locally. For the member, use the
+privately delivered credential path instead of the owner's path below:
 
 ```sh
 python3 context_relay.py consult --task task-id \
-  --credential output/eventools-relay/credentials/jp.json \
+  --credential output/team-relay/credentials/owner.json \
   --casita "$CASITA_DEMO_BIN" --output output/task-start-001
 ```
 
@@ -141,11 +142,11 @@ The command fails on unavailable service, revoked credentials or invalid
 restoration. An assistant should report that it could not consult shared context
 and obtain an explicit fallback decision rather than claim it has current memory.
 
-### Agent-instructions template for an Eventools pilot
+### Agent-instructions template for an external application pilot
 
 Once the private endpoint, credentials and local executable paths are configured,
 add a small instruction like this to the teammate's local task setup. The template
-does not modify Eventools or anyone's Codex configuration by itself:
+does not modify another application or anyone's Codex configuration by itself:
 
 ```text
 At task start, consult the private context relay using the locally provisioned
@@ -175,8 +176,8 @@ In another terminal:
 
 ```sh
 python3 context_relay.py watch \
-  --credential output/eventools-relay/credentials/jp.json \
-  --output output/jp-watch --seconds 3600
+  --credential output/team-relay/credentials/owner.json \
+  --output output/owner-watch --seconds 3600
 ```
 
 It polls every two seconds, prints event kinds and revisions, writes each event
@@ -194,7 +195,7 @@ with the task's current revision and exact selected source evidence:
 
 ```json
 {
-  "request_id": "cj-proposal-1",
+  "request_id": "member-proposal-1",
   "expected_revision": 1,
   "task_id": "task-id",
   "scope": "task",
@@ -220,7 +221,7 @@ After reading the proposal and original cited source, the owner creates:
 
 ```json
 {
-  "request_id": "jp-accept-1",
+  "request_id": "owner-accept-1",
   "expected_revision": 1,
   "proposal_id": "EXACT_REVIEWED_PROPOSAL_ID"
 }
@@ -239,15 +240,15 @@ tests a restart after acknowledged writes, not power loss or disaster recovery.
 Archive bytes are fsynced before metadata publication. A failed operation can
 leave private unindexed Casita roots/archives; it exposes no new head or event.
 
-To revoke CJ's future API access without restarting:
+To revoke the member's future API access without restarting:
 
 ```sh
-python3 context_relay.py revoke --state output/eventools-relay --member cj
+python3 context_relay.py revoke --state output/team-relay --member member
 ```
 
 The sole owner cannot be revoked through this command. Reads, writes, polling
 and idempotent retries check enabled membership each time.
-Revocation cannot delete copies CJ already received. The owner of the host/state
+Revocation cannot delete copies the member already received. The owner of the host/state
 directory is trusted and can read all selected workspace content. There is one
 workspace, one owner, at most ten other members, twenty retained task checkpoints,
 fifty accepted memory entries and a 400 KB shared-state limit. Requests and event
@@ -259,7 +260,7 @@ History and raw event/proposal data accumulate; start with bounded tasks and
 monitor private disk usage. Preserve the SQLite index and Casita store/archives
 together when taking a backup with the server stopped. Test backup restoration
 before depending on it. A future service should add operational controls after
-the real JP/CJ task-start and handoff are verified.
+the real two-operator task-start and handoff are verified.
 
 For an explicitly opted-in deployment, the [read-only health and storage monitor](relay-monitoring.md)
 provides scoped readiness, separate state/spool pressure and retained-state

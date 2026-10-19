@@ -23,12 +23,20 @@ worker's authority came from its separate assignment.
 
 ## What came back
 
-The [unchanged recorded report](docs-checkpoint-report.json) contains two P3
-documentation recommendations and 13 exact source citations:
+The original report contained two P3 documentation recommendations and 13 exact
+source citations. The [public report projection](docs-checkpoint-report.json)
+omits one identifying citation and retains 12 exact citations. Both
+recommendations and all remaining evidence bindings are unchanged:
 
 - Surface the existing artifact, event-kit and checkpoint routes earlier, and
   label the checkpoint's two continuations as scripted.
 - Keep the core selected-source video and plan a separate checkpoint clip.
+
+This is a citation-omission projection, not a new AI review. The
+[projection manifest](publication-projections.json) pins both the original and
+public report digests. The historical receipt and video below describe the
+original 13-citation run; current replay uses the public 12-citation projection.
+Original Git source snapshots remain pinned and may contain older labels.
 
 The controller judged these recommendations separately from the citation checks.
 The README now has a use-case table and clearer synthetic checkpoint wording.
@@ -79,13 +87,13 @@ the public snapshot:
 git fetch origin 50b6820203f431026cd25385e6bd2a0cd6a59cea
 ```
 
-The replay checks every full-blob hash and the recorded report's byte digest
+The replay checks every full-blob hash and the public projection's byte digest
 against the allowlist before creating output. A `--report` override must contain
-those exact recorded bytes; altered recommendations or an empty replacement
+those exact projected bytes; altered recommendations or an empty replacement
 are rejected. The checked bytes are copied once into the run directory so a
 later change to the caller's report file cannot substitute another report.
 It prepares and receives the same source and observation, returns the
-recorded report and verifies it against the original Git objects. It does not
+public report projection and verifies it against the original Git objects. It does not
 call a model, continue today's task or recreate the historical reviewer session.
 Its receipt records `fresh_ai_review: false`.
 

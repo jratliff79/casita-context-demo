@@ -35,6 +35,8 @@ def validate_source(source, lock):
 
 
 def validate_environment(environment):
+    if 'CARGO_HOME' in environment and not Path(environment['CARGO_HOME']).is_absolute():
+        raise ValueError('Cargo home must be absolute when provided')
     forbidden={'RUSTFLAGS','CARGO_ENCODED_RUSTFLAGS','RUSTC_WRAPPER','RUSTC_WORKSPACE_WRAPPER','RUSTC'}
     for key,value in environment.items():
         if value and (key in forbidden or key.startswith(('CARGO_PROFILE_','CARGO_TARGET_'))

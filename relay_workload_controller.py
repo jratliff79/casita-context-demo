@@ -97,6 +97,20 @@ def backup_schedule(plan, epoch):
     return dict(prepare_at=midpoint - plan['period'] / 4, start_at=midpoint - .5)
 
 
+def record_backup_failure(error, diagnostics, evidence, errors):
+    # Publish the shared failure signal last: otherwise the execute loop can
+    # record its generic error before this thread saves the original category.
+    try:
+        diagnostics.failure(error, phase='workload.backup')
+    finally:
+        try:
+            evidence.failed(error)
+        except BaseException:
+            pass  # Evidence I/O must not prevent the failure signal or cleanup.
+        finally:
+            errors.append(type(error).__name__)
+
+
 def device_observations(environments):
     names = [environments[name]['hostname'] for name in NAMES]
     return dict(remote_devices_tested=False, hostname_observations=dict(
@@ -354,12 +368,7 @@ def run(binary, output, plan, clients=None, casita_commit=None, stage_timing=Fal
                         start_at=backup_schedule(plan, epoch)['start_at'], observe=backup_evidence.event))
                     backup_evidence.result(backup_result)
             except BaseException as error:
-                backup_errors.append(type(error).__name__)
-                diagnostics.failure(error, phase='workload.backup')
-                try:
-                    backup_evidence.failed(error)
-                except BaseException:
-                    pass  # Primary failure and owned cleanup take precedence over evidence I/O.
+                record_backup_failure(error, diagnostics, backup_evidence, backup_errors)
             finally:
                 job_done.set()
         next_monitor = epoch

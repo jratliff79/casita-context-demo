@@ -62,8 +62,11 @@ def private_file(path):
 
 class Policy:
     def __init__(self, path, root):
-        outside(path, root)
+        require(path.is_absolute() and not path.is_symlink(), 'private-policy-file')
+        path = outside(path, root)
+        protected_directory(path.parent, 'policy')
         raw = private_file(path)
+        self.path = path
         def unique(pairs):
             result = {}
             for key, value in pairs:
@@ -99,10 +102,16 @@ class Git:
                         GIT_NO_LAZY_FETCH='1', GIT_TERMINAL_PROMPT='0')
         actual = self.run('rev-parse', '--show-toplevel').decode().strip()
         require(Path(actual).resolve() == self.root, 'repository-context')
-        partial = subprocess.run([GIT, '-C', str(self.root), 'config', '--get-regexp',
-            r'^(extensions\.partialclone|remote\..*\.promisor)$'], env=self.env,
+        partial = subprocess.run([GIT, '-C', str(self.root), 'config', '--get',
+            'extensions.partialclone'], env=self.env,
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30)
         require(partial.returncode == 1, 'partial-clone-not-supported')
+        promisors = subprocess.run([GIT, '-C', str(self.root), 'config', '--null',
+            '--type=bool', '--get-regexp', r'^remote\..*\.promisor$'], env=self.env,
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=30)
+        require(promisors.returncode in (0, 1) and not any(
+            row.rsplit(b'\n', 1)[-1] == b'true' for row in promisors.stdout.split(b'\0') if row),
+            'partial-clone-not-supported')
 
     def run(self, *args):
         result = subprocess.run([GIT, '--no-pager', '--no-replace-objects',
@@ -118,7 +127,7 @@ class Git:
         return result.stdout.decode().strip() if result.returncode == 0 else None
 
     def base(self, value=None):
-        value = value or self.config('publicationGuard.base')
+        value = self.config('publicationGuard.base') if value is None else value
         require(isinstance(value, str) and OID.fullmatch(value), 'reviewed-base-required')
         require(self.run('cat-file', '-t', value).strip() == b'commit', 'reviewed-base-required')
         return value
@@ -223,7 +232,7 @@ class Scan:
         return len(commits)
 
 
-def protected_runtime(path):
+def protected_directory(path, context):
     # A private leaf can still be renamed through a writable parent. Check the
     # complete canonical chain; root/user-owned sticky temporary dirs are safe.
     for parent in reversed([path, *path.parents]):
@@ -231,20 +240,20 @@ def protected_runtime(path):
             continue
         info = parent.lstat()
         require(stat.S_ISDIR(info.st_mode) and info.st_uid in (0, os.getuid()),
-                'runtime-ancestor-owner')
+                context + '-ancestor-owner')
         require(not info.st_mode & 0o022 or info.st_mode & stat.S_ISVTX,
-                'runtime-ancestor-writable')
+                context + '-ancestor-writable')
 
 
 def install(git, policy_path, base, runtime):
-    git.base(base)
+    base = git.base(base)
     # Refuse any configured hook directory; do not disable or replace another guard.
     result = subprocess.run([GIT, '-C', str(git.root), 'config', '--get', 'core.hooksPath'],
         env=git.env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30)
     require(result.returncode == 1, 'existing-hooks-path')
     require(runtime.is_absolute() and not runtime.is_symlink(), 'private-runtime-required')
     runtime = outside(runtime, git.root)
-    protected_runtime(runtime)
+    protected_directory(runtime, 'runtime')
     hooks = Path(os.fsdecode(git.run('rev-parse', '--git-path', 'hooks').rstrip(b'\n')))
     if not hooks.is_absolute(): hooks = git.root / hooks
     require(not hooks.is_symlink(), 'existing-hooks-path')
@@ -264,7 +273,7 @@ def install(git, policy_path, base, runtime):
                 (target.is_file() and private_file(target) == data
                  and target.stat().st_mode & stat.S_IXUSR)), 'existing-hook')
     runtime.mkdir(mode=0o700, parents=True, exist_ok=True)
-    protected_runtime(runtime)
+    protected_directory(runtime, 'runtime')
     info = runtime.stat()
     require(info.st_uid == os.getuid() and not info.st_mode & 0o077, 'private-runtime-permissions')
     if snapshot.exists():
@@ -315,6 +324,7 @@ def main():
         require(bool(configured), 'private-policy-required')
         policy_path = Path(configured)
         policy = Policy(policy_path, git.root)
+        policy_path = policy.path
         if args.mode == 'install':
             require(args.policy is not None and args.runtime_dir is not None and args.base is not None, 'install-arguments')
             install(git, policy_path, args.base, args.runtime_dir)

@@ -78,9 +78,11 @@ installation. Linked worktrees use their actual index and the common hooks.
 Installation refuses custom `core.hooksPath` settings and existing hooks with
 other content. It preserves those hooks instead of silently replacing or chaining
 them. An identical installed hook must still be owner-only and executable.
-Inspect a conflict locally before choosing how to integrate it. Runtime ancestors
+Inspect a conflict locally before choosing how to integrate it. Policy and runtime ancestors
 must belong to root or the installing user and must not be group/world writable
-unless protected by the sticky bit. This is checked before and after creation.
+unless protected by the sticky bit. Runtime checks run before and after creation.
+The policy is read and configured through its canonical path. An explicitly
+empty reviewed base is rejected without changing the existing installation.
 
 Re-running the same reviewed version can advance the base after reviewing a
 newly merged main commit. Updating the scanner code requires reviewing the new
@@ -108,6 +110,8 @@ and native-state file extensions, and exceeded limits fail the check. Limits are
 128 outgoing commits, 4,096 files per snapshot, 8 MiB per file, 64 MiB of unique
 blob bytes per invocation, and 64 KiB per commit/policy/update input. The guard
 performs no fetch; partial clones must be replaced by a full local clone first.
+Explicitly disabled promisor booleans in otherwise complete repositories are allowed;
+enabled or invalid values still block the check.
 
 Success prints `PASS: publication guard` with the mode. Failure prints only a
 static `BLOCKED` reason. Hooks suppress interpreter/bootstrap diagnostics and

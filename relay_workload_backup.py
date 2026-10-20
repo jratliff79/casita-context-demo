@@ -111,7 +111,9 @@ class BackupEvidence:
 
     def failed(self, error):
         with self.lock:
-            self.value.update(state='failed', error_type=error_type(error))
+            self.value['state'] = 'failed'
+            if self.value['error_type'] is None:
+                self.value['error_type'] = error_type(error)
             self._write()
 
 

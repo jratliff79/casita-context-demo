@@ -141,6 +141,9 @@ The [previous pin receipt](docs/casita-20261005-validation.json) and older recei
 keep their original source pins. These correctness checks do not measure the
 performance improvement reported upstream.
 
+Before publishing changes, see the [local publication guard](docs/publication-guard.md)
+for staged-file and identity checks with an external private policy.
+
 ## Run it
 
 Run the basic transport demo from the repository root:

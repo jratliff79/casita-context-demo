@@ -29,3 +29,8 @@ not claim those historical copies were erased.
 New commits from this checkout use the repository owner's GitHub noreply
 identity. That local setting does not alter existing commit metadata or configure
 other contributors' clones.
+
+The [local publication guard](publication-guard.md) checks staged Git objects,
+outgoing commits and identities using an external private identifier policy.
+Install the reviewed hooks separately in each clone; private lists stay outside
+Git repositories and public CI.

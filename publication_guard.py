@@ -201,16 +201,15 @@ class Scan:
         require(self.git.run('rev-parse', '--is-shallow-repository').strip() == b'false', 'full-history-required')
         base = self.git.base()
         commits = set()
-        for line in data.decode('ascii').splitlines():
-            fields = line.split()
+        for line in data.decode('utf-8').splitlines():
+            fields = line.rsplit(None, 3)
             require(len(fields) == 4, 'update-format')
             local_ref, oid, remote_ref, old = fields
             require(OID.fullmatch(oid) and OID.fullmatch(old) and len(oid) == len(old)
                     and remote_ref.startswith(('refs/heads/', 'refs/tags/')), 'update-format')
             if set(oid) == {'0'}:
                 continue  # Deletion publishes no content, including deletion of old tags.
-            require(remote_ref.startswith('refs/heads/')
-                    and (local_ref == 'HEAD' or local_ref.startswith('refs/heads/')), 'branch-updates-only')
+            require(remote_ref.startswith('refs/heads/'), 'branch-updates-only')
             self.policy.check(line.encode(), 'private-ref')
             require(self.git.run('cat-file', '-t', oid).strip() == b'commit', 'commit-required')
             self.git.run('merge-base', '--is-ancestor', base, oid)
@@ -224,6 +223,19 @@ class Scan:
         return len(commits)
 
 
+def protected_runtime(path):
+    # A private leaf can still be renamed through a writable parent. Check the
+    # complete canonical chain; root/user-owned sticky temporary dirs are safe.
+    for parent in reversed([path, *path.parents]):
+        if not parent.exists():
+            continue
+        info = parent.lstat()
+        require(stat.S_ISDIR(info.st_mode) and info.st_uid in (0, os.getuid()),
+                'runtime-ancestor-owner')
+        require(not info.st_mode & 0o022 or info.st_mode & stat.S_ISVTX,
+                'runtime-ancestor-writable')
+
+
 def install(git, policy_path, base, runtime):
     git.base(base)
     # Refuse any configured hook directory; do not disable or replace another guard.
@@ -232,13 +244,19 @@ def install(git, policy_path, base, runtime):
     require(result.returncode == 1, 'existing-hooks-path')
     require(runtime.is_absolute() and not runtime.is_symlink(), 'private-runtime-required')
     runtime = outside(runtime, git.root)
+    protected_runtime(runtime)
     hooks = Path(os.fsdecode(git.run('rev-parse', '--git-path', 'hooks').rstrip(b'\n')))
     if not hooks.is_absolute(): hooks = git.root / hooks
     require(not hooks.is_symlink(), 'existing-hooks-path')
     source = Path(__file__).read_bytes()
     snapshot = runtime / ('guard-' + hashlib.sha256(source).hexdigest() + '.py')
-    wrappers = {name: ('#!/bin/sh\n# casita-publication-guard v1\nexec ' + shlex.quote(sys.executable)
-        + ' -I ' + shlex.quote(str(snapshot)) + ' ' + mode + ' --repo .\n').encode()
+    wrappers = {name: ('#!/bin/sh\n# casita-publication-guard v1\n'
+        + shlex.quote(sys.executable) + ' -I ' + shlex.quote(str(snapshot))
+        + ' ' + mode + ' --repo . 2>/dev/null\n'
+        + 'publication_status=$?\n'
+        + 'if [ "$publication_status" -ne 0 ]; then\n'
+        + "  printf '%s\\n' 'BLOCKED: publication guard (hook-failure)' >&2\n"
+        + 'fi\nexit "$publication_status"\n').encode()
         for name, mode in [('pre-commit', 'staged'), ('pre-push', 'pre-push')]}
     for name, data in wrappers.items():
         target = hooks / name
@@ -246,6 +264,7 @@ def install(git, policy_path, base, runtime):
                 (target.is_file() and private_file(target) == data
                  and target.stat().st_mode & stat.S_IXUSR)), 'existing-hook')
     runtime.mkdir(mode=0o700, parents=True, exist_ok=True)
+    protected_runtime(runtime)
     info = runtime.stat()
     require(info.st_uid == os.getuid() and not info.st_mode & 0o077, 'private-runtime-permissions')
     if snapshot.exists():

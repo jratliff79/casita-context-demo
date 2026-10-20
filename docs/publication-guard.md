@@ -78,7 +78,9 @@ installation. Linked worktrees use their actual index and the common hooks.
 Installation refuses custom `core.hooksPath` settings and existing hooks with
 other content. It preserves those hooks instead of silently replacing or chaining
 them. An identical installed hook must still be owner-only and executable.
-Inspect a conflict locally before choosing how to integrate it.
+Inspect a conflict locally before choosing how to integrate it. Runtime ancestors
+must belong to root or the installing user and must not be group/world writable
+unless protected by the sticky bit. This is checked before and after creation.
 
 Re-running the same reviewed version can advance the base after reviewing a
 newly merged main commit. Updating the scanner code requires reviewing the new
@@ -91,7 +93,9 @@ only its managed hooks and unset the local `publicationGuard.policy` and
 ## Push coverage and limits
 
 The pre-push hook accepts Git's update records on standard input. Positive branch
-updates must descend from the configured reviewed base. Every commit reachable
+updates must descend from the configured reviewed base. Git object-expression
+sources such as `HEAD~1` or a full commit ID are supported; eligibility uses the
+resolved commit and destination branch. Every commit reachable
 from the candidate and outside that base's history is checked, regardless of the
 advertised remote tip. Old history at/before the reviewed base is preserved;
 its metadata is not rewritten. The candidate tip's files are always checked.
@@ -106,7 +110,9 @@ blob bytes per invocation, and 64 KiB per commit/policy/update input. The guard
 performs no fetch; partial clones must be replaced by a full local clone first.
 
 Success prints `PASS: publication guard` with the mode. Failure prints only a
-static `BLOCKED` reason. It never prints a matched identifier, source excerpt,
+static `BLOCKED` reason. Hooks suppress interpreter/bootstrap diagnostics and
+emit a generic `hook-failure` while preserving the nonzero exit status; direct
+CLI checks provide more specific static reasons. It never prints a matched identifier, source excerpt,
 filename, policy path, ref or identity. Inspect the relevant staged/committed
 bytes privately to resolve a failure; do not paste them into a public PR.
 

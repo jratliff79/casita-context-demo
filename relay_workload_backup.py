@@ -4,6 +4,7 @@ No system service or cloud client is invoked. The real backup capture, history
 verification and encryption code runs through a synthetic stop/start adapter.
 """
 import json
+import math
 import os
 from pathlib import Path, PurePosixPath
 import shutil
@@ -17,9 +18,121 @@ import context_relay as relay
 import relay_backup as backup
 from relay_load import require
 from relay_workload_plan import HERE, SOURCE_FILES
+from relay_workload_diagnostics import error_type
 
 LIMIT = 512 * 1024**2
 PAYLOAD_BUDGET = 384 * 1024**2
+
+
+class BackupEvidence:
+    """Always-on bounded scalar evidence, including unsuccessful overlap checks."""
+    STAGES = frozenset(('prepare', 'ready', 'capture', 'decrypt', 'verify', 'end'))
+    INTEGERS = ('revision', 'event_cursor', 'compressed_payload_bytes', 'ciphertext_bytes')
+    FLAGS = ('full_inventory_verified', 'native_history_verified', 'authenticated_members_restored',
+             'real_age_encryption', 'local_sink_only', 'systemd_exercised')
+
+    def __init__(self, diagnostics):
+        self.diagnostics, self.lock = diagnostics, threading.RLock()
+        self.invalid = False
+        self.value = dict(schema='casita-backup-overlap.v1', state='not_started', stages={},
+                          backup=None, probes=[], evaluation=None, error_type=None)
+        self._write()
+
+    @staticmethod
+    def timestamp(value):
+        require(type(value) in (int, float) and math.isfinite(value) and value >= 0,
+                'invalid backup evidence timestamp')
+        return value
+
+    def _write(self):
+        try:
+            self.diagnostics._atomic('backup-overlap.json', self.value, 65536)
+        except BaseException:
+            self.invalid = True
+            raise
+
+    def event(self, stage, at):
+        with self.lock:
+            require(stage in self.STAGES and stage not in self.value['stages'], 'invalid backup stage')
+            self.value['stages'][stage] = self.timestamp(at)
+            if self.value['state'] != 'failed':
+                self.value['state'] = 'running'
+            self._write()
+
+    def sent(self, operator, identifier, at):
+        with self.lock:
+            require(type(operator) is int and operator in (1, 2) and type(identifier) is int
+                    and 0 < identifier <= 128 and len(self.value['probes']) < 128
+                    and not any(row['id'] == identifier for row in self.value['probes']),
+                    'backup probe evidence limit or identity changed')
+            self.value['probes'].append(dict(operator=operator, id=identifier,
+                sent=self.timestamp(at), received=None, active_jobs=[]))
+            self._write()
+
+    def received(self, operator, identifier, at, active_jobs):
+        with self.lock:
+            row = next(row for row in self.value['probes'] if row['id'] == identifier)
+            require(row['operator'] == operator and row['received'] is None
+                    and type(active_jobs) is list and len(active_jobs) <= 2
+                    and len(set(active_jobs)) == len(active_jobs)
+                    and all(type(job) is int and 0 <= job < 4096 for job in active_jobs),
+                    'invalid backup probe evidence')
+            row.update(received=self.timestamp(at), active_jobs=active_jobs)
+            require(row['received'] >= row['sent'], 'backup probe clock order changed')
+            self._write()
+
+    def result(self, result):
+        with self.lock:
+            safe = {key: result[key] for key in ('start', 'end', *self.INTEGERS, *self.FLAGS,
+                                               'ciphertext_sha256')}
+            for key in ('start', 'end'):
+                self.timestamp(safe[key])
+            require(safe['start'] < safe['end'] and all(type(safe[key]) is int and safe[key] >= 0
+                    for key in self.INTEGERS) and all(type(safe[key]) is bool for key in self.FLAGS)
+                    and type(safe['ciphertext_sha256']) is str and len(safe['ciphertext_sha256']) == 64
+                    and all(c in '0123456789abcdef' for c in safe['ciphertext_sha256']),
+                    'invalid backup result evidence')
+            self.value['backup'] = safe
+            if self.value['state'] != 'failed':
+                self.value['state'] = 'backup_complete'
+            self._write()
+
+    def evaluate(self, epoch, duration, overlap):
+        with self.lock:
+            result = self.value['backup']
+            passed = (not self.invalid and self.value['state'] == 'backup_complete'
+                      and result is not None and type(overlap) is int and overlap > 0
+                      and epoch <= result['start'] < result['end'] <= epoch + duration)
+            self.value['evaluation'] = dict(window_start=epoch, window_end=epoch + duration,
+                definitely_overlapping_operations=overlap, passed=passed)
+            self.value['state'] = 'verified' if passed else 'failed'
+            self._write()
+            require(passed, 'backup did not definitely overlap timed client work')
+
+    def failed(self, error):
+        with self.lock:
+            self.value.update(state='failed', error_type=error_type(error))
+            self._write()
+
+
+def wait_for_capture(start_at, on_start, observe):
+    """Preparation and scheduled waiting are outside the actual backup interval."""
+    ready = time.monotonic()
+    if observe:
+        observe('ready', ready)
+    if start_at is not None:
+        require(type(start_at) in (int, float) and math.isfinite(start_at), 'invalid backup start time')
+        while True:
+            remaining = start_at - time.monotonic()
+            if remaining <= 0:
+                break
+            time.sleep(min(.05, remaining))
+    started = time.monotonic()
+    if observe:
+        observe('capture', started)
+    if on_start:
+        on_start(started)
+    return started
 
 
 class OwnedServer:
@@ -136,15 +249,22 @@ def extract_encrypted(archive, identity, destination):
     return compressed
 
 
-def capture_restore(root, state, binary, server, source_commit, casita_commit, on_start=None):
+def capture_restore(root, state, binary, server, source_commit, casita_commit, on_start=None,
+                    start_at=None, observe=None):
     identity = Path(root) / 'ephemeral-age-identity'
     try:
-        return _capture_restore(root, state, binary, server, source_commit, casita_commit, identity, on_start)
+        if observe:
+            observe('prepare', time.monotonic())
+        return _capture_restore(root, state, binary, server, source_commit, casita_commit, identity,
+                                on_start, start_at, observe)
     finally:
         identity.unlink(missing_ok=True)
+        if observe:
+            observe('end', time.monotonic())
 
 
-def _capture_restore(root, state, binary, server, source_commit, casita_commit, identity, on_start):
+def _capture_restore(root, state, binary, server, source_commit, casita_commit, identity, on_start,
+                     start_at, observe):
     root = Path(root)
     root.mkdir(mode=0o700)
     app, spool = root / 'runtime', root / 'spool'
@@ -163,9 +283,7 @@ def _capture_restore(root, state, binary, server, source_commit, casita_commit, 
                   service='synthetic-workload.service', source_commit=source_commit, casita_commit=casita_commit,
                   recipient=recipient, port=server.port, health_credential=str(state / 'credentials/alpha.json'))
     sink, captured = LocalEncryptedSink(root / 'encrypted-objects'), {}
-    started = time.monotonic()
-    if on_start:
-        on_start(started)
+    started = wait_for_capture(start_at, on_start, observe)
     def capture(config, stage):
         manifest = backup.capture(config, stage, run=server.command)
         captured.update(manifest)
@@ -177,7 +295,11 @@ def _capture_restore(root, state, binary, server, source_commit, casita_commit, 
         with archive.open('rb') as stream:
             require(stream.read(22) == b'age-encryption.org/v1\n', 'not encrypted with age')
         restored = root / 'restored'
+        if observe:
+            observe('decrypt', time.monotonic())
         compressed = extract_encrypted(archive, identity, restored)
+        if observe:
+            observe('verify', time.monotonic())
         require(json.loads((restored / 'recovery-manifest.json').read_text()) == captured,
                 'recovery manifest changed')
         actual = backup.inventory(restored, LIMIT)

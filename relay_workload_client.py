@@ -32,6 +32,38 @@ def read_message():
     return value
 
 
+class ActiveProbes:
+    """One armed challenge may observe the next real operation; never hold work."""
+    def __init__(self, send):
+        self.send, self.active, self.pending = send, set(), None
+        self.lock = threading.Lock()
+
+    def request(self, identifier, wait_active=False):
+        require(type(identifier) is int and 0 < identifier <= 128
+                and type(wait_active) is bool, 'invalid operation probe')
+        with self.lock:
+            require(self.pending is None, 'operation probe already pending')
+            if wait_active and not self.active:
+                self.pending = identifier
+                return
+            message = dict(kind='probe', probe_id=identifier, active=sorted(self.active))
+        self.send(message)
+
+    def begin(self, logical):
+        with self.lock:
+            self.active.add(logical)
+            identifier, self.pending = self.pending, None
+            message = dict(kind='probe', probe_id=identifier, active=sorted(self.active))
+        if identifier is not None:
+            self.send(message)
+
+    def end(self, logical):
+        with self.lock:
+            ended = time.monotonic()
+            self.active.discard(logical)
+            return ended
+
+
 def execute(config, epoch, expected_runtime):
     output = Path(config['output']).resolve()
     output.mkdir(parents=True, exist_ok=False, mode=0o700)
@@ -49,7 +81,7 @@ def execute(config, epoch, expected_runtime):
     drained, finish = threading.Event(), threading.Event()
     locks = {name: threading.Lock() for name in ('publish', 'consult', 'updates', 'reconnect')}
     threads, failures, cursor = [], [], config['cursor']
-    active, active_lock = set(), threading.Lock()
+    probes = ActiveProbes(emit)
 
     def abort(reason):
         if not finished.is_set():
@@ -65,9 +97,7 @@ def execute(config, epoch, expected_runtime):
                 if message.get('operation') == 'cancel':
                     break
                 if message.get('operation') == 'probe':
-                    with active_lock:
-                        observed = sorted(active)
-                    emit(dict(kind='probe', probe_id=message['probe_id'], active=observed))
+                    probes.request(message['probe_id'], message.get('wait_active', False))
                 if message.get('operation') == 'finish':
                     require(drained.is_set() and not finish.is_set()
                             and message['cursor'] == config['final_cursor'], 'unexpected final drain release')
@@ -88,8 +118,7 @@ def execute(config, epoch, expected_runtime):
         scheduled = epoch + job['at']
         started = time.monotonic()
         if job['operation'] in ('publish', 'consult'):
-            with active_lock:
-                active.add(job['logical_id'])
+            probes.begin(job['logical_id'])
         hard = {'publish': 15, 'consult': 30, 'updates': 10, 'reconnect': 30}[job['operation']]
         timer = threading.Timer(max(.001, scheduled + hard - started), lambda: abort('OperationDeadline'))
         timer.daemon = True
@@ -145,9 +174,7 @@ def execute(config, epoch, expected_runtime):
                 before = cursor
                 cursor = advance_cursor(page, cursor)
                 result = dict(cursor=cursor, events=page['events'], previous_cursor=before)
-            with active_lock:
-                end = time.monotonic()
-                active.discard(job['logical_id'])
+            end = probes.end(job['logical_id'])
             require(end - scheduled <= hard, 'operation deadline exceeded')
             emit(dict(kind='observation', job=job, start=started, end=end, scheduled=scheduled,
                       milliseconds=1000 * (end - scheduled), dispatch_lag_ms=1000 * (started - scheduled),
@@ -157,8 +184,7 @@ def execute(config, epoch, expected_runtime):
             cancelled.set()
             emit(dict(kind='failure', logical_id=job['logical_id'], error_type=type(error).__name__))
         finally:
-            with active_lock:
-                active.discard(job['logical_id'])
+            probes.end(job['logical_id'])
             timer.cancel()
             locks[job['operation']].release()
     try:

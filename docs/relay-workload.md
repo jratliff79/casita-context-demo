@@ -218,7 +218,29 @@ An encrypted stdin challenge asks a worker which logical publication or
 consultation is active. A challenge sent and answered strictly within the backup
 interval proves causal overlap without relying on client clock drift. At least
 one such overlap is required; an idle backup outside the workload cannot pass.
-The probe overhead stays in the run.
+Backup preparation begins one quarter-period before the normal-phase midpoint;
+capture targets half a second before that midpoint. Copying the runtime, making
+the throwaway age key and waiting for this target are outside the actual
+capture/restore interval. Late preparation never backdates that interval.
+Publication, consultation and polling arrivals remain unchanged.
+
+Each worker can retain one armed challenge when idle and answer it when a real
+publication or consultation enters its active interval. It never holds that
+operation open or reports planned work as active. Replies received after the
+actual backup ends cannot qualify, even if the challenge was armed earlier.
+The probe and evidence-write overhead stays in the run.
+
+`backup-overlap.json` is always retained, including when timing is disabled or
+the overlap gate fails. Its bounded scalar record separates preparation, ready,
+capture, decrypt, verification and wrapper-end times. Successful backup return
+values retain only counts, byte sizes, ciphertext hash and verification flags;
+failed backups retain the last stage and a fixed error category. Up to 128
+challenges retain numeric operator/job indices, send/reply timestamps and pending
+replies. It omits pins, payloads, credentials, keys, paths and exception text.
+The artifact is capped at 64 KiB and uses mode 0600. Evidence I/O failure prevents
+success; unavailable storage can still prevent the failure record itself.
+The success receipt pins the artifact hash. A retained backup result or complete
+diagnostic record alone does not satisfy the causal-overlap requirement.
 
 The controller retains private per-operation JSONL, calibrated schedules,
 per-operator/per-phase nearest-rank summaries and maxima, first/last 15-minute

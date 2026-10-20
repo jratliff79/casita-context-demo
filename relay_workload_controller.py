@@ -23,7 +23,7 @@ import relay_monitor as monitor
 from relay_load import fixture, latency_summary, require, state_measurement, stop, tree_rss
 from relay_workload_plan import (HERE, NAMES, make_plan, source_pins, seed_history,
                                  ssh_argv, clock_mapping, validate_hello, advance_cursor)
-from relay_workload_backup import OwnedServer, capture_restore
+from relay_workload_backup import OwnedServer, capture_restore, BackupEvidence
 from relay_workload_diagnostics import Diagnostics
 
 
@@ -90,6 +90,25 @@ def causal_overlap(probes, start, end):
     """
     return len({logical for probe in probes if start <= probe['sent'] <= probe['received'] <= end
                 for logical in probe['active']})
+
+
+def backup_schedule(plan, epoch):
+    midpoint = epoch + plan['normal_seconds'] / 2
+    return dict(prepare_at=midpoint - plan['period'] / 4, start_at=midpoint - .5)
+
+
+def record_backup_failure(error, diagnostics, evidence, errors):
+    # Publish the shared failure signal last: otherwise the execute loop can
+    # record its generic error before this thread saves the original category.
+    try:
+        diagnostics.failure(error, phase='workload.backup')
+    finally:
+        try:
+            evidence.failed(error)
+        except BaseException:
+            pass  # Evidence I/O must not prevent the failure signal or cleanup.
+        finally:
+            errors.append(type(error).__name__)
 
 
 def device_observations(environments):
@@ -259,7 +278,9 @@ def run(binary, output, plan, clients=None, casita_commit=None, stage_timing=Fal
     backup_progress, probes, pending_probes = {}, [], {}
     next_probe, probe_id = 0, 0
     receipt = None
+    backup_evidence = None
     try:
+        backup_evidence = BackupEvidence(diagnostics)
         with diagnostics.phase('prepare.preflight'):
             require(platform.system() == 'Linux', 'controller requires Linux host observations')
             require(all(Path(path).is_file() for path in ('/usr/bin/age', '/usr/bin/age-keygen')),
@@ -343,10 +364,11 @@ def run(binary, output, plan, clients=None, casita_commit=None, stage_timing=Fal
                 with diagnostics.span('workload.backup'):
                     backup_result.update(capture_restore(output / 'overlap-backup', state, owned_binary,
                         server, source_commit, casita_commit or '0' * 40,
-                        on_start=lambda value: backup_progress.update(start=value)))
+                        on_start=lambda value: backup_progress.update(start=value),
+                        start_at=backup_schedule(plan, epoch)['start_at'], observe=backup_evidence.event))
+                    backup_evidence.result(backup_result)
             except BaseException as error:
-                backup_errors.append(type(error).__name__)
-                diagnostics.failure(error, phase='workload.backup')
+                record_backup_failure(error, diagnostics, backup_evidence, backup_errors)
             finally:
                 job_done.set()
         next_monitor = epoch
@@ -358,7 +380,7 @@ def run(binary, output, plan, clients=None, casita_commit=None, stage_timing=Fal
                 now = time.monotonic()
                 require(now < epoch + plan['duration'] + 60, 'workload drain or backup deadline exceeded')
                 require(not sample_failures and not backup_errors, 'background verification failed')
-                if job_thread is None and now >= epoch + plan['normal_seconds'] / 2:
+                if job_thread is None and now >= backup_schedule(plan, epoch)['prepare_at']:
                     job_thread = threading.Thread(target=background_backup, daemon=True); job_thread.start()
                 if now >= next_monitor and now < epoch + plan['duration']:
                     monitor_rows.append(dict(monotonic=time.monotonic(), metrics=monitor.sample(monitor_config)))
@@ -368,8 +390,10 @@ def run(binary, output, plan, clients=None, casita_commit=None, stage_timing=Fal
                     for name, peer in peers.items():
                         if name not in done and not any(key[0] == name for key in pending_probes):
                             probe_id += 1
-                            pending_probes[(name, probe_id)] = time.monotonic()
-                            peer.send(dict(operation='probe', probe_id=probe_id))
+                            sent = time.monotonic()
+                            backup_evidence.sent(NAMES.index(name) + 1, probe_id, sent)
+                            pending_probes[(name, probe_id)] = sent
+                            peer.send(dict(operation='probe', probe_id=probe_id, wait_active=True))
                     next_probe = now + .25
                 for name, peer in peers.items():
                     try:
@@ -395,8 +419,13 @@ def run(binary, output, plan, clients=None, casita_commit=None, stage_timing=Fal
                         active = message['active']
                         valid = {job['logical_id'] for job in plan['clients'][name]
                                  if job['operation'] in ('publish', 'consult')}
-                        require(type(active) is list and set(active) <= valid, 'invalid active operation probe')
-                        probes.append(dict(name=name, sent=sent, received=time.monotonic(), active=active))
+                        require(type(active) is list and len(active) <= 2 and len(set(active)) == len(active)
+                                and set(active) <= valid, 'invalid active operation probe')
+                        received = time.monotonic()
+                        ordinals = {job['logical_id']: i for i, job in enumerate(plan['clients'][name])}
+                        backup_evidence.received(NAMES.index(name) + 1, message['probe_id'], received,
+                                                 [ordinals[logical] for logical in active])
+                        probes.append(dict(name=name, sent=sent, received=received, active=active))
                     elif kind == 'eof' and name in done:
                         pass
                     else:
@@ -416,6 +445,7 @@ def run(binary, output, plan, clients=None, casita_commit=None, stage_timing=Fal
                             for key in ('source_sha256', 'binary_sha256')), 'worker completion pins changed')
             summaries = check_results(plan, rows, done, initial, state)
             overlap = causal_overlap(probes, backup_result['start'], backup_result['end'])
+            backup_evidence.evaluate(epoch, plan['duration'], overlap)
             require(overlap > 0 and epoch <= backup_result['start'] < backup_result['end'] <= epoch + plan['duration'],
                     'backup did not definitely overlap timed client work')
             sample_stop.set(); sample_thread.join(timeout=5)
@@ -438,6 +468,8 @@ def run(binary, output, plan, clients=None, casita_commit=None, stage_timing=Fal
                 storage_before=before, storage_after=after,
                 host_samples=samples, monitor_observations=monitor_rows,
                 reconnect_case=reconnect,
+                backup_diagnostics=dict(file='backup-overlap.json',
+                    sha256=relay.digest((output / 'backup-overlap.json').read_bytes())),
                 backup=dict(backup_result, definitely_overlapping_operations=overlap, causal_probes=probes),
                 verification=dict(all_arrivals_accounted=True, logical_changes_exact=True,
                     scoped_native_restores=True, retained_history_verified=True, encrypted_restore_verified=True,
@@ -451,6 +483,11 @@ def run(binary, output, plan, clients=None, casita_commit=None, stage_timing=Fal
         return receipt
     except BaseException as error:
         diagnostics.failure(error)
+        if backup_evidence is not None:
+            try:
+                backup_evidence.failed(error)
+            except BaseException:
+                pass
         raise
     finally:
         sample_stop.set()

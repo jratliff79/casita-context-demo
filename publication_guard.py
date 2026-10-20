@@ -250,12 +250,12 @@ def install(git, policy_path, base, runtime):
     require(not hooks.is_symlink(), 'existing-hooks-path')
     source = Path(__file__).read_bytes()
     snapshot = runtime / ('guard-' + hashlib.sha256(source).hexdigest() + '.py')
-    wrappers = {name: ('#!/bin/sh\n# casita-publication-guard v1\n'
+    wrappers = {name: ('#!/bin/sh\n# casita-publication-guard v1\nexec 3>&2 2>/dev/null\n'
         + shlex.quote(sys.executable) + ' -I ' + shlex.quote(str(snapshot))
-        + ' ' + mode + ' --repo . 2>/dev/null\n'
+        + ' ' + mode + ' --repo . 3>&-\n'
         + 'publication_status=$?\n'
         + 'if [ "$publication_status" -ne 0 ]; then\n'
-        + "  printf '%s\\n' 'BLOCKED: publication guard (hook-failure)' >&2\n"
+        + "  printf '%s\\n' 'BLOCKED: publication guard (hook-failure)' >&3\n"
         + 'fi\nexit "$publication_status"\n').encode()
         for name, mode in [('pre-commit', 'staged'), ('pre-push', 'pre-push')]}
     for name, data in wrappers.items():

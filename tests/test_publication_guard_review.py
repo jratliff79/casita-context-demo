@@ -55,3 +55,13 @@ class ReviewContracts(fixtures.Fixture):
         # Standard /tmp-style sticky ancestors must not reject this safe layout.
         self.assertEqual(self.install().returncode,0)
         self.assertEqual(self.guard().returncode,0)
+
+    def test_shell_signal_diagnostics_do_not_reveal_private_paths(self):
+        self.assertEqual(self.install().returncode,0)
+        fake=self.root/'terminated-interpreter'
+        fake.write_text('#!/bin/sh\nkill -TERM $$\n');fake.chmod(0o700)
+        hook=self.repo/'.git/hooks/pre-commit'
+        hook.write_text(hook.read_text().replace(shlex.quote(sys.executable),shlex.quote(str(fake))))
+        result=subprocess.run([str(hook)],cwd=self.repo,env=self.env,text=True,capture_output=True)
+        self.blocked(result)
+        self.assertNotIn(str(self.root),result.stdout+result.stderr)

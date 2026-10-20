@@ -8,7 +8,7 @@ All host Python commands use the [shared prerequisites](../README.md#prerequisit
 | --- | --- | --- |
 | Two context versions and verified result return | [Basic quick start](../README.md#run-it) | Default Casita CLI |
 | Restore two static-site builds and roll back without rebuilding | [Artifact handoff](artifact-handoff.md) | Default Casita CLI; synthetic local builder, no signing or runtime |
-| Freeze a synthetic event kit, incrementally sync a cue update and select its verified snapshot | [Offline event kit](offline-event-kit.md) | Default Casita CLI; local sync, no Eventools account or real event data |
+| Freeze a synthetic event kit, incrementally sync a cue update and select its verified snapshot | [Offline event kit](offline-event-kit.md) | Default Casita CLI; local sync, no external application account or real event data |
 | Freeze visible task state and return two parent-bound scripted continuations | [AI workflow checkpoint](ai-workflow-checkpoint.md) | Default Casita CLI; synthetic task, no AI account or live model |
 | Replay a fresh public-docs reviewer handoff with saved task state | [Docs checkpoint pilot](docs-checkpoint-case.md) | Default Casita CLI, OpenSSH and Git with the pinned public commit; recorded report, no AI account |
 | Share a task and select one of two proposed team knowledge updates | [Teammate handoff](teammate-handoff.md) | Default Casita CLI; scripted teammates, explicit selection, no AI account |

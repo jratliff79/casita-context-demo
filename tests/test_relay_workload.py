@@ -1,4 +1,4 @@
-"""Independent contracts for paced, distributed synthetic JP/CJ qualification."""
+"""Independent contracts for paced, distributed synthetic two-operator qualification."""
 import copy
 import io
 import json

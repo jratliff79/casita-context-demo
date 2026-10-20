@@ -47,7 +47,7 @@ class WorkloadFinalizationTests(unittest.TestCase):
             root = Path(directory).resolve()
             binary = Path(sys.executable).resolve()
             state = root / 'relay'
-            relay.initialize(state, 'synthetic-jpcj-final-drain', 'alpha', ['beta'])
+            relay.initialize(state, 'synthetic-two-operator-final-drain', 'alpha', ['beta'])
             (state / 'store').mkdir()  # Updates-only fixture; no native checkpoint is created or consulted.
             server = OwnedServer(relay.Relay(state, binary))
             server.start()

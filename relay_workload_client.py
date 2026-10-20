@@ -37,7 +37,7 @@ def execute(config, epoch, expected_runtime):
     output.mkdir(parents=True, exist_ok=False, mode=0o700)
     output.chmod(0o700)
     credential = output / 'ephemeral-credential.json'
-    require(config['credential']['workspace'].startswith('synthetic-jpcj-'), 'synthetic workspace required')
+    require(config['credential']['workspace'].startswith('synthetic-two-operator-'), 'synthetic workspace required')
     credential.write_bytes(relay.canonical(config['credential']))
     credential.chmod(0o600)
     # SSH may not give its child a session of its own. Own the process group before

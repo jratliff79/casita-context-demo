@@ -200,7 +200,7 @@ arithmetic, counts, native pins, exact event payloads and final checkpoint bytes
 SSH transport alone does not prove that two physical devices participated.
 `remote_devices_tested` always remains false. The receipt separately records
 worker system/machine/hostname observations, including whether client names are
-distinct; these are not host execution attestations. Actual JP/CJ device
+distinct; these are not host execution attestations. Actual two-operator device
 qualification requires independent evidence outside this harness.
 
 ## Backup and measurement evidence

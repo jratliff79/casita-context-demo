@@ -8,11 +8,12 @@ python3 context_relay_demo.py --casita "$CASITA_DEMO_BIN" \
 ```
 
 The [relay guide](live-context-relay.md) covers the private service, task-start
-consultation, event polling and a JP/CJ setup template. Unit tests exercise
+consultation, event polling and a two-operator setup template. Unit tests exercise
 concurrent stale writes, rollback, authentication/revocation, source selection,
 owner decisions, per-task memory filtering and cursor recovery. CI runs two
 authenticated scripted identities against real HTTP and Casita stores, including
-a server restart. It does not contact CJ, import Eventools source or configure an assistant.
+a server restart. It does not involve a real teammate, import private application
+source or configure an assistant.
 
 Install the [host prerequisites](../README.md#prerequisites) and
 [tested Casita build](../README.md#tested-casita-build) first.
@@ -95,7 +96,7 @@ snapshot's pinned root and restored contents verify. The final checkout uses onl
 the venue store after the sender path is moved aside. Unit tests cover stale
 selection, corrupt restored assets, mixed versions, event binding and cue schema.
 The handoff CI job runs the example and verifies exact venue-only files and
-command ordering. Network isolation and Eventools integration are not exercised.
+command ordering. Network isolation and external application integration are not exercised.
 
 ## Synthetic visible workflow checkpoints
 
@@ -160,7 +161,7 @@ python3 git_review_replay.py --case docs-checkpoint --source . \
   --casita "$CASITA_DEMO_BIN" --output output/docs-checkpoint-development
 ```
 
-It checks the unchanged recorded AI report against five allowlisted public files
+It checks the pinned public report projection against five allowlisted public files
 and saved task state at the original commit. CI uses an immutable source checkout
 and uv, checks signatures and citations, rejects six newly signed invalid returns
 and rejects locally rehashed progress against the original pin. It does not invoke

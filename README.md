@@ -127,6 +127,10 @@ latest upstream. Casita is pre-release and its CLI may change. Keep this pin whe
 reproducing these examples. If you already have that build, set
 `CASITA_DEMO_BIN` to its executable path instead.
 
+The validation summaries linked below generalize identifying field names and
+preserve recorded values under `record`. They are historical privacy projections,
+not new validation runs; see the [publication notes](docs/publication-notes.md).
+
 The [current-pin validation](docs/relay-validation.json) records a locked
 default build with Rust 1.94.1, the core handoff, native Git checks and the live
 relay pilot. CI also builds OCI support and runs the existing handoff examples.
@@ -181,7 +185,7 @@ Casita, OpenSSH or an image runtime. No project installation is required.
 | Freeze visible task state and verify two scripted continuations against their parent | [Synthetic workflow checkpoint](docs/ai-workflow-checkpoint.md) |
 | See a fresh reviewer continue a public docs task from selected evidence | [Recorded docs checkpoint pilot](docs/docs-checkpoint-case.md) |
 | Share task context, review proposed team knowledge and inspect the selected result | [Synthetic teammate handoff](docs/teammate-handoff.md) |
-| Start a private relay and consult approved memory before a task | [Live relay and JP/CJ pilot](docs/live-context-relay.md) |
+| Start a private relay and consult approved memory before a task | [Live relay and two-operator pilot](docs/live-context-relay.md) |
 | Understand missing context and explicit approval | [Context requests](docs/context-requests.md) |
 | See an actual reviewer request and recorded reassessment | [Public reviewer case](docs/context-request-case.md) |
 | See a capsule review lead to a landed fix | [Review-to-fix case](docs/review-to-fix.md) |

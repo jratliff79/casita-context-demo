@@ -25,9 +25,9 @@ def run(binary, output):
     def cli(*args):
         return subprocess.run([sys.executable, str(SCRIPT), *map(str, args)],
                               capture_output=True, text=True, timeout=60, check=True)
-    cli("init", "--state", state, "--workspace", "synthetic-team", "--owner", "jp", "--member", "cj")
+    cli("init", "--state", state, "--workspace", "synthetic-team", "--owner", "owner", "--member", "member")
     url = None
-    jp, cj = state / "credentials/jp.json", state / "credentials/cj.json"
+    owner, member = state / "credentials/owner.json", state / "credentials/member.json"
     def start():
         nonlocal url
         log_path = output / ("server-" + str(len(logs)) + ".log")
@@ -47,7 +47,7 @@ def run(binary, output):
                 continue
             url = "http://" + lines[0].removeprefix("Listening on ")
             try:
-                client(url, jp, "updates", {"after": 0})
+                client(url, owner, "updates", {"after": 0})
                 return process
             except OSError:
                 time.sleep(.05)
@@ -75,83 +75,83 @@ def run(binary, output):
         return json.loads(response.read_bytes())
     try:
         service = start()
-        policy = "SYNTHETIC EVENTOOLS TASK\nRun the focused checks before handing off the change.\n"
-        context = checkpoint({"task_id": "synthetic-eventools-task", "summary": "Synthetic sharing trial",
+        policy = "SYNTHETIC TEAM TASK\nRun the focused checks before handing off the change.\n"
+        context = checkpoint({"task_id": "synthetic-team-task", "summary": "Synthetic sharing trial",
                               "completed": ["read selected policy"], "pending": ["choose focused checks"],
                               "blockers": [], "source_revision": "0" * 40,
                               "files": [{"path": "source/policy.txt", "text": policy,
                                          "sha256": digest(policy.encode())}]})
-        publish = {"request_id": "jp-checkpoint-1", "expected_revision": 0, "checkpoint": context}
-        first = submit(jp, "publish", publish, "publish")
-        assert client(url, jp, "publish", publish) == first
+        publish = {"request_id": "owner-checkpoint-1", "expected_revision": 0, "checkpoint": context}
+        first = submit(owner, "publish", publish, "publish")
+        assert client(url, owner, "publish", publish) == first
         controls["duplicate_submission_reused"] = True
         altered = copy.deepcopy(publish)
         altered["checkpoint"]["summary"] = "different bytes"
-        rejected("idempotency_reuse", jp, "publish", altered, 409)
-        cli("context", "--url", url, "--credential", cj, "--casita", binary,
-            "--output", output / "cj-context-1")
-        received = json.loads((output / "cj-context-1/received/snapshot.json").read_bytes())
+        rejected("idempotency_reuse", owner, "publish", altered, 409)
+        cli("context", "--url", url, "--credential", member, "--casita", binary,
+            "--output", output / "member-context-1")
+        received = json.loads((output / "member-context-1/received/snapshot.json").read_bytes())
         assert received["tasks"][context["task_id"]] == context and received["memory"] == []
-        propose = {"request_id": "cj-proposal-1", "expected_revision": 1,
+        propose = {"request_id": "member-proposal-1", "expected_revision": 1,
                    "task_id": context["task_id"], "scope": "workspace", "entry_id": "handoff-checks", "statement": "Include focused check evidence in handoffs.",
                    "citation": {"path": "source/policy.txt", "sha256": digest(policy.encode()),
                                 "start_line": 2, "end_line": 2,
                                 "excerpt": [policy.splitlines()[1]]}}
-        proposal = submit(cj, "propose", propose, "proposal")
+        proposal = submit(member, "propose", propose, "proposal")
         forged = copy.deepcopy(propose)
         forged["request_id"] = "forged-citation"
         forged["citation"]["excerpt"] = ["not selected source"]
-        rejected("forged_citation", cj, "propose", forged, 400)
-        accept = {"request_id": "jp-accept-1", "expected_revision": 1,
+        rejected("forged_citation", member, "propose", forged, 400)
+        accept = {"request_id": "owner-accept-1", "expected_revision": 1,
                   "proposal_id": proposal["proposal_id"]}
-        rejected("member_cannot_accept", cj, "accept", accept, 403)
-        submit(jp, "accept", accept, "accept")
-        assert client(url, jp, "accept", accept)["pin"]["revision"] == 2
+        rejected("member_cannot_accept", member, "accept", accept, 403)
+        submit(owner, "accept", accept, "accept")
+        assert client(url, owner, "accept", accept)["pin"]["revision"] == 2
         stale = dict(publish, request_id="stale-publish")
-        rejected("stale_write", cj, "publish", stale, 409)
+        rejected("stale_write", member, "publish", stale, 409)
         stale_proposal = dict(propose, request_id="stale-proposal")
-        rejected("stale_proposal", cj, "propose", stale_proposal, 409)
+        rejected("stale_proposal", member, "propose", stale_proposal, 409)
         stop(service)
         service = start()
-        controls["restart_recovery"] = client(url, jp, "context", {})["revision"] == 2
-        # CJ missed the proposal/acceptance live; it resumes using its saved cursor.
-        events = client(url, cj, "updates", {"after": first["cursor"]})
+        controls["restart_recovery"] = client(url, owner, "context", {})["revision"] == 2
+        # The member missed the proposal/acceptance live; it resumes using its saved cursor.
+        events = client(url, member, "updates", {"after": first["cursor"]})
         assert [e["kind"] for e in events["events"]] == ["propose", "accept"]
-        assert not client(url, cj, "updates", {"after": events["next_cursor"]})["events"]
+        assert not client(url, member, "updates", {"after": events["next_cursor"]})["events"]
         controls["offline_catchup"] = True
-        cli("context", "--url", url, "--credential", cj, "--casita", binary,
-            "--output", output / "cj-context-2")
-        accepted = json.loads((output / "cj-context-2/received/snapshot.json").read_bytes())
-        assert accepted["memory"][0]["accepted_by"] == "jp"
-        assert accepted["memory"][0]["author"] == "cj"
-        cli("consult", "--url", url, "--credential", cj, "--casita", binary,
-            "--task", "brand-new-task", "--output", output / "cj-new-task")
-        task_start = json.loads((output / "cj-new-task/task-start.json").read_bytes())
+        cli("context", "--url", url, "--credential", member, "--casita", binary,
+            "--output", output / "member-context-2")
+        accepted = json.loads((output / "member-context-2/received/snapshot.json").read_bytes())
+        assert accepted["memory"][0]["accepted_by"] == "owner"
+        assert accepted["memory"][0]["author"] == "member"
+        cli("consult", "--url", url, "--credential", member, "--casita", binary,
+            "--task", "brand-new-task", "--output", output / "member-new-task")
+        task_start = json.loads((output / "member-new-task/task-start.json").read_bytes())
         assert task_start["checkpoint"] is None and len(task_start["accepted_memory"]) == 1
         controls["new_task_consults_workspace_memory"] = True
         for _ in range(2):
-            cli("watch", "--url", url, "--credential", cj, "--seconds", 1,
-                "--output", output / "cj-watch")
-        assert len(list((output / "cj-watch").glob('[0-9]*.json'))) == 3
+            cli("watch", "--url", url, "--credential", member, "--seconds", 1,
+                "--output", output / "member-watch")
+        assert len(list((output / "member-watch").glob('[0-9]*.json'))) == 3
         controls["watch_resume_without_duplicate_events"] = True
         bad = output / "bad-credential.json"
         bad.write_bytes(canonical({"workspace": "synthetic-team", "token": "x" * 43}))
         rejected("invalid_token", bad, "context", {}, 401)
-        other = json.loads(cj.read_bytes())
+        other = json.loads(member.read_bytes())
         other["workspace"] = "other-team"
         bad.write_bytes(canonical(other))
         rejected("wrong_workspace", bad, "context", {}, 403)
-        cli("revoke", "--state", state, "--member", "cj")
-        rejected("revoked_reads", cj, "context", {}, 401)
-        rejected("revoked_idempotent_write", cj, "propose", propose, 401)
-        assert client(url, jp, "context", {})["revision"] == 2
+        cli("revoke", "--state", state, "--member", "member")
+        rejected("revoked_reads", member, "context", {}, 401)
+        rejected("revoked_idempotent_write", member, "propose", propose, 401)
+        assert client(url, owner, "context", {})["revision"] == 2
         controls["independent_member_survives_revocation"] = True
         assert all(controls.values())
         receipt = {"ok": True, "synthetic": True, "scripted_clients": True,
                    "authenticated_identities": 2, "short_lived_cli_clients": True,
                    "coordinator_also_requests": True, "real_http": True, "casita_restore_verified": True,
                    "shared_revision": 2, "negative_controls": controls,
-                   "actual_cj_participated": False, "eventools_source_shared": False,
+                   "actual_member_participated": False, "private_source_shared": False,
                    "remote_devices_tested": False, "codex_auto_wakeup": False,
                    "received_source_executed": False}
         (output / "receipt.json").write_bytes(canonical(receipt))

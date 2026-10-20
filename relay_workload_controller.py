@@ -274,7 +274,7 @@ def run(binary, output, plan, clients=None, casita_commit=None, stage_timing=Fal
         with diagnostics.phase('prepare.initialize'):
             shutil.copyfile(binary, owned_binary); owned_binary.chmod(0o700)
             require(relay.digest(owned_binary.read_bytes()) == binary_pin, 'copied native binary changed')
-            relay.initialize(state, 'synthetic-jpcj-' + secrets.token_hex(8), 'alpha', ['beta'])
+            relay.initialize(state, 'synthetic-two-operator-' + secrets.token_hex(8), 'alpha', ['beta'])
             relay.provision_readiness(state)
         with diagnostics.phase('prepare.service'):
             service = relay.Relay(state, owned_binary, timing=diagnostics if stage_timing else None)
@@ -447,7 +447,7 @@ def run(binary, output, plan, clients=None, casita_commit=None, stage_timing=Fal
                         'Synthetic service adapter, not installed systemd timer execution',
                         'Local encrypted sink; no off-host durability or cloud integration claim',
                         'Client clock calibration is an observation, not host attestation',
-                        'Actual JP/CJ device and sustained depleted-credit qualification remain external gates'])
+                        'Actual two-operator device and sustained depleted-credit qualification remain external gates'])
         return receipt
     except BaseException as error:
         diagnostics.failure(error)

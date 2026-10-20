@@ -17,6 +17,10 @@ The OCI job imports a digest-pinned public Python image anonymously, checks the
 restored layout and runs the trusted host checker; it does not execute the image.
 Both jobs use the same source pin, toolchain and dependency snapshot. The separate
 Apple Container execution is recorded in [the local image trial](../docs/pinned-environment.json).
+The validation summaries linked below generalize identifying field names and
+preserve recorded values under `record`. They are historical privacy projections,
+not new validation runs; see the [publication notes](../docs/publication-notes.md).
+
 The [current-pin local validation](../docs/relay-validation.json) records the
 locked default build, core handoff, native Git checks and authenticated relay
 pilot. CI retains the default and OCI example jobs and adds the two-client relay

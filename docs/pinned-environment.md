@@ -48,6 +48,10 @@ and unsupported descriptors. The wrong-image-pin control calls the runtime loade
 with a mismatched expected manifest and confirms rejection before any runtime command
 or image tar creation. The checker runs on the host in this mode; the image is not
 loaded or executed. Hosted CI uses this mode on Linux with the amd64 image pin.
+The validation summaries linked below generalize identifying field names and
+preserve recorded values under `record`. They are historical privacy projections,
+not new validation runs; see the [publication notes](publication-notes.md).
+
 The [current-pin local receipt](casita-update-validation.json) records this mode
 with Casita `1407672f` and Rust 1.94.1. The Apple trial below remains historical.
 

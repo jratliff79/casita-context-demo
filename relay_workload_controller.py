@@ -23,6 +23,7 @@ import relay_monitor as monitor
 from relay_load import fixture, latency_summary, require, state_measurement, stop, tree_rss
 from relay_workload_plan import (HERE, NAMES, make_plan, source_pins, seed_history,
                                  ssh_argv, clock_mapping, validate_hello, advance_cursor)
+from relay_workload_plan import validate_native_timings
 from relay_workload_backup import OwnedServer, capture_restore, BackupEvidence
 from relay_workload_diagnostics import Diagnostics
 
@@ -139,6 +140,8 @@ def validate_timing(row):
             'latency must include scheduled queue delay')
     deadline = {'publish': 15, 'consult': 30, 'updates': 10, 'reconnect': 30}[row['job']['operation']]
     require(row['end'] - row['scheduled'] <= deadline, 'operation hard deadline exceeded')
+    if 'native_stages' in row.get('result', {}):
+        validate_native_timings(row['result']['native_stages'], row['result']['native_ms'])
 
 
 def history_windows(plan, rows):
@@ -403,6 +406,9 @@ def run(binary, output, plan, clients=None, casita_commit=None, stage_timing=Fal
                     kind = message.get('kind')
                     if kind == 'observation':
                         require(name not in done, 'worker emitted observations after cleanup')
+                        if stage_timing and message['job']['operation'] == 'consult':
+                            validate_native_timings(message['result']['native_stages'],
+                                                    message['result']['native_ms'])
                         rows[name].append(message)
                         with (output / (name + '-observations.jsonl')).open('a') as stream:
                             stream.write(json.dumps(message, allow_nan=False) + '\n')

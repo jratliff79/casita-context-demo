@@ -13,7 +13,8 @@ from urllib.error import HTTPError
 
 import context_relay as relay
 from relay_load import fixture, require
-from relay_workload_plan import source_pins, publish_logical, advance_cursor, catch_up_events, drain_updates
+from relay_workload_plan import (source_pins, publish_logical, advance_cursor, catch_up_events,
+                                 drain_updates, validate_native_timings)
 
 PRINT_LOCK = threading.Lock()
 MAX_LINE = 1_000_000
@@ -152,7 +153,9 @@ def execute(config, epoch, expected_runtime):
                 if job['operation'] == 'reconnect':
                     require(response['pin'] == job['target_pin'], 'reconnect restored a different target pin')
                 native_start = time.monotonic()
-                snapshot = relay.receive(response, config['binary'], output / job['logical_id'])
+                native_stages = []
+                kwargs = dict(native_timing=native_stages.append) if trace_client is not None else {}
+                snapshot = relay.receive(response, config['binary'], output / job['logical_id'], **kwargs)
                 selected = relay.task_start(snapshot, job['task'], response['pin'])
                 if job['operation'] == 'consult':
                     require(selected['checkpoint'] == fixture(job['task'], job['version'], 4096),
@@ -165,6 +168,9 @@ def execute(config, epoch, expected_runtime):
                         'consultation task memory filtering mismatch')
                 result = dict(pin=response['pin'], native_ms=1000 * (time.monotonic() - native_start),
                               checkpoint_verified=True, scoped_memory_verified=True)
+                if trace_client is not None:
+                    validate_native_timings(native_stages, result['native_ms'])
+                    result['native_stages'] = native_stages
                 if job['operation'] == 'reconnect':
                     caught = catch_up_events(request, cursor, job['missed_events'])
                     cursor = caught['cursor']

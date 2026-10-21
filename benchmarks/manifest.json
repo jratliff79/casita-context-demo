@@ -1,11 +1,16 @@
 {
   "schema": "casita-demo-benchmarks.v1",
-  "all": ["relay-fsck"],
+  "all": ["relay-fsck", "restore-native"],
   "cases": {
     "relay-fsck": {
       "horizons": [6, 166, 840],
       "runner": "relay_fsck_benchmark.py",
       "correctness": ["identical full physical/logical reports", "all retained snapshots verified", "old and latest corruption rejected", "no publication on failed fsck"]
+    },
+    "restore-native": {
+      "horizons": [6, 34, 118, 166, 840],
+      "runner": "relay_restore_benchmark.py",
+      "correctness": ["all five native restore commands", "full snapshot hash and schema verification", "all retained snapshots verified", "old and latest corruption rejected", "failed times and partial stages retained"]
     }
   }
 }

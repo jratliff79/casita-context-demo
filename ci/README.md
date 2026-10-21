@@ -117,6 +117,26 @@ python3 benchmark all --baseline "$CASITA_DEMO_BIN" \
   --candidate "$CASITA_CHECKED_BIN" --output output/checked-fsck-comparison
 ```
 
+`all` also runs the registered `restore-native` case, keeping its receipt under
+`restore-native/` and writing an aggregate `all-results.json`. That case restores
+the same acknowledged archive into a new store for every trial at 6, 34, 118,
+166 and 840 API-built revisions. Four alternating-order trials per binary retain
+all five native commands: initialization, archive verification, archive import,
+checkout and full physical/logical fsck. Complete history audits and the four
+existing corruption controls remain mandatory. `--smoke` uses 6/12 revisions
+and two alternating trials. Run just this case with `python3 benchmark
+restore-native` and the same arguments.
+
+Native command envelopes contain fixed stage labels, monotonic timestamps,
+elapsed nanoseconds, process-wide child CPU deltas and success/error status.
+They contain no command arguments, output, paths, payloads or exception text.
+Timed SSH workload consultations collect the same bounded five-command evidence
+when `--stage-timing` is enabled. Complete consultation/native latency still
+includes observation overhead; stage measurements never replace the unchanged
+whole-operation p95, hard deadline or per-operator growth gates. CPU deltas are
+not per-thread attribution, and small microbenchmark samples cannot qualify a
+paced workload or explain an older uninstrumented tail by themselves.
+
 The default curve covers 6, 166 and 840 API-built revisions. Every seed publication
 still runs whole-store physical/logical fsck, checkout and snapshot fsyncs. Both
 binaries verify all retained archives/snapshots. Four alternating-order trials

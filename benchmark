@@ -1,14 +1,44 @@
 #!/usr/bin/env python3
 """Permanent synthetic benchmark corpus; every registered case is in all."""
+import argparse
 import json
 from pathlib import Path
 import sys
 
 ROOT = Path(__file__).resolve().parent
 manifest = json.loads((ROOT / 'benchmarks/manifest.json').read_text())
-if len(sys.argv) < 2 or sys.argv[1] not in ('all', 'relay-fsck'):
-    raise SystemExit('usage: python3 benchmark {all,relay-fsck} --baseline BIN --candidate BIN --output NEW_DIR [--smoke]')
-if manifest['all'] != ['relay-fsck'] or set(manifest['cases']) != {'relay-fsck'}:
+CASES = ('relay-fsck', 'restore-native')
+if len(sys.argv) < 2 or sys.argv[1] not in ('all', *CASES):
+    raise SystemExit('usage: python3 benchmark {all,relay-fsck,restore-native} --baseline BIN --candidate BIN --output NEW_DIR [--smoke]')
+if manifest['all'] != list(CASES) or set(manifest['cases']) != set(CASES):
     raise SystemExit('unregistered benchmark case')
-from relay_fsck_benchmark import main
-main(sys.argv[2:])
+from relay_fsck_benchmark import main as fsck_main, write
+from relay_restore_benchmark import main as restore_main
+
+if sys.argv[1] != 'all':
+    {'relay-fsck': fsck_main, 'restore-native': restore_main}[sys.argv[1]](sys.argv[2:])
+else:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--baseline', type=Path, required=True)
+    parser.add_argument('--candidate', type=Path, required=True)
+    parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--smoke', action='store_true')
+    args = parser.parse_args(sys.argv[2:])
+    output = args.output.resolve()
+    if output.exists():
+        raise SystemExit('benchmark output must be new')
+    common = ['--baseline', str(args.baseline), '--candidate', str(args.candidate)]
+    if args.smoke:
+        common.append('--smoke')
+    status = dict(schema='casita-demo-benchmark-all.v1', ok=False,
+                  expected=list(CASES), completed=[])
+    try:
+        # Keep the original full-fsck output location and correctness receipt.
+        fsck_main([*common, '--output', str(output)])
+        status['completed'].append('relay-fsck')
+        restore_main([*common, '--output', str(output / 'restore-native')])
+        status['completed'].append('restore-native')
+        status['ok'] = status['completed'] == status['expected']
+    finally:
+        if output.is_dir():
+            write(output / 'all-results.json', status)

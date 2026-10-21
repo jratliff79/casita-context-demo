@@ -21,6 +21,27 @@ def source_pins():
     return {name: digest((HERE / name).read_bytes()) for name in SOURCE_FILES}
 
 
+def validate_native_timings(records, native_ms):
+    """Five sequential command envelopes; never replace aggregate latency gates."""
+    stages = ('init', 'archive_verify', 'archive_import', 'checkout', 'fsck')
+    require(type(records) is list and len(records) == len(stages), 'native timings incomplete')
+    require(type(native_ms) in (int, float) and math.isfinite(native_ms) and native_ms >= 0,
+            'invalid native elapsed time')
+    previous_end = 0
+    for expected, row in zip(stages, records):
+        require(type(row) is dict and set(row) == {
+            'stage', 'start_monotonic_ns', 'elapsed_ns', 'children_cpu_ns', 'outcome'},
+            'invalid native timing fields')
+        require(row['stage'] == expected and row['outcome'] == 'ok', 'native command chain changed')
+        require(all(type(row[k]) is int and 0 <= row[k] < 2**63
+                    for k in ('start_monotonic_ns', 'elapsed_ns', 'children_cpu_ns')),
+                'invalid native timing counters')
+        require(row['start_monotonic_ns'] >= previous_end, 'native timings overlap or moved backwards')
+        previous_end = row['start_monotonic_ns'] + row['elapsed_ns']
+    require(previous_end - records[0]['start_monotonic_ns'] <= native_ms * 1_000_000 + 1,
+            'native command envelope exceeds complete restore')
+
+
 def make_plan(normal_seconds=3600, burst_seconds=600, period=60, initial_revisions=6):
     for value in (normal_seconds, burst_seconds, period, initial_revisions):
         require(type(value) is int, 'schedule inputs must be integers')

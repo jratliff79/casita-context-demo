@@ -478,8 +478,9 @@ def client(url, credential, operation, body, relay_port=None, trace_tag=None):
     return result
 
 
-def receive(response, binary, output):
+def receive(response, binary, output, *, native_timing=None):
     """Restore a verified snapshot in a fresh client store; never execute source."""
+    require(native_timing is None or callable(native_timing), "invalid native timing observer")
     pin = response["pin"]
     require(isinstance(pin, dict) and set(pin) == {
         "revision", "directory_key", "snapshot_sha256", "archive_sha256"}
@@ -493,14 +494,41 @@ def receive(response, binary, output):
         archive = output / "snapshot.casitar"
         archive.write_bytes(raw)
         store = Casita(str(Path(binary).resolve()), output / "store", [])
-        store.run("init")
-        store.run("archive", "verify", archive, "--json")
-        imported = json.loads(store.run("archive", "import", archive,
-                                        "--root-prefix", "received", "--json"))
+        def native(stage, *args):
+            if native_timing is None:
+                return store.run(*args)
+            # Command data, paths, output and exception text never reach the
+            # observer. CPU is process-wide child usage, not a per-thread clock.
+            import resource
+            before = resource.getrusage(resource.RUSAGE_CHILDREN)
+            started = time.monotonic_ns()
+            outcome = "error"
+            try:
+                result = store.run(*args)
+                outcome = "ok"
+                return result
+            finally:
+                elapsed = time.monotonic_ns() - started
+                after = resource.getrusage(resource.RUSAGE_CHILDREN)
+                try:
+                    native_timing(dict(stage=stage, start_monotonic_ns=started,
+                        elapsed_ns=elapsed, children_cpu_ns=round(1e9 * (
+                            after.ru_utime + after.ru_stime - before.ru_utime - before.ru_stime)),
+                        outcome=outcome))
+                except BaseException:
+                    if outcome == "ok":
+                        raise
+                    # A diagnostic failure cannot replace the native failure
+                    # already propagating. The failed restore still removes
+                    # its output and cannot become an accepted context.
+        native("init", "init")
+        native("archive_verify", "archive", "verify", archive, "--json")
+        imported = json.loads(native("archive_import", "archive", "import", archive,
+                                     "--root-prefix", "received", "--json"))
         require(len(imported["mappings"]) == 1
                 and imported["mappings"][0]["root"] == pin["directory_key"], "archive root mismatch")
-        store.run("checkout", pin["directory_key"], output / "received", "--no-root")
-        store.run("fsck", "--dry-run")
+        native("checkout", "checkout", pin["directory_key"], output / "received", "--no-root")
+        native("fsck", "fsck", "--dry-run")
         require(file_map(output / "received") == {"snapshot.json": pin["snapshot_sha256"]},
                 "snapshot content mismatch")
         snapshot = json.loads(read_regular(output / "received/snapshot.json", LIMIT))

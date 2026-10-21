@@ -16,7 +16,7 @@ class ReceiveNativeTiming(unittest.TestCase):
         self.assertIn('native_timing', inspect.signature(relay.receive).parameters,
                       'client-native command timings are missing from receive')
         raw = relay.canonical(dict(schema=relay.SCHEMA, workspace='synthetic-timing', revision=1,
-            parent_revision=0, author='alpha', created_at='2026-10-21T00:00:00Z',
+            parent_revision=0, author='alpha', created_at='2026-10-21T00:00:00+00:00',
             tasks={'task-alpha-0': fixture('task-alpha-0', 1, 4096)}, memory=[], decision=None))
         archive = b'SYNTHETIC ARCHIVE'
         pin = dict(revision=1, directory_key='synthetic-directory',

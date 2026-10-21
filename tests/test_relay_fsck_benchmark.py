@@ -59,7 +59,7 @@ class CheckedFsckContract(unittest.TestCase):
         path = ROOT / 'benchmarks/manifest.json'
         self.assertTrue(path.is_file(), 'permanent benchmark corpus unavailable')
         manifest = json.loads(path.read_text())
-        self.assertEqual(manifest['all'], ['relay-fsck'])
+        self.assertEqual(manifest['all'], ['relay-fsck', 'restore-native'])
         self.assertEqual(manifest['cases']['relay-fsck']['horizons'], [6, 166, 840])
         self.assertTrue((ROOT / 'benchmark').is_file())
         self.assertIn('Checked relay fsck', (ROOT / '.github/workflows/ci.yml').read_text())

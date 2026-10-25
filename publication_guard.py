@@ -6,10 +6,13 @@ import json
 import os
 from pathlib import Path
 import re
+import selectors
 import shlex
+import signal
 import stat
 import subprocess
 import sys
+import time
 import unicodedata
 
 GIT = '/usr/bin/git'
@@ -18,6 +21,8 @@ MAX_TOTAL = 64 * 1024 * 1024
 MAX_FILES = 4096
 MAX_COMMITS = 128
 MAX_RECORD = 65536
+MAX_LISTING = 2 * 1024 * 1024
+GIT_TIMEOUT = 30
 OID = re.compile(r'(?:[0-9a-f]{40}|[0-9a-f]{64})\Z')
 EMAIL = re.compile(r'(?:[0-9]+\+)?[A-Za-z0-9][A-Za-z0-9-]*@users\.noreply\.github\.com\Z')
 
@@ -102,29 +107,68 @@ class Git:
                         GIT_NO_LAZY_FETCH='1', GIT_TERMINAL_PROMPT='0')
         actual = self.run('rev-parse', '--show-toplevel').decode().strip()
         require(Path(actual).resolve() == self.root, 'repository-context')
-        partial = subprocess.run([GIT, '-C', str(self.root), 'config', '--get',
-            'extensions.partialclone'], env=self.env,
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30)
-        require(partial.returncode == 1, 'partial-clone-not-supported')
-        promisors = subprocess.run([GIT, '-C', str(self.root), 'config', '--null',
-            '--type=bool', '--get-regexp', r'^remote\..*\.promisor$'], env=self.env,
-            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=30)
-        require(promisors.returncode in (0, 1) and not any(
-            row.rsplit(b'\n', 1)[-1] == b'true' for row in promisors.stdout.split(b'\0') if row),
+        status, _ = self._capture('config', '--get', 'extensions.partialclone', allowed=(0, 1))
+        require(status == 1, 'partial-clone-not-supported')
+        _, promisors = self._capture('config', '--null', '--type=bool', '--get-regexp',
+            r'^remote\..*\.promisor$', allowed=(0, 1), limit=MAX_LISTING)
+        require(not any(
+            row.rsplit(b'\n', 1)[-1] == b'true' for row in promisors.split(b'\0') if row),
             'partial-clone-not-supported')
 
-    def run(self, *args):
-        result = subprocess.run([GIT, '--no-pager', '--no-replace-objects',
+    def _capture(self, *args, limit=MAX_RECORD, allowed=(0,), limit_code='git-output-limit'):
+        deadline = time.monotonic() + GIT_TIMEOUT
+        process = subprocess.Popen([GIT, '--no-pager', '--no-replace-objects',
             '-c', 'core.fsmonitor=false', '-C', str(self.root), *args],
-            env=self.env, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=30)
-        require(result.returncode == 0, 'git-read-or-config')
-        return result.stdout
+            env=self.env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL, start_new_session=True)
+        chunks = []; size = 0
+        selector = None
+        try:
+            selector = selectors.DefaultSelector()
+            selector.register(process.stdout, selectors.EVENT_READ)
+            while True:
+                remaining = deadline - time.monotonic()
+                require(remaining > 0, 'git-timeout')
+                if not selector.select(remaining):
+                    raise Blocked('git-timeout')
+                data = os.read(process.stdout.fileno(), min(65536, limit + 1 - size))
+                if not data:
+                    break
+                size += len(data)
+                require(size <= limit, limit_code)
+                chunks.append(data)
+            remaining = deadline - time.monotonic()
+            require(remaining > 0, 'git-timeout')
+            process.wait(timeout=remaining)
+            require(process.returncode in allowed, 'git-read-or-config')
+            return process.returncode, b''.join(chunks)
+        except BaseException:
+            # A leader may have exited while a descendant still owns stdout.
+            # Kill the session even then; never drain rejected output.
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            finally:
+                process.stdout.close()
+                process.wait()
+            raise
+        finally:
+            if selector is not None:
+                selector.close()
+            process.stdout.close()
+
+    def run(self, *args, limit=MAX_RECORD, limit_code='git-output-limit'):
+        return self._capture(*args, limit=limit, limit_code=limit_code)[1]
+
+    def path(self, *args):
+        output = self.run(*args)
+        require(output.endswith(b'\n') and len(output) > 1, 'git-path-format')
+        return Path(os.fsdecode(output[:-1]))
 
     def config(self, key):
-        result = subprocess.run([GIT, '-C', str(self.root), 'config', '--local', '--get', key],
-            env=self.env, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=30)
-        require(result.returncode in (0, 1), 'git-config')
-        return result.stdout.decode().strip() if result.returncode == 0 else None
+        status, output = self._capture('config', '--local', '--get', key, allowed=(0, 1))
+        return output.decode().strip() if status == 0 else None
 
     def base(self, value=None):
         value = self.config('publicationGuard.base') if value is None else value
@@ -151,7 +195,7 @@ class Scan:
             return
         size = int(self.git.run('cat-file', '-s', oid))
         require(size <= MAX_FILE and self.total + size <= MAX_TOTAL, 'content-limit')
-        data = self.git.run('cat-file', 'blob', oid)
+        data = self.git.run('cat-file', 'blob', oid, limit=size, limit_code='object-size')
         require(len(data) == size, 'object-size')
         self.policy.check(data, 'private-content')
         try:
@@ -163,7 +207,7 @@ class Scan:
         self.blobs.add(oid); self.total += size
 
     def entries(self, data, index=False):
-        require(len(data) <= 2 * 1024 * 1024, 'file-list-limit')
+        require(len(data) <= MAX_LISTING, 'file-list-limit')
         rows = data.split(b'\0')
         require(rows[-1] == b'' and len(rows) - 1 <= MAX_FILES, 'file-list-limit')
         for row in rows[:-1]:
@@ -187,7 +231,8 @@ class Scan:
 
     def staged(self):
         # Respect GIT_INDEX_FILE: Git uses alternate indexes for some commit forms.
-        self.entries(self.git.run('ls-files', '--stage', '-z'), index=True)
+        self.entries(self.git.run('ls-files', '--stage', '-z', limit=MAX_LISTING,
+                                  limit_code='file-list-limit'), index=True)
         for key in ('GIT_AUTHOR_IDENT', 'GIT_COMMITTER_IDENT'):
             self.identity(self.git.run('var', key).rstrip(b'\n'))
 
@@ -203,7 +248,8 @@ class Scan:
             values = [row[len(prefix):] for row in headers if row.startswith(prefix)]
             require(len(values) == 1, 'identity-format')
             self.identity(values[0])  # Raw headers, never mailmap-transformed output.
-        self.entries(self.git.run('ls-tree', '-r', '-z', oid))
+        self.entries(self.git.run('ls-tree', '-r', '-z', oid, limit=MAX_LISTING,
+                                  limit_code='file-list-limit'))
 
     def pre_push(self, data):
         require(len(data) <= MAX_RECORD, 'update-limit')
@@ -226,7 +272,8 @@ class Scan:
             commits.update(pending)
             require(len(commits) <= MAX_COMMITS, 'commit-count-limit')
             # Even a push of the reviewed base must have a clean tip snapshot.
-            self.entries(self.git.run('ls-tree', '-r', '-z', oid))
+            self.entries(self.git.run('ls-tree', '-r', '-z', oid, limit=MAX_LISTING,
+                                      limit_code='file-list-limit'))
         for oid in sorted(commits):
             self.commit(oid)
         return len(commits)
@@ -245,18 +292,83 @@ def protected_directory(path, context):
                 context + '-ancestor-writable')
 
 
+def protected_git_path(path, context, *, file=False):
+    """Check canonical targets and the namespaces used to resolve symlinks."""
+    require(path.is_absolute(), context + '-absolute-path')
+    pending = [(path, file)]; visited = set(); links = 0
+    while pending:
+        current, leaf_file = pending.pop()
+        if (current, leaf_file) in visited:
+            continue
+        visited.add((current, leaf_file))
+        for parent in reversed([current, *current.parents]):
+            try:
+                info = parent.lstat()
+            except FileNotFoundError:
+                continue
+            if stat.S_ISLNK(info.st_mode):
+                require(info.st_uid in (0, os.getuid()), context + '-ancestor-owner')
+                links += 1
+                require(links <= 40, context + '-symlink-limit')
+                target = Path(os.readlink(parent))
+                if not target.is_absolute():
+                    target = parent.parent / target
+                parent.resolve(strict=True)
+                pending.append((target, leaf_file and parent == current))
+            elif leaf_file and parent == current:
+                require(stat.S_ISREG(info.st_mode) and info.st_uid in (0, os.getuid()),
+                        context + '-pointer-owner')
+                require(not info.st_mode & 0o022, context + '-pointer-writable')
+            else:
+                protected_directory(parent.resolve(), context)
+    return path.resolve()
+
+
+def git_pointer(path, context, prefix=b''):
+    canonical = protected_git_path(path, context, file=True)
+    with os.fdopen(os.open(canonical, os.O_RDONLY | os.O_NOFOLLOW), 'rb') as stream:
+        data = stream.read(MAX_RECORD + 1)
+    require(len(data) <= MAX_RECORD and data.startswith(prefix), context + '-pointer-format')
+    # Git trims line endings, not path whitespace, in gitfiles and commondir.
+    raw_target = data[len(prefix):].rstrip(b'\r\n')
+    require(bool(raw_target) and b'\0' not in raw_target, context + '-pointer-format')
+    target = Path(os.fsdecode(raw_target))
+    return target if target.is_absolute() else path.parent / target
+
+
+def protected_installation(git, hooks):
+    def absolute(path):
+        return path if path.is_absolute() else git.root / path
+    protected_git_path(git.root, 'repository')
+    metadata = absolute(git.path('rev-parse', '--git-dir'))
+    common = absolute(git.path('rev-parse', '--git-common-dir'))
+    paths = [metadata, common]
+    selector = absolute(Path(git.env['GIT_DIR'])) if git.env.get('GIT_DIR') else git.root / '.git'
+    paths.append(selector if selector.is_dir() else
+                 git_pointer(selector, 'git-metadata', b'gitdir: '))
+    if git.env.get('GIT_COMMON_DIR'):
+        paths.append(absolute(Path(git.env['GIT_COMMON_DIR'])))
+    else:
+        pointer = metadata / 'commondir'
+        if pointer.exists() or pointer.is_symlink():
+            paths.append(git_pointer(pointer, 'git-common'))
+    for path in paths:
+        protected_git_path(path, 'git-metadata')
+    return protected_git_path(hooks, 'hooks')
+
+
 def install(git, policy_path, base, runtime):
     base = git.base(base)
     # Refuse any configured hook directory; do not disable or replace another guard.
-    result = subprocess.run([GIT, '-C', str(git.root), 'config', '--get', 'core.hooksPath'],
-        env=git.env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30)
-    require(result.returncode == 1, 'existing-hooks-path')
+    status, _ = git._capture('config', '--get', 'core.hooksPath', allowed=(0, 1))
+    require(status == 1, 'existing-hooks-path')
     require(runtime.is_absolute() and not runtime.is_symlink(), 'private-runtime-required')
     runtime = outside(runtime, git.root)
     protected_directory(runtime, 'runtime')
-    hooks = Path(os.fsdecode(git.run('rev-parse', '--git-path', 'hooks').rstrip(b'\n')))
+    hooks = git.path('rev-parse', '--git-path', 'hooks')
     if not hooks.is_absolute(): hooks = git.root / hooks
     require(not hooks.is_symlink(), 'existing-hooks-path')
+    hooks = protected_installation(git, hooks)
     source = Path(__file__).read_bytes()
     snapshot = runtime / ('guard-' + hashlib.sha256(source).hexdigest() + '.py')
     wrappers = {name: ('#!/bin/sh\n# casita-publication-guard v1\nexec 3>&2 2>/dev/null\n'
@@ -283,6 +395,7 @@ def install(git, policy_path, base, runtime):
             stream.write(source)
         snapshot.chmod(0o400)
     hooks.mkdir(parents=True, exist_ok=True)
+    hooks = protected_installation(git, hooks)
     created = []
     previous = {key: git.config(key) for key in ('publicationGuard.policy', 'publicationGuard.base')}
     try:
@@ -299,8 +412,7 @@ def install(git, policy_path, base, runtime):
         for key, value in previous.items():
             if value is not None: git.run('config', '--local', key, value)
             else:
-                subprocess.run([GIT, '-C', str(git.root), 'config', '--local', '--unset-all', key],
-                    env=git.env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                git._capture('config', '--local', '--unset-all', key, allowed=(0, 5))
         raise
 
 

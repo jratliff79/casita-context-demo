@@ -78,9 +78,13 @@ installation. Linked worktrees use their actual index and the common hooks.
 Installation refuses custom `core.hooksPath` settings and existing hooks with
 other content. It preserves those hooks instead of silently replacing or chaining
 them. An identical installed hook must still be owner-only and executable.
-Inspect a conflict locally before choosing how to integrate it. Policy and runtime ancestors
-must belong to root or the installing user and must not be group/world writable
-unless protected by the sticky bit. Runtime checks run before and after creation.
+Inspect a conflict locally before choosing how to integrate it. Policy, runtime,
+checkout, Git metadata and hooks directory ancestors must belong to root or the
+installing user and must not be group/world writable unless protected by the
+sticky bit. Installation checks both canonical metadata targets and the
+namespaces selecting them, including Git directory/common-directory pointers
+and symlink aliases. Protected linked worktrees and separate Git directories
+remain supported. Runtime and hook-directory checks run before and after creation.
 The policy is read and configured through its canonical path. An explicitly
 empty reviewed base is rejected without changing the existing installation.
 
@@ -108,7 +112,12 @@ Partial-clone configuration, shallow outgoing histories, missing objects, unmerg
 non-UTF-8/NUL-containing content, generated root `output/` paths, common credential
 and native-state file extensions, and exceeded limits fail the check. Limits are
 128 outgoing commits, 4,096 files per snapshot, 8 MiB per file, 64 MiB of unique
-blob bytes per invocation, and 64 KiB per commit/policy/update input. The guard
+blob bytes per invocation, 2 MiB per Git file listing, and 64 KiB per
+commit/policy/update input. Git output is bounded while it is read; oversized
+listings are rejected without draining the producer. Each Git invocation has
+one 30-second deadline covering output reads and child exit. Rejection, timeout
+or interruption terminates the child process group and reaps the direct child,
+including when a descendant keeps stdout open after the leader exits. The guard
 performs no fetch; partial clones must be replaced by a full local clone first.
 Explicitly disabled promisor booleans in otherwise complete repositories are allowed;
 enabled or invalid values still block the check.
